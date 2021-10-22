@@ -1,0 +1,1 @@
+/usr/bin/c++      CMakeFiles/reader.dir/src/reader.cpp.o CMakeFiles/reader.dir/src/PowerDistributionPanel.cpp.o  -o bin/reader -rdynamic -lncurses 

@@ -1,0 +1,50 @@
+#define Phoenix_No_WPI // remove WPI dependencies
+#include "ctre/Phoenix.h"
+#include "ctre/phoenix/platform/Platform.h"
+#include "ctre/phoenix/unmanaged/Unmanaged.h"
+#include <string>
+#include <iostream>
+#include <chrono>
+#include <thread>
+#include <SDL2/SDL.h>
+#include <unistd.h>
+
+using namespace ctre::phoenix;
+using namespace ctre::phoenix::platform;
+using namespace ctre::phoenix::motorcontrol;
+using namespace ctre::phoenix::motorcontrol::can;
+
+
+int main(int argc,char** argv){
+        ctre::phoenix::platform::can::SetCANInterface("can0");
+//	TalonSRX talonSRX(10);
+
+	//talonSRX.Set(ControlMode::PercentOutput, .10);
+
+//	TalonSRX* talonSRX2=&talonSRX;
+//	talonSRX2->Set(ControlMode::PercentOutput, .10);
+
+	TalonSRX* talonSRX3=new TalonSRX(13);
+	talonSRX3->Set(ControlMode::PercentOutput, .10);
+
+//	while(true){
+//		int deviceID=talonSRX.GetDeviceID();
+//                double busVoltage=talonSRX.GetBusVoltage();
+//                double outputCurrent=talonSRX.GetOutputCurrent();
+//                bool isInverted=talonSRX.GetInverted();
+//                double motorOutputVoltage=talonSRX.GetMotorOutputVoltage();
+//                double motorOutputPercent=talonSRX.GetMotorOutputPercent();
+//                double temperature=talonSRX.GetTemperature();
+//                int sensorPosition0=talonSRX.GetSelectedSensorPosition(0);
+//                int sensorVelocity0=talonSRX.GetSelectedSensorVelocity(0);
+//                int closedLoopError0=talonSRX.GetClosedLoopError(0);
+//                double integralAccumulator0=talonSRX.GetIntegralAccumulator(0);
+//                double errorDerivative0=talonSRX.GetErrorDerivative(0);
+//
+//		std::cout << deviceID << " "  << busVoltage << " " << motorOutputPercent << " " << motorOutputVoltage << " " << outputCurrent << std::endl;
+//
+//		ctre::phoenix::unmanaged::FeedEnable(100);
+//		usleep(20);
+//	}
+}
+

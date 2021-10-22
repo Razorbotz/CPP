@@ -1,0 +1,8 @@
+/home/team/SoftwareDevelopment/C++/zed-aruco-master/build/CMakeFiles/rebuild_cache.dir
+/home/team/SoftwareDevelopment/C++/zed-aruco-master/build/CMakeFiles/edit_cache.dir
+/home/team/SoftwareDevelopment/C++/zed-aruco-master/build/mono/CMakeFiles/rebuild_cache.dir
+/home/team/SoftwareDevelopment/C++/zed-aruco-master/build/mono/CMakeFiles/ZED_Reloc_Aruco.dir
+/home/team/SoftwareDevelopment/C++/zed-aruco-master/build/mono/CMakeFiles/edit_cache.dir
+/home/team/SoftwareDevelopment/C++/zed-aruco-master/build/multi-camera/CMakeFiles/rebuild_cache.dir
+/home/team/SoftwareDevelopment/C++/zed-aruco-master/build/multi-camera/CMakeFiles/ZED_Multi_Reloc_Aruco.dir
+/home/team/SoftwareDevelopment/C++/zed-aruco-master/build/multi-camera/CMakeFiles/edit_cache.dir

@@ -1,0 +1,1 @@
+/usr/bin/c++     CMakeFiles/control.dir/src/control.cpp.o CMakeFiles/control.dir/src/InfoFrame.cpp.o CMakeFiles/control.dir/src/InfoItem.cpp.o  -o control -lSDL2 -lglib-2.0 -lgio-2.0 -lgiomm-2.4 -lglibmm-2.4 -lpango-1.0 -lpangocairo-1.0 -lgtk-3 -lgtkmm-3.0 -lsigc-2.0 -lpthread -lgdk-3 -lgdkmm-3.0 -latk-1.0 -latkmm-1.6 

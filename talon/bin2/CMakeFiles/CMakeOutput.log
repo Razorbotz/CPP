@@ -1,0 +1,84 @@
+Determining if the include file pthread.h exists passed with the following output:
+Change Dir: /home/team/SoftwareDevelopment/C++/talon/bin/CMakeFiles/CMakeTmp
+
+Run Build Command:"/usr/bin/make" "cmTC_d190b/fast"
+/usr/bin/make -f CMakeFiles/cmTC_d190b.dir/build.make CMakeFiles/cmTC_d190b.dir/build
+make[1]: Entering directory '/home/team/SoftwareDevelopment/C++/talon/bin/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_d190b.dir/CheckIncludeFile.c.o
+/usr/bin/cc    -o CMakeFiles/cmTC_d190b.dir/CheckIncludeFile.c.o   -c /home/team/SoftwareDevelopment/C++/talon/bin/CMakeFiles/CMakeTmp/CheckIncludeFile.c
+Linking C executable cmTC_d190b
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_d190b.dir/link.txt --verbose=1
+/usr/bin/cc      -rdynamic CMakeFiles/cmTC_d190b.dir/CheckIncludeFile.c.o  -o cmTC_d190b 
+make[1]: Leaving directory '/home/team/SoftwareDevelopment/C++/talon/bin/CMakeFiles/CMakeTmp'
+
+
+Determining if the include file pthread.h exists passed with the following output:
+Change Dir: /home/team/SoftwareDevelopment/C++/talon/bin/CMakeFiles/CMakeTmp
+
+Run Build Command:"/usr/bin/make" "cmTC_d57d4/fast"
+/usr/bin/make -f CMakeFiles/cmTC_d57d4.dir/build.make CMakeFiles/cmTC_d57d4.dir/build
+make[1]: Entering directory '/home/team/SoftwareDevelopment/C++/talon/bin/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_d57d4.dir/CheckIncludeFile.c.o
+/usr/bin/cc    -o CMakeFiles/cmTC_d57d4.dir/CheckIncludeFile.c.o   -c /home/team/SoftwareDevelopment/C++/talon/bin/CMakeFiles/CMakeTmp/CheckIncludeFile.c
+Linking C executable cmTC_d57d4
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_d57d4.dir/link.txt --verbose=1
+/usr/bin/cc      -rdynamic CMakeFiles/cmTC_d57d4.dir/CheckIncludeFile.c.o  -o cmTC_d57d4 
+make[1]: Leaving directory '/home/team/SoftwareDevelopment/C++/talon/bin/CMakeFiles/CMakeTmp'
+
+
+Determining if the include file pthread.h exists passed with the following output:
+Change Dir: /home/team/SoftwareDevelopment/C++/talon/bin/CMakeFiles/CMakeTmp
+
+Run Build Command:"/usr/bin/make" "cmTC_da6df/fast"
+/usr/bin/make -f CMakeFiles/cmTC_da6df.dir/build.make CMakeFiles/cmTC_da6df.dir/build
+make[1]: Entering directory '/home/team/SoftwareDevelopment/C++/talon/bin/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_da6df.dir/CheckIncludeFile.c.o
+/usr/bin/cc    -o CMakeFiles/cmTC_da6df.dir/CheckIncludeFile.c.o   -c /home/team/SoftwareDevelopment/C++/talon/bin/CMakeFiles/CMakeTmp/CheckIncludeFile.c
+Linking C executable cmTC_da6df
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_da6df.dir/link.txt --verbose=1
+/usr/bin/cc      -rdynamic CMakeFiles/cmTC_da6df.dir/CheckIncludeFile.c.o  -o cmTC_da6df 
+make[1]: Leaving directory '/home/team/SoftwareDevelopment/C++/talon/bin/CMakeFiles/CMakeTmp'
+
+
+Determining if the include file pthread.h exists passed with the following output:
+Change Dir: /home/team/SoftwareDevelopment/C++/talon/bin/CMakeFiles/CMakeTmp
+
+Run Build Command:"/usr/bin/make" "cmTC_6511e/fast"
+/usr/bin/make -f CMakeFiles/cmTC_6511e.dir/build.make CMakeFiles/cmTC_6511e.dir/build
+make[1]: Entering directory '/home/team/SoftwareDevelopment/C++/talon/bin/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_6511e.dir/CheckIncludeFile.c.o
+/usr/bin/cc    -o CMakeFiles/cmTC_6511e.dir/CheckIncludeFile.c.o   -c /home/team/SoftwareDevelopment/C++/talon/bin/CMakeFiles/CMakeTmp/CheckIncludeFile.c
+Linking C executable cmTC_6511e
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_6511e.dir/link.txt --verbose=1
+/usr/bin/cc      -rdynamic CMakeFiles/cmTC_6511e.dir/CheckIncludeFile.c.o  -o cmTC_6511e 
+make[1]: Leaving directory '/home/team/SoftwareDevelopment/C++/talon/bin/CMakeFiles/CMakeTmp'
+
+
+Determining if the include file pthread.h exists passed with the following output:
+Change Dir: /home/team/SoftwareDevelopment/C++/talon/bin/CMakeFiles/CMakeTmp
+
+Run Build Command:"/usr/bin/make" "cmTC_12b28/fast"
+/usr/bin/make -f CMakeFiles/cmTC_12b28.dir/build.make CMakeFiles/cmTC_12b28.dir/build
+make[1]: Entering directory '/home/team/SoftwareDevelopment/C++/talon/bin/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_12b28.dir/CheckIncludeFile.c.o
+/usr/bin/cc    -o CMakeFiles/cmTC_12b28.dir/CheckIncludeFile.c.o   -c /home/team/SoftwareDevelopment/C++/talon/bin/CMakeFiles/CMakeTmp/CheckIncludeFile.c
+Linking C executable cmTC_12b28
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_12b28.dir/link.txt --verbose=1
+/usr/bin/cc      -rdynamic CMakeFiles/cmTC_12b28.dir/CheckIncludeFile.c.o  -o cmTC_12b28 
+make[1]: Leaving directory '/home/team/SoftwareDevelopment/C++/talon/bin/CMakeFiles/CMakeTmp'
+
+
+Determining if the include file pthread.h exists passed with the following output:
+Change Dir: /home/team/SoftwareDevelopment/C++/talon/bin/CMakeFiles/CMakeTmp
+
+Run Build Command:"/usr/bin/make" "cmTC_babde/fast"
+/usr/bin/make -f CMakeFiles/cmTC_babde.dir/build.make CMakeFiles/cmTC_babde.dir/build
+make[1]: Entering directory '/home/team/SoftwareDevelopment/C++/talon/bin/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_babde.dir/CheckIncludeFile.c.o
+/usr/bin/cc    -o CMakeFiles/cmTC_babde.dir/CheckIncludeFile.c.o   -c /home/team/SoftwareDevelopment/C++/talon/bin/CMakeFiles/CMakeTmp/CheckIncludeFile.c
+Linking C executable cmTC_babde
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_babde.dir/link.txt --verbose=1
+/usr/bin/cc      -rdynamic CMakeFiles/cmTC_babde.dir/CheckIncludeFile.c.o  -o cmTC_babde 
+make[1]: Leaving directory '/home/team/SoftwareDevelopment/C++/talon/bin/CMakeFiles/CMakeTmp'
+
+

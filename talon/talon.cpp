@@ -2,14 +2,11 @@
 #include "ctre/Phoenix.h"
 #include "ctre/phoenix/platform/Platform.h"
 
+int main(int argc, char** argv) {
+	ctre::phoenix::platform::can::SetCANInterface("can0");
+	TalonSRX* talonSRX = new TalonSRX(10);
+	talonSRX->Set(ControlMode::PercentOutput, .10);
 
-int main(int argc,char** argv){
-        ctre::phoenix::platform::can::SetCANInterface("can0");
-        TalonSRX* talonSRX=new TalonSRX(10);
-        talonSRX->Set(ControlMode::PercentOutput, .10);
-
-	while(true){
-
+	while(true) {
 	}
 }
-

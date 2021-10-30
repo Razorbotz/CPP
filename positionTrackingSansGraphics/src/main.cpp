@@ -33,102 +33,100 @@ using namespace sl;
 const int MAX_CHAR = 128;
 
 inline void setTxt(sl::float3 value, char* ptr_txt) {
-    snprintf(ptr_txt, MAX_CHAR, "%3.2f; %3.2f; %3.2f", value.x, value.y, value.z);
+	snprintf(ptr_txt, MAX_CHAR, "%3.2f; %3.2f; %3.2f", value.x, value.y, value.z);
 }
 
-void parseArgs(int argc, char **argv, sl::InitParameters& param);
+void parseArgs(int argc, char** argv, sl::InitParameters& param);
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
+	Camera zed;
+	// Set configuration parameters for the ZED
+	InitParameters init_parameters;
+	init_parameters.camera_resolution = RESOLUTION::VGA;
+	init_parameters.coordinate_units = UNIT::METER;
+	init_parameters.coordinate_system = COORDINATE_SYSTEM::RIGHT_HANDED_Y_UP;
+	init_parameters.sdk_verbose = true;
+	parseArgs(argc, argv, init_parameters);
 
-    Camera zed;
-    // Set configuration parameters for the ZED
-    InitParameters init_parameters;
-    init_parameters.camera_resolution = RESOLUTION::VGA;
-    init_parameters.coordinate_units = UNIT::METER;
-    init_parameters.coordinate_system = COORDINATE_SYSTEM::RIGHT_HANDED_Y_UP;
-    init_parameters.sdk_verbose = true;
-    parseArgs(argc, argv, init_parameters);
+	// Open the camera
+	auto returned_state = zed.open(init_parameters);
+	if(returned_state != ERROR_CODE::SUCCESS) {
+		return EXIT_FAILURE;
+	}
 
-    // Open the camera
-    auto returned_state = zed.open(init_parameters);
-    if (returned_state != ERROR_CODE::SUCCESS) {
-        return EXIT_FAILURE;
-    }
+	auto camera_model = zed.getCameraInformation().camera_model;
 
-    auto camera_model = zed.getCameraInformation().camera_model;
+	// Create text for GUI
+	char text_rotation[MAX_CHAR];
+	char text_translation[MAX_CHAR];
 
-    // Create text for GUI
-    char text_rotation[MAX_CHAR];
-    char text_translation[MAX_CHAR];
+	// Set parameters for Positional Tracking
+	PositionalTrackingParameters positional_tracking_param;
+	positional_tracking_param.enable_area_memory = true;
+	// enable Positional Tracking
+	returned_state = zed.enablePositionalTracking(positional_tracking_param);
+	if(returned_state != ERROR_CODE::SUCCESS) {
+		zed.close();
+		return EXIT_FAILURE;
+	}
 
-    // Set parameters for Positional Tracking
-    PositionalTrackingParameters positional_tracking_param;
-    positional_tracking_param.enable_area_memory = true;
-    // enable Positional Tracking
-    returned_state = zed.enablePositionalTracking(positional_tracking_param);
-    if (returned_state != ERROR_CODE::SUCCESS) {
-        zed.close();
-        return EXIT_FAILURE;
-    }
+	Pose camera_path;
+	POSITIONAL_TRACKING_STATE tracking_state;
 
-    Pose camera_path;
-    POSITIONAL_TRACKING_STATE tracking_state;
-    
-    while (true) {
-        if (zed.grab() == ERROR_CODE::SUCCESS) {
-            // Get the position of the camera in a fixed reference frame (the World Frame)
-            tracking_state = zed.getPosition(camera_path, REFERENCE_FRAME::WORLD);
+	while(true) {
+		if(zed.grab() == ERROR_CODE::SUCCESS) {
+			// Get the position of the camera in a fixed reference frame (the World Frame)
+			tracking_state = zed.getPosition(camera_path, REFERENCE_FRAME::WORLD);
 
-            if (tracking_state == POSITIONAL_TRACKING_STATE::OK) {
-                // Get rotation and translation and displays it
-		
-                setTxt(camera_path.getEulerAngles(), text_rotation);
-                setTxt(camera_path.getTranslation(), text_translation);
-		printf("%s       %s \n",text_rotation,text_translation);
-            }
-        } else
-            sleep_ms(1);
-    }
+			if(tracking_state == POSITIONAL_TRACKING_STATE::OK) {
+				// Get rotation and translation and displays it
 
-    zed.disablePositionalTracking();
+				setTxt(camera_path.getEulerAngles(), text_rotation);
+				setTxt(camera_path.getTranslation(), text_translation);
+				printf("%s       %s \n", text_rotation, text_translation);
+			}
+		} else
+			sleep_ms(1);
+	}
 
-    //zed.disableRecording();
-    zed.close();
-    return EXIT_SUCCESS;
+	zed.disablePositionalTracking();
+
+	//zed.disableRecording();
+	zed.close();
+	return EXIT_SUCCESS;
 }
 
-void parseArgs(int argc, char **argv, sl::InitParameters& param) {
-    if (argc > 1 && string(argv[1]).find(".svo") != string::npos) {
-        // SVO input mode
-        param.input.setFromSVOFile(argv[1]);
-        cout << "[Sample] Using SVO File input: " << argv[1] << endl;
-    } else if (argc > 1 && string(argv[1]).find(".svo") == string::npos) {
-        string arg = string(argv[1]);
-        unsigned int a, b, c, d, port;
-        if (sscanf(arg.c_str(), "%u.%u.%u.%u:%d", &a, &b, &c, &d, &port) == 5) {
-            // Stream input mode - IP + port
-            string ip_adress = to_string(a) + "." + to_string(b) + "." + to_string(c) + "." + to_string(d);
-            param.input.setFromStream(sl::String(ip_adress.c_str()), port);
-            cout << "[Sample] Using Stream input, IP : " << ip_adress << ", port : " << port << endl;
-        } else if (sscanf(arg.c_str(), "%u.%u.%u.%u", &a, &b, &c, &d) == 4) {
-            // Stream input mode - IP only
-            param.input.setFromStream(sl::String(argv[1]));
-            cout << "[Sample] Using Stream input, IP : " << argv[1] << endl;
-        } else if (arg.find("HD2K") != string::npos) {
-            param.camera_resolution = sl::RESOLUTION::HD2K;
-            cout << "[Sample] Using Camera in resolution HD2K" << endl;
-        } else if (arg.find("HD1080") != string::npos) {
-            param.camera_resolution = sl::RESOLUTION::HD1080;
-            cout << "[Sample] Using Camera in resolution HD1080" << endl;
-        } else if (arg.find("HD720") != string::npos) {
-            param.camera_resolution = sl::RESOLUTION::HD720;
-            cout << "[Sample] Using Camera in resolution HD720" << endl;
-        } else if (arg.find("VGA") != string::npos) {
-            param.camera_resolution = sl::RESOLUTION::VGA;
-            cout << "[Sample] Using Camera in resolution VGA" << endl;
-        }
-    } else {
-        // Default
-    }
+void parseArgs(int argc, char** argv, sl::InitParameters& param) {
+	if(argc > 1 && string(argv[1]).find(".svo") != string::npos) {
+		// SVO input mode
+		param.input.setFromSVOFile(argv[1]);
+		cout << "[Sample] Using SVO File input: " << argv[1] << endl;
+	} else if(argc > 1 && string(argv[1]).find(".svo") == string::npos) {
+		string arg = string(argv[1]);
+		unsigned int a, b, c, d, port;
+		if(sscanf(arg.c_str(), "%u.%u.%u.%u:%d", &a, &b, &c, &d, &port) == 5) {
+			// Stream input mode - IP + port
+			string ip_adress = to_string(a) + "." + to_string(b) + "." + to_string(c) + "." + to_string(d);
+			param.input.setFromStream(sl::String(ip_adress.c_str()), port);
+			cout << "[Sample] Using Stream input, IP : " << ip_adress << ", port : " << port << endl;
+		} else if(sscanf(arg.c_str(), "%u.%u.%u.%u", &a, &b, &c, &d) == 4) {
+			// Stream input mode - IP only
+			param.input.setFromStream(sl::String(argv[1]));
+			cout << "[Sample] Using Stream input, IP : " << argv[1] << endl;
+		} else if(arg.find("HD2K") != string::npos) {
+			param.camera_resolution = sl::RESOLUTION::HD2K;
+			cout << "[Sample] Using Camera in resolution HD2K" << endl;
+		} else if(arg.find("HD1080") != string::npos) {
+			param.camera_resolution = sl::RESOLUTION::HD1080;
+			cout << "[Sample] Using Camera in resolution HD1080" << endl;
+		} else if(arg.find("HD720") != string::npos) {
+			param.camera_resolution = sl::RESOLUTION::HD720;
+			cout << "[Sample] Using Camera in resolution HD720" << endl;
+		} else if(arg.find("VGA") != string::npos) {
+			param.camera_resolution = sl::RESOLUTION::VGA;
+			cout << "[Sample] Using Camera in resolution VGA" << endl;
+		}
+	} else {
+		// Default
+	}
 }
-

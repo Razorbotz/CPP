@@ -3,8 +3,8 @@
 #include <ifaddrs.h>
 #include <iostream>
 #include <netinet/in.h>
-#include <stdio.h>
-#include <stdlib.h>
+#include <cstdio>
+#include <cstdlib>
 #include <string>
 #include <sys/socket.h>
 #include <sys/types.h>

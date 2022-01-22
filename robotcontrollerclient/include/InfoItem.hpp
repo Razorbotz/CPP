@@ -15,9 +15,7 @@ class InfoItem : public Gtk::Box {
   public:
 	InfoItem(std::string name);
 
-	void setName(std::string name);
-
-	template <typename T>
+    template <typename T>
 	void setValue(T value) {
 		valueLabel->set_text(std::to_string(value));
 	}
@@ -25,9 +23,6 @@ class InfoItem : public Gtk::Box {
 	std::string getName() const;
 
 	std::string getValue() const;
-	int getValueAsInt() const;
-	float getValueAsFloat() const;
-	bool getValueAsBool() const;
 };
 
 #endif // !INFOITEM_HPP

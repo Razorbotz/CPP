@@ -85,7 +85,6 @@ InfoFrame* victor1InfoFrame;
 InfoFrame* victor2InfoFrame;
 InfoFrame* victor3InfoFrame;
 
-bool guiReady = false;
 Gtk::Window* window;
 int sock = 0;
 bool connected = false;
@@ -248,10 +247,6 @@ void silentRun() {
 
 		silentRunButton->set_label("Silent Running");
 	}
-}
-
-void rowSelected(Gtk::ListBoxRow* listBoxRow) {
-	std::cout << "rowSelected" << std::endl;
 }
 
 void rowActivated(Gtk::ListBoxRow* listBoxRow) {

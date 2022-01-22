@@ -13,8 +13,7 @@
 
 class InfoFrame : public Gtk::Frame {
   private:
-	std::unique_ptr<Gtk::Frame> frame;
-	std::unique_ptr<Gtk::Box> contentsBox;
+  std::unique_ptr<Gtk::Box> contentsBox;
 
 	std::vector<std::shared_ptr<InfoItem>> itemList;
 

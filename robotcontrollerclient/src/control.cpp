@@ -1,10 +1,10 @@
 #include <arpa/inet.h>
+#include <cstdio>
+#include <cstdlib>
 #include <fcntl.h>
 #include <ifaddrs.h>
 #include <iostream>
 #include <netinet/in.h>
-#include <cstdio>
-#include <cstdlib>
 #include <string>
 #include <sys/socket.h>
 #include <sys/types.h>
@@ -115,9 +115,9 @@ void setConnectedState() {
 
 void connectToServer() {
 	if(connected) return;
-	struct sockaddr_in address{};
+	struct sockaddr_in address {};
 	size_t bytesRead;
-	struct sockaddr_in serv_addr{};
+	struct sockaddr_in serv_addr {};
 	std::string hello = "Hello Robot";
 
 	memset(&serv_addr, 0, sizeof(serv_addr));
@@ -609,19 +609,19 @@ struct RemoteRobot {
 std::vector<RemoteRobot> robotList;
 
 bool contains(std::vector<std::string>& list, std::string& value) {
-	for(const std::string& storedValue : list)
-		if(storedValue == value) return true;
-	return false;
+	return std::any_of(list.begin(), list.end(), [value](const std::string& storedValue) {
+		return storedValue == value;
+	});
 }
 
 bool contains(std::vector<RemoteRobot>& list, std::string& robotTag) {
-	for(const RemoteRobot& storedValue : list)
-		if(storedValue.tag == robotTag) return true;
-	return false;
+	return std::any_of(list.begin(), list.end(), [robotTag](const RemoteRobot& storedValue) {
+		return robotTag == storedValue.tag;
+	});
 }
 
 void update(std::vector<RemoteRobot>& list, std::string& robotTag) {
-	for(auto & index : list) {
+	for(auto& index : list) {
 		time_t now;
 		time(&now);
 		index.lastSeenTime = now;
@@ -660,7 +660,7 @@ void broadcastListen() {
 
 	/* Bind to the proper port number with the IP address */
 	/* specified as INADDR_ANY. */
-	struct sockaddr_in localSock{};
+	struct sockaddr_in localSock {};
 	localSock.sin_family = AF_INET;
 	localSock.sin_port = htons(4321);
 	localSock.sin_addr.s_addr = INADDR_ANY;
@@ -678,7 +678,7 @@ void broadcastListen() {
 	std::vector<std::string> addressList = getAddressList();
 	for(const std::string& addressString : addressList) {
 		//        std::cout << "got " << addressString << std::endl;
-		struct ip_mreq group{};
+		struct ip_mreq group {};
 		group.imr_multiaddr.s_addr = inet_addr("226.1.1.1");
 		group.imr_interface.s_addr = inet_addr(addressString.c_str());
 		if(setsockopt(sd, IPPROTO_IP, IP_ADD_MEMBERSHIP, (char*)&group, sizeof(group)) < 0) {
@@ -835,7 +835,7 @@ int main(int argc, char** argv) {
 			//std::cout << "Got Message" << std::endl;
 			uint8_t command = message[0];
 			//std::cout << "command " << (int)command << std::endl;
-                        // TODO: Refactor to reduce code duplication
+			// TODO: Refactor to reduce code duplication
 			if(command == 1) {
 				auto voltage = parseType<float>((uint8_t*)&message[1]);
 				auto current0 = parseType<float>((uint8_t*)&message[5]);

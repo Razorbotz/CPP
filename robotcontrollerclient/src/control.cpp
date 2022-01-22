@@ -23,7 +23,7 @@
 constexpr unsigned int PORT = 31337;
 
 // Takes a BE type as a byte array and returns that type. Will truncate if array is longer than uint32_t (4 bytes)
-// This code may produce undefined behavior on specific machines/compilers since it is not standards compliant and uses bitwise/casting trickery (endianess and type size)
+// This code may produce undefined behavior on specific machines/compilers since it is not standards compliant and uses bitwise/casting trickery (endianness and type size)
 // TODO: Make this standards compliant and platform independent
 template <typename T>
 T parseType(const uint8_t* array) {
@@ -37,7 +37,7 @@ T parseType(const uint8_t* array) {
 }
 
 // Takes a data type and fills byte array with its data in BE form
-// This code may produce undefined behavior on specific machines/compilers since it is not standards compliant and uses bitwise/casting trickery (endianess and int size)
+// This code may produce undefined behavior on specific machines/compilers since it is not standards compliant and uses bitwise/casting trickery (endianness and int size)
 // TODO: Make this standards compliant and platform independent; Make this have an array bounds check
 template <typename T>
 void insert(T value, uint8_t* array) {

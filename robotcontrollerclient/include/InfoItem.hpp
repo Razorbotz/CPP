@@ -1,14 +1,14 @@
 #include <iostream>
 
-#include <gtkmm.h>
 #include <gdkmm.h>
+#include <gtkmm.h>
 
-class InfoItem:public Gtk::Box{
-	private:
+class InfoItem : public Gtk::Box {
+  private:
 	Gtk::Label* nameLabel;
 	Gtk::Label* valueLabel;
 
-	public:
+  public:
 	InfoItem(std::string name);
 
 	void setName(std::string name);
@@ -21,5 +21,4 @@ class InfoItem:public Gtk::Box{
 	int getValueAsInt();
 	float getValueAsFloat();
 	bool getValueAsBool();
-
 };

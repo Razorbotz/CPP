@@ -10,6 +10,12 @@ InfoFrame::InfoFrame(std::string frameName) : Gtk::Frame(frameName) {
 	this->add(*contentsBox);
 }
 
+InfoFrame::~InfoFrame() {
+	this->itemList.clear();
+	delete frame;
+	delete contentsBox;
+}
+
 void InfoFrame::addItem(std::string itemName) {
 	std::shared_ptr<InfoItem> infoItem = std::make_shared<InfoItem>(itemName);
 	this->itemList.push_back(infoItem);

@@ -10,6 +10,7 @@ class InfoItem : public Gtk::Box {
 
   public:
 	InfoItem(std::string name);
+	~InfoItem();
 
 	void setName(std::string name);
 	std::string getName();

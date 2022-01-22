@@ -10,6 +10,11 @@ InfoItem::InfoItem(std::string name) : Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 2) 
 	this->pack_end(*valueLabel, false, true, 10);
 }
 
+InfoItem::~InfoItem() {
+	delete nameLabel;
+	delete valueLabel;
+}
+
 void InfoItem::setName(std::string name) {
 	nameLabel->set_text(name);
 }

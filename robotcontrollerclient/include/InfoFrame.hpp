@@ -17,6 +17,7 @@ class InfoFrame : public Gtk::Frame {
 
   public:
 	InfoFrame(std::string frameName);
+	~InfoFrame();
 	void addItem(std::string itemName);
 
 	template <typename T>

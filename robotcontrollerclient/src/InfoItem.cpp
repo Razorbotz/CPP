@@ -19,20 +19,20 @@ void InfoItem::setName(std::string name) {
 	nameLabel->set_text(name);
 }
 
-std::string InfoItem::getName() {
+std::string InfoItem::getName() const {
 	return nameLabel->get_text();
 }
 
-std::string InfoItem::getValue() {
+std::string InfoItem::getValue() const {
 	return valueLabel->get_text();
 }
-int InfoItem::getValueAsInt() {
+int InfoItem::getValueAsInt() const {
 	return std::stoi(getValue());
 }
-float InfoItem::getValueAsFloat() {
+float InfoItem::getValueAsFloat() const {
 	return std::stof(getValue());
 }
-bool InfoItem::getValueAsBool() {
+bool InfoItem::getValueAsBool() const {
 	bool valueBool;
 	std::string valueString = getValue();
 	if(valueString == "true") {

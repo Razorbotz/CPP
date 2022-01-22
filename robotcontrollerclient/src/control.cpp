@@ -63,6 +63,7 @@ bool quit(GdkEventAny* event) {
 	return true;
 }
 
+// GUI Element Variables
 Gtk::Label* voltageLabel;
 Gtk::Label* current0Label;
 Gtk::Label* current1Label;
@@ -100,6 +101,7 @@ Gtk::Window* window;
 int sock = 0;
 bool connected = false;
 
+// Helper function to set GUI info when robot disconnects/is not connected
 void setDisconnectedState() {
 	connectButton->set_label("Connect");
 	connectionStatusLabel->set_text("Not Connected");
@@ -111,6 +113,7 @@ void setDisconnectedState() {
 	connected = false;
 }
 
+// Helper function to set GUI info when robot connects/is connected
 void setConnectedState() {
 	connectButton->set_label("Disconnect");
 	connectionStatusLabel->set_text("Connected");
@@ -197,25 +200,18 @@ void connectToServer() {
 
 void disconnectFromServer() {
 	Gtk::MessageDialog dialog(*window, "Disconnect now?", false, Gtk::MESSAGE_QUESTION, Gtk::BUTTONS_OK_CANCEL);
-	//dialog.set_secondary_text("Do you want to shutdown now?");
 	int result = dialog.run();
 
 	switch(result) {
 		case(Gtk::RESPONSE_OK):
+			// Shutdown failed
 			if(shutdown(sock, SHUT_RDWR) == -1) {
 				Gtk::MessageDialog dialog(*window, "Failed Shutdown", false, Gtk::MESSAGE_ERROR, Gtk::BUTTONS_OK);
 				int result = dialog.run();
 			}
+			// Shutdown successful
 			if(close(sock) == 0) {
 				setDisconnectedState();
-				//                connectionStatusLabel->set_text("Not Connected");
-				//                connectButton->set_label("Connect");
-				//                Gdk::RGBA red;
-				//                red.set_rgba(1.0, 0, 0, 1.0);
-				//                connectionStatusLabel->override_background_color(red);
-				//                ipAddressEntry->set_can_focus(true);
-				//                ipAddressEntry->set_editable(true);
-				//                connected=false;
 			} else {
 				Gtk::MessageDialog dialog(*window, "Failed Close", false, Gtk::MESSAGE_ERROR, Gtk::BUTTONS_OK);
 				int result = dialog.run();
@@ -345,6 +341,8 @@ bool on_key_press_event(GdkEventKey* key_event) {
 	return false;
 }
 
+// GUI Broilerplate
+// TODO: Refactor to reduce code reuse
 void setupGUI(Glib::RefPtr<Gtk::Application> application) {
 	window = new Gtk::Window();
 
@@ -769,11 +767,14 @@ void adjustRobotList() {
 }
 
 int main(int argc, char** argv) {
+	// Initialize GTK
 	Glib::RefPtr<Gtk::Application> application = Gtk::Application::create(argc, argv, "edu.uark.razorbotz");
 	setupGUI(application);
 
+	// Create network listener
 	std::thread broadcastListenThread(broadcastListen);
 
+	// Initialize SDL
 	if(SDL_Init(SDL_INIT_GAMECONTROLLER) != 0) {
 		SDL_Log("Unable to initialize SDL: %s", SDL_GetError());
 		return 1;
@@ -782,13 +783,12 @@ int main(int argc, char** argv) {
 	//    int sensorCount=SDL_NumSensors();
 	//    std::cout << "number of sensors " << sensorCount << std::endl;
 
+	// Initialize joystick(s)
 	int joystickCount = SDL_NumJoysticks();
 	std::cout << "number of joysticks " << joystickCount << std::endl;
 	SDL_Joystick* joystickList[joystickCount];
 
-	//SDL_Joystick* joy;
 	if(joystickCount > 0) {
-		//        joy=SDL_JoystickOpen(0);
 		for(int joystickIndex = 0; joystickIndex < joystickCount; joystickIndex++) {
 			joystickList[joystickIndex] = SDL_JoystickOpen(joystickIndex);
 
@@ -838,6 +838,7 @@ int main(int argc, char** argv) {
 
 			continue;
 		}
+
 		while(messageBytesList.size() > 0 && messageBytesList.front() <= messageBytesList.size()) {
 			int messageSize = messageBytesList.front();
 			messageBytesList.pop_front();
@@ -976,6 +977,7 @@ int main(int argc, char** argv) {
 			}
 		}
 
+		// Main event loop
 		while(SDL_PollEvent(&event)) {
 			//std::cout << "here" << std::endl;
 			const Uint8* state = SDL_GetKeyboardState(NULL);

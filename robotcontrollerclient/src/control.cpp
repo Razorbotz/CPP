@@ -114,7 +114,7 @@ void setConnectedState() {
 }
 
 void connectToServer() {
-	if(connected == true) return;
+	if(connected) return;
 	struct sockaddr_in address;
 	int bytesRead;
 	struct sockaddr_in serv_addr;
@@ -723,7 +723,7 @@ void adjustRobotList() {
 				break;
 			}
 		}
-		if(match == false) {
+		if(!match) {
 			Gtk::Label* label = Gtk::manage(new Gtk::Label(robotID));
 			label->set_visible(true);
 			addressListBox->append(*label);

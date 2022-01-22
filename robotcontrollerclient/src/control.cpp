@@ -118,7 +118,7 @@ void connectToServer() {
 	struct sockaddr_in address;
 	int bytesRead;
 	struct sockaddr_in serv_addr;
-	std::string hello("Hello Robot");
+	std::string hello = "Hello Robot";
 
 	memset(&serv_addr, '0', sizeof(serv_addr));
 
@@ -251,11 +251,11 @@ void silentRun() {
 
 void rowActivated(Gtk::ListBoxRow* listBoxRow) {
 	//std::cout << "rowActivated" << std::endl;
-	auto* label = static_cast<Gtk::Label*>(listBoxRow->get_child());
+	auto* label = dynamic_cast<Gtk::Label*>(listBoxRow->get_child());
 	//std::cout << label->get_text() << std::endl;
 	Glib::ustring connectionString(label->get_text());
 	//std::cout << connectionString << std::endl;
-	int index = connectionString.rfind('@');
+	size_t index = connectionString.rfind('@');
 	if(index == -1) return;
 	++index;
 	Glib::ustring addressString = connectionString.substr(index, connectionString.length() - index);
@@ -327,7 +327,7 @@ bool on_key_press_event(GdkEventKey* key_event) {
 
 // GUI Broilerplate
 // TODO: Refactor to reduce code reuse
-void setupGUI(Glib::RefPtr<Gtk::Application> application) {
+void setupGUI(const Glib::RefPtr<Gtk::Application>& application) {
 	window = new Gtk::Window();
 
 	window->add_events(Gdk::KEY_PRESS_MASK);
@@ -609,22 +609,22 @@ struct RemoteRobot {
 std::vector<RemoteRobot> robotList;
 
 bool contains(std::vector<std::string>& list, std::string& value) {
-	for(std::string storedValue : list)
+	for(const std::string& storedValue : list)
 		if(storedValue == value) return true;
 	return false;
 }
 
 bool contains(std::vector<RemoteRobot>& list, std::string& robotTag) {
-	for(RemoteRobot storedValue : list)
+	for(const RemoteRobot& storedValue : list)
 		if(storedValue.tag == robotTag) return true;
 	return false;
 }
 
 void update(std::vector<RemoteRobot>& list, std::string& robotTag) {
-	for(int index = 0; index < list.size(); ++index) {
+	for(auto & index : list) {
 		time_t now;
 		time(&now);
-		list.at(index).lastSeenTime = now;
+		index.lastSeenTime = now;
 	}
 }
 
@@ -633,7 +633,7 @@ std::vector<std::string> getAddressList() {
 	ifaddrs* interfaceAddresses = nullptr;
 	for(int failed = getifaddrs(&interfaceAddresses); !failed && interfaceAddresses != nullptr; interfaceAddresses = interfaceAddresses->ifa_next) {
 		if(interfaceAddresses->ifa_addr != nullptr && interfaceAddresses->ifa_addr->sa_family == AF_INET) {
-			sockaddr_in* socketAddress = reinterpret_cast<sockaddr_in*>(interfaceAddresses->ifa_addr);
+			auto* socketAddress = reinterpret_cast<sockaddr_in*>(interfaceAddresses->ifa_addr);
 			std::string addressString(inet_ntoa(socketAddress->sin_addr));
 			if(addressString == "0.0.0.0") continue;
 			if(addressString == "127.0.0.1") continue;
@@ -676,7 +676,7 @@ void broadcastListen() {
 	/* datagrams are to be received. */
 
 	std::vector<std::string> addressList = getAddressList();
-	for(std::string addressString : addressList) {
+	for(const std::string& addressString : addressList) {
 		//        std::cout << "got " << addressString << std::endl;
 		struct ip_mreq group;
 		group.imr_multiaddr.s_addr = inet_addr("226.1.1.1");
@@ -711,12 +711,12 @@ void adjustRobotList() {
 		}
 	}
 	//add new elements
-	for(RemoteRobot remoteRobot : robotList) {
+	for(const RemoteRobot& remoteRobot : robotList) {
 		std::string robotID = remoteRobot.tag;
 		bool match = false;
 		int index = 0;
 		for(Gtk::ListBoxRow* listBoxRow = addressListBox->get_row_at_index(index); listBoxRow; listBoxRow = addressListBox->get_row_at_index(++index)) {
-			auto* label = static_cast<Gtk::Label*>(listBoxRow->get_child());
+			auto* label = dynamic_cast<Gtk::Label*>(listBoxRow->get_child());
 			Glib::ustring addressString = label->get_text();
 			if(robotID == addressString.c_str()) {
 				match = true;
@@ -733,10 +733,10 @@ void adjustRobotList() {
 	//remove old element
 	int index = 0;
 	for(Gtk::ListBoxRow* listBoxRow = addressListBox->get_row_at_index(index); listBoxRow; listBoxRow = addressListBox->get_row_at_index(++index)) {
-		auto* label = static_cast<Gtk::Label*>(listBoxRow->get_child());
+		auto* label = dynamic_cast<Gtk::Label*>(listBoxRow->get_child());
 		Glib::ustring addressString = label->get_text();
 		bool match = false;
-		for(RemoteRobot remoteRobot : robotList) {
+		for(const RemoteRobot& remoteRobot : robotList) {
 			std::string robotID = remoteRobot.tag;
 			if(robotID == addressString.c_str()) {
 				match = true;
@@ -790,7 +790,7 @@ int main(int argc, char** argv) {
 
 	SDL_Event event;
 	char buffer[1024] = {0};
-	int bytesRead = 0;
+	size_t bytesRead = 0;
 
 	std::list<uint8_t> messageBytesList;
 	uint8_t message[256];
@@ -823,7 +823,7 @@ int main(int argc, char** argv) {
 			continue;
 		}
 
-		while(messageBytesList.size() > 0 && messageBytesList.front() <= messageBytesList.size()) {
+		while(!messageBytesList.empty() && messageBytesList.front() <= messageBytesList.size()) {
 			int messageSize = messageBytesList.front();
 			messageBytesList.pop_front();
 			messageSize--;
@@ -965,7 +965,7 @@ int main(int argc, char** argv) {
 		// Main event loop
 		while(SDL_PollEvent(&event)) {
 			//std::cout << "here" << std::endl;
-			const Uint8* state = SDL_GetKeyboardState(NULL);
+			const Uint8* state = SDL_GetKeyboardState(nullptr);
 
 			//const Uint8 *length = SDL_GetKeyboardState(state);
 			//std::cout << "length " << *length << std::endl;
@@ -1056,7 +1056,7 @@ int main(int argc, char** argv) {
 					//                std::cout << "value " << event.jaxis.value << std::endl;
 
 					uint8_t command = 1;
-					float value = (float)event.jaxis.value / -32768.0;
+					float value = (float)event.jaxis.value / -32768.f;
 
 					int length = 8;
 					uint8_t message[length];

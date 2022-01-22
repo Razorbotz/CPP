@@ -11,8 +11,8 @@ InfoFrame::InfoFrame(std::string frameName) : Gtk::Frame(frameName) {
 }
 
 void InfoFrame::addItem(std::string itemName) {
-	std::shared_ptr<InfoItem> infoItem = std::make_shared<InfoItem>(itemName);
-	this->itemList.push_back(infoItem);
-	this->contentsBox->add(*(infoItem));
-	this->show_all();
+	const auto infoItem = std::make_shared<InfoItem>(itemName);
+	itemList.push_back(infoItem);
+	contentsBox->add(*(infoItem));
+	show_all();
 }

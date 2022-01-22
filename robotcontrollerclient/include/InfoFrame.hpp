@@ -18,12 +18,12 @@ class InfoFrame : public Gtk::Frame {
 	std::vector<std::shared_ptr<InfoItem>> itemList;
 
   public:
-	InfoFrame(std::string frameName);
-	void addItem(std::string itemName);
+	explicit InfoFrame(const std::string& frameName);
+	void addItem(const std::string& itemName);
 
 	template <typename T>
-	void setItem(std::string itemName, T itemValue) {
-		for(std::shared_ptr<InfoItem> item : this->itemList) {
+	void setItem(const std::string& itemName, T itemValue) {
+		for(const std::shared_ptr<InfoItem>& item : this->itemList) {
 			if(item->getName() == itemName) {
 				item->setValue(itemValue);
 				break;

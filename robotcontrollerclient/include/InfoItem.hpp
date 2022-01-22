@@ -13,7 +13,7 @@ class InfoItem : public Gtk::Box {
 	std::unique_ptr<Gtk::Label> valueLabel;
 
   public:
-	InfoItem(std::string name);
+	explicit InfoItem(const std::string& name);
 
     template <typename T>
 	void setValue(T value) {

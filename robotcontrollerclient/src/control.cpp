@@ -26,7 +26,7 @@ constexpr unsigned int PORT = 31337;
 // This code may produce undefined behavior on specific machines/compilers since it is not standards compliant and uses bitwise/casting trickery (endianess and type size)
 // TODO: Make this standards compliant and platform independent
 template <typename T>
-T parseType(uint8_t* array) {
+T parseType(const uint8_t* array) {
 	constexpr size_t size = sizeof(uint32_t);
 
 	uint32_t result = 0;
@@ -251,7 +251,7 @@ void silentRun() {
 
 void rowActivated(Gtk::ListBoxRow* listBoxRow) {
 	//std::cout << "rowActivated" << std::endl;
-	Gtk::Label* label = static_cast<Gtk::Label*>(listBoxRow->get_child());
+	auto* label = static_cast<Gtk::Label*>(listBoxRow->get_child());
 	//std::cout << label->get_text() << std::endl;
 	Glib::ustring connectionString(label->get_text());
 	//std::cout << connectionString << std::endl;
@@ -716,7 +716,7 @@ void adjustRobotList() {
 		bool match = false;
 		int index = 0;
 		for(Gtk::ListBoxRow* listBoxRow = addressListBox->get_row_at_index(index); listBoxRow; listBoxRow = addressListBox->get_row_at_index(++index)) {
-			Gtk::Label* label = static_cast<Gtk::Label*>(listBoxRow->get_child());
+			auto* label = static_cast<Gtk::Label*>(listBoxRow->get_child());
 			Glib::ustring addressString = label->get_text();
 			if(robotID == addressString.c_str()) {
 				match = true;
@@ -733,7 +733,7 @@ void adjustRobotList() {
 	//remove old element
 	int index = 0;
 	for(Gtk::ListBoxRow* listBoxRow = addressListBox->get_row_at_index(index); listBoxRow; listBoxRow = addressListBox->get_row_at_index(++index)) {
-		Gtk::Label* label = static_cast<Gtk::Label*>(listBoxRow->get_child());
+		auto* label = static_cast<Gtk::Label*>(listBoxRow->get_child());
 		Glib::ustring addressString = label->get_text();
 		bool match = false;
 		for(RemoteRobot remoteRobot : robotList) {
@@ -835,24 +835,25 @@ int main(int argc, char** argv) {
 			//std::cout << "Got Message" << std::endl;
 			uint8_t command = message[0];
 			//std::cout << "command " << (int)command << std::endl;
+                        // TODO: Refactor to reduce code duplication
 			if(command == 1) {
-				float voltage = parseType<float>((uint8_t*)&message[1]);
-				float current0 = parseType<float>((uint8_t*)&message[5]);
-				float current1 = parseType<float>((uint8_t*)&message[9]);
-				float current2 = parseType<float>((uint8_t*)&message[13]);
-				float current3 = parseType<float>((uint8_t*)&message[17]);
-				float current4 = parseType<float>((uint8_t*)&message[21]);
-				float current5 = parseType<float>((uint8_t*)&message[25]);
-				float current6 = parseType<float>((uint8_t*)&message[29]);
-				float current7 = parseType<float>((uint8_t*)&message[33]);
-				float current8 = parseType<float>((uint8_t*)&message[37]);
-				float current9 = parseType<float>((uint8_t*)&message[41]);
-				float current10 = parseType<float>((uint8_t*)&message[45]);
-				float current11 = parseType<float>((uint8_t*)&message[49]);
-				float current12 = parseType<float>((uint8_t*)&message[53]);
-				float current13 = parseType<float>((uint8_t*)&message[57]);
-				float current14 = parseType<float>((uint8_t*)&message[61]);
-				float current15 = parseType<float>((uint8_t*)&message[65]);
+				auto voltage = parseType<float>((uint8_t*)&message[1]);
+				auto current0 = parseType<float>((uint8_t*)&message[5]);
+				auto current1 = parseType<float>((uint8_t*)&message[9]);
+				auto current2 = parseType<float>((uint8_t*)&message[13]);
+				auto current3 = parseType<float>((uint8_t*)&message[17]);
+				auto current4 = parseType<float>((uint8_t*)&message[21]);
+				auto current5 = parseType<float>((uint8_t*)&message[25]);
+				auto current6 = parseType<float>((uint8_t*)&message[29]);
+				auto current7 = parseType<float>((uint8_t*)&message[33]);
+				auto current8 = parseType<float>((uint8_t*)&message[37]);
+				auto current9 = parseType<float>((uint8_t*)&message[41]);
+				auto current10 = parseType<float>((uint8_t*)&message[45]);
+				auto current11 = parseType<float>((uint8_t*)&message[49]);
+				auto current12 = parseType<float>((uint8_t*)&message[53]);
+				auto current13 = parseType<float>((uint8_t*)&message[57]);
+				auto current14 = parseType<float>((uint8_t*)&message[61]);
+				auto current15 = parseType<float>((uint8_t*)&message[65]);
 				voltageLabel->set_label(std::to_string(voltage).c_str());
 				current0Label->set_label(std::to_string(current0).c_str());
 				current1Label->set_label(std::to_string(current1).c_str());
@@ -872,17 +873,17 @@ int main(int argc, char** argv) {
 				current15Label->set_label(std::to_string(current15).c_str());
 			}
 			if(command == 2) {
-				float deviceID = parseType<int>((uint8_t*)&message[1]);
-				float busVoltage = parseType<float>((uint8_t*)&message[5]);
-				float outputCurrent = parseType<float>((uint8_t*)&message[9]);
-				float outputVoltage = parseType<float>((uint8_t*)&message[13]);
-				float outputPercent = parseType<float>((uint8_t*)&message[17]);
-				float temperature = parseType<float>((uint8_t*)&message[21]);
-				float sensorPosition = parseType<int>((uint8_t*)&message[25]);
-				float sensorVelocity = parseType<int>((uint8_t*)&message[29]);
-				float closedLoopError = parseType<int>((uint8_t*)&message[33]);
-				float integralAccumulator = parseType<int>((uint8_t*)&message[37]);
-				float errorDerivative = parseType<int>((uint8_t*)&message[41]);
+				auto deviceID = parseType<int>((uint8_t*)&message[1]);
+				auto busVoltage = parseType<float>((uint8_t*)&message[5]);
+				auto outputCurrent = parseType<float>((uint8_t*)&message[9]);
+				auto outputVoltage = parseType<float>((uint8_t*)&message[13]);
+				auto outputPercent = parseType<float>((uint8_t*)&message[17]);
+				auto temperature = parseType<float>((uint8_t*)&message[21]);
+				auto sensorPosition = parseType<int>((uint8_t*)&message[25]);
+				auto sensorVelocity = parseType<int>((uint8_t*)&message[29]);
+				auto closedLoopError = parseType<int>((uint8_t*)&message[33]);
+				auto integralAccumulator = parseType<int>((uint8_t*)&message[37]);
+				auto errorDerivative = parseType<int>((uint8_t*)&message[41]);
 				talon1InfoFrame->setItem("Device ID", deviceID);
 				talon1InfoFrame->setItem("Bus Voltage", busVoltage);
 				talon1InfoFrame->setItem("Output Current", outputCurrent);
@@ -896,17 +897,17 @@ int main(int argc, char** argv) {
 				talon1InfoFrame->setItem("Error Drivative", errorDerivative);
 			}
 			if(command == 3) {
-				float deviceID = parseType<int>((uint8_t*)&message[1]);
-				float busVoltage = parseType<float>((uint8_t*)&message[5]);
-				float outputCurrent = parseType<float>((uint8_t*)&message[9]);
-				float outputVoltage = parseType<float>((uint8_t*)&message[13]);
-				float outputPercent = parseType<float>((uint8_t*)&message[17]);
-				float temperature = parseType<float>((uint8_t*)&message[21]);
-				float sensorPosition = parseType<int>((uint8_t*)&message[25]);
-				float sensorVelocity = parseType<int>((uint8_t*)&message[29]);
-				float closedLoopError = parseType<int>((uint8_t*)&message[33]);
-				float integralAccumulator = parseType<int>((uint8_t*)&message[37]);
-				float errorDerivative = parseType<int>((uint8_t*)&message[41]);
+				auto deviceID = parseType<int>((uint8_t*)&message[1]);
+				auto busVoltage = parseType<float>((uint8_t*)&message[5]);
+				auto outputCurrent = parseType<float>((uint8_t*)&message[9]);
+				auto outputVoltage = parseType<float>((uint8_t*)&message[13]);
+				auto outputPercent = parseType<float>((uint8_t*)&message[17]);
+				auto temperature = parseType<float>((uint8_t*)&message[21]);
+				auto sensorPosition = parseType<int>((uint8_t*)&message[25]);
+				auto sensorVelocity = parseType<int>((uint8_t*)&message[29]);
+				auto closedLoopError = parseType<int>((uint8_t*)&message[33]);
+				auto integralAccumulator = parseType<int>((uint8_t*)&message[37]);
+				auto errorDerivative = parseType<int>((uint8_t*)&message[41]);
 				talon2InfoFrame->setItem("Device ID", deviceID);
 				talon2InfoFrame->setItem("Bus Voltage", busVoltage);
 				talon2InfoFrame->setItem("Output Current", outputCurrent);
@@ -920,30 +921,30 @@ int main(int argc, char** argv) {
 				talon2InfoFrame->setItem("Error Drivative", errorDerivative);
 			}
 			if(command == 4) {
-				float deviceID = parseType<int>((uint8_t*)&message[1]);
-				float busVoltage = parseType<float>((uint8_t*)&message[5]);
-				float outputVoltage = parseType<float>((uint8_t*)&message[9]);
-				float outputPercent = parseType<float>((uint8_t*)&message[13]);
+				auto deviceID = parseType<int>((uint8_t*)&message[1]);
+				auto busVoltage = parseType<float>((uint8_t*)&message[5]);
+				auto outputVoltage = parseType<float>((uint8_t*)&message[9]);
+				auto outputPercent = parseType<float>((uint8_t*)&message[13]);
 				victor1InfoFrame->setItem("Device ID", deviceID);
 				victor1InfoFrame->setItem("Bus Voltage", busVoltage);
 				victor1InfoFrame->setItem("Output Voltage", outputVoltage);
 				victor1InfoFrame->setItem("Output Percent", outputPercent);
 			}
 			if(command == 5) {
-				float deviceID = parseType<int>((uint8_t*)&message[1]);
-				float busVoltage = parseType<float>((uint8_t*)&message[5]);
-				float outputVoltage = parseType<float>((uint8_t*)&message[9]);
-				float outputPercent = parseType<float>((uint8_t*)&message[13]);
+				auto deviceID = parseType<int>((uint8_t*)&message[1]);
+				auto busVoltage = parseType<float>((uint8_t*)&message[5]);
+				auto outputVoltage = parseType<float>((uint8_t*)&message[9]);
+				auto outputPercent = parseType<float>((uint8_t*)&message[13]);
 				victor2InfoFrame->setItem("Device ID", deviceID);
 				victor2InfoFrame->setItem("Bus Voltage", busVoltage);
 				victor2InfoFrame->setItem("Output Voltage", outputVoltage);
 				victor2InfoFrame->setItem("Output Percent", outputPercent);
 			}
 			if(command == 6) {
-				float deviceID = parseType<int>((uint8_t*)&message[1]);
-				float busVoltage = parseType<float>((uint8_t*)&message[5]);
-				float outputVoltage = parseType<float>((uint8_t*)&message[9]);
-				float outputPercent = parseType<float>((uint8_t*)&message[13]);
+				auto deviceID = parseType<int>((uint8_t*)&message[1]);
+				auto busVoltage = parseType<float>((uint8_t*)&message[5]);
+				auto outputVoltage = parseType<float>((uint8_t*)&message[9]);
+				auto outputPercent = parseType<float>((uint8_t*)&message[13]);
 				victor3InfoFrame->setItem("Device ID", deviceID);
 				victor3InfoFrame->setItem("Bus Voltage", busVoltage);
 				victor3InfoFrame->setItem("Output Voltage", outputVoltage);

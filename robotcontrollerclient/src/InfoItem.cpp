@@ -18,22 +18,6 @@ std::string InfoItem::getName() {
 	return nameLabel->get_text();
 }
 
-void InfoItem::setValue(std::string value) {
-	valueLabel->set_text(value);
-}
-
-void InfoItem::setValue(float value) {
-	std::string valueString = std::to_string(value);
-	setValue(valueString);
-}
-void InfoItem::setValue(int value) {
-	std::string valueString = std::to_string(value);
-	setValue(valueString);
-}
-void InfoItem::setValue(bool value) {
-	std::string valueString = std::to_string(value);
-	setValue(valueString);
-}
 std::string InfoItem::getValue() {
 	return valueLabel->get_text();
 }

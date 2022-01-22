@@ -13,10 +13,12 @@ class InfoItem : public Gtk::Box {
 
 	void setName(std::string name);
 	std::string getName();
-	void setValue(std::string value);
-	void setValue(float value);
-	void setValue(int value);
-	void setValue(bool value);
+
+	template <typename T>
+	void setValue(T value) {
+		valueLabel->set_text(std::to_string(value));
+	}
+
 	std::string getValue();
 	int getValueAsInt();
 	float getValueAsFloat();

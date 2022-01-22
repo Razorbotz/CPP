@@ -1,6 +1,5 @@
 #include <arpa/inet.h>
 #include <fcntl.h>
-#include <fstream>
 #include <ifaddrs.h>
 #include <iostream>
 #include <netinet/in.h>

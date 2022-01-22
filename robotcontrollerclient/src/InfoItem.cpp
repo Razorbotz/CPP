@@ -1,5 +1,4 @@
 #include "InfoItem.hpp"
-#include <cstdlib>
 #include <string>
 
 InfoItem::InfoItem(std::string name) : Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 2) {

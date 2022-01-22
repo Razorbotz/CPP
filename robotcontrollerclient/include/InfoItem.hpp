@@ -21,8 +21,6 @@ class InfoItem : public Gtk::Box {
 	}
 
 	std::string getName() const;
-
-	std::string getValue() const;
 };
 
 #endif // !INFOITEM_HPP

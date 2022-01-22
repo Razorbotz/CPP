@@ -12,7 +12,3 @@ InfoItem::InfoItem(std::string name) : Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 2) 
 std::string InfoItem::getName() const {
 	return nameLabel->get_text();
 }
-
-std::string InfoItem::getValue() const {
-	return valueLabel->get_text();
-}

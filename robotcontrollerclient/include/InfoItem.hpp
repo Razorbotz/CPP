@@ -1,3 +1,6 @@
+#ifndef INFOITEM_HPP
+#define INFOITEM_HPP
+
 #include <iostream>
 #include <memory>
 
@@ -26,3 +29,5 @@ class InfoItem : public Gtk::Box {
 	float getValueAsFloat() const;
 	bool getValueAsBool() const;
 };
+
+#endif // !INFOITEM_HPP

@@ -6,14 +6,8 @@
 #include "InfoFrame.hpp"
 
 InfoFrame::InfoFrame(std::string frameName) : Gtk::Frame(frameName) {
-	contentsBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
-	this->add(*contentsBox);
-}
-
-InfoFrame::~InfoFrame() {
-	this->itemList.clear();
-	delete frame;
-	delete contentsBox;
+	contentsBox = std::unique_ptr<Gtk::Box>(Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5)));
+	add(*contentsBox);
 }
 
 void InfoFrame::addItem(std::string itemName) {

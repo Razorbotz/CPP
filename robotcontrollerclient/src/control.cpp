@@ -20,7 +20,8 @@
 
 #include "InfoFrame.hpp"
 
-#define PORT 31337
+// Port for communicating with the robot
+constexpr unsigned int PORT = 31337;
 
 // Takes a BE type as a byte array and returns that type. Will truncate if array is longer than uint32_t (4 bytes)
 // This code may produce undefined behavior on specific machines/compilers since it is not standards compliant and uses bitwise/casting trickery (endianess and type size)

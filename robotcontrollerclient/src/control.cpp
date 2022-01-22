@@ -115,12 +115,12 @@ void setConnectedState() {
 
 void connectToServer() {
 	if(connected) return;
-	struct sockaddr_in address;
-	int bytesRead;
-	struct sockaddr_in serv_addr;
+	struct sockaddr_in address{};
+	size_t bytesRead;
+	struct sockaddr_in serv_addr{};
 	std::string hello = "Hello Robot";
 
-	memset(&serv_addr, '0', sizeof(serv_addr));
+	memset(&serv_addr, 0, sizeof(serv_addr));
 
 	serv_addr.sin_family = AF_INET;
 	serv_addr.sin_port = htons(PORT);
@@ -604,7 +604,7 @@ void setupGUI(const Glib::RefPtr<Gtk::Application>& application) {
 
 struct RemoteRobot {
 	std::string tag;
-	time_t lastSeenTime;
+	time_t lastSeenTime{};
 };
 std::vector<RemoteRobot> robotList;
 
@@ -660,7 +660,7 @@ void broadcastListen() {
 
 	/* Bind to the proper port number with the IP address */
 	/* specified as INADDR_ANY. */
-	struct sockaddr_in localSock;
+	struct sockaddr_in localSock{};
 	localSock.sin_family = AF_INET;
 	localSock.sin_port = htons(4321);
 	localSock.sin_addr.s_addr = INADDR_ANY;
@@ -678,7 +678,7 @@ void broadcastListen() {
 	std::vector<std::string> addressList = getAddressList();
 	for(const std::string& addressString : addressList) {
 		//        std::cout << "got " << addressString << std::endl;
-		struct ip_mreq group;
+		struct ip_mreq group{};
 		group.imr_multiaddr.s_addr = inet_addr("226.1.1.1");
 		group.imr_interface.s_addr = inet_addr(addressString.c_str());
 		if(setsockopt(sd, IPPROTO_IP, IP_ADD_MEMBERSHIP, (char*)&group, sizeof(group)) < 0) {

@@ -18,8 +18,14 @@ class InfoFrame : public Gtk::Frame {
   public:
 	InfoFrame(std::string frameName);
 	void addItem(std::string itemName);
-	void setItem(std::string itemName, std::string itemValue);
-	void setItem(std::string itemName, float itemValue);
-	void setItem(std::string itemName, int itemValue);
-	void setItem(std::string itemName, bool itemValue);
+
+	template <typename T>
+	void setItem(std::string itemName, T itemValue) {
+		for(std::shared_ptr<InfoItem> item : this->itemList) {
+			if(item->getName() == itemName) {
+				item->setValue(itemValue);
+				break;
+			}
+		}
+	}
 };

@@ -16,39 +16,3 @@ void InfoFrame::addItem(std::string itemName) {
 	this->contentsBox->add(*(infoItem));
 	this->show_all();
 }
-
-void InfoFrame::setItem(std::string itemName, std::string itemValue) {
-	for(std::shared_ptr<InfoItem> infoItem : itemList) {
-		if(infoItem->getName() == itemName) {
-			infoItem->setValue(itemValue);
-			break;
-		}
-	}
-}
-
-void InfoFrame::setItem(std::string itemName, float itemValue) {
-	for(std::shared_ptr<InfoItem> infoItem : itemList) {
-		if(infoItem->getName() == itemName) {
-			infoItem->setValue(itemValue);
-			break;
-		}
-	}
-}
-
-void InfoFrame::setItem(std::string itemName, int itemValue) {
-	for(std::shared_ptr<InfoItem> infoItem : itemList) {
-		if(infoItem->getName() == itemName) {
-			infoItem->setValue(itemValue);
-			break;
-		}
-	}
-}
-
-void InfoFrame::setItem(std::string itemName, bool itemValue) {
-	for(std::shared_ptr<InfoItem> infoItem : itemList) {
-		if(infoItem->getName() == itemName) {
-			infoItem->setValue(itemValue);
-			break;
-		}
-	}
-}

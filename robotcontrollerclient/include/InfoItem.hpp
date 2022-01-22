@@ -1,16 +1,16 @@
 #include <iostream>
+#include <memory>
 
 #include <gdkmm.h>
 #include <gtkmm.h>
 
 class InfoItem : public Gtk::Box {
   private:
-	Gtk::Label* nameLabel;
-	Gtk::Label* valueLabel;
+	std::unique_ptr<Gtk::Label> nameLabel;
+	std::unique_ptr<Gtk::Label> valueLabel;
 
   public:
 	InfoItem(std::string name);
-	~InfoItem();
 
 	void setName(std::string name);
 

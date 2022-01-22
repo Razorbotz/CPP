@@ -3,16 +3,11 @@
 #include <string>
 
 InfoItem::InfoItem(std::string name) : Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 2) {
-	nameLabel = Gtk::manage(new Gtk::Label(name));
-	valueLabel = Gtk::manage(new Gtk::Label("0"));
+	nameLabel = std::unique_ptr<Gtk::Label>(Gtk::manage(new Gtk::Label(name)));
+	valueLabel = std::unique_ptr<Gtk::Label>(Gtk::manage(new Gtk::Label("0")));
 
-	this->pack_start(*nameLabel, false, true, 10);
-	this->pack_end(*valueLabel, false, true, 10);
-}
-
-InfoItem::~InfoItem() {
-	delete nameLabel;
-	delete valueLabel;
+	pack_start(*nameLabel, false, true, 10);
+	pack_end(*valueLabel, false, true, 10);
 }
 
 void InfoItem::setName(std::string name) {

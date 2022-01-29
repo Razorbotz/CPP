@@ -17,6 +17,7 @@
 #include <glibmm/ustring.h>
 #include <gtkmm.h>
 
+#include "BoxFactory.hpp"
 #include "GuiBox.hpp"
 #include "InfoFrame.hpp"
 #include "WindowFactory.hpp"
@@ -330,8 +331,6 @@ bool on_key_press_event(GdkEventKey* key_event) {
 // GUI Boilerplate
 // TODO: Refactor to reduce code reuse
 void setupGui(const Glib::RefPtr<Gtk::Application>& application) {
-	auto topLevelBox = makeBox(Gtk::ORIENTATION_VERTICAL, 5);
-
 	auto controlsBox = makeBox(Gtk::ORIENTATION_HORIZONTAL, 5);
 
 	auto scrolledList = Gtk::manage(new Gtk::ScrolledWindow());
@@ -588,14 +587,14 @@ void setupGui(const Glib::RefPtr<Gtk::Application>& application) {
 	controlsBox->add(*scrolledList);
 	controlsBox->add(*controlsRightBox);
 
-	topLevelBox->add(*controlsBox);
-	topLevelBox->add(*sensorBox);
-
 	// Create the window
 	window = WindowFactory()
 				 .addEventWithCallback(Gdk::KEY_PRESS_MASK, on_key_press_event)
 				 .addEventWithCallback(Gdk::KEY_RELEASE_MASK, on_key_release_event)
-				 .addWidget(topLevelBox)
+				 .addWidget(BoxFactory(Gtk::ORIENTATION_VERTICAL, 5)
+								.addWidget(controlsBox)
+								.addWidget(sensorBox)
+								.build())
 				 .addDeleteEvent(quit)
 				 .build();
 

@@ -3,7 +3,25 @@
 //
 
 #include "BoxFactory.hpp"
-BoxFactory::BoxFactory(Gtk::Orientation orientation, int spacing) {
+
+BoxFactory::BoxFactory(const Gtk::Orientation orientation, const int spacing, const bool managed) {
 	box = new Gtk::Box(orientation, spacing);
+	if(managed) manage();
 }
-Gtk::Box* BoxFactory::build() { return box; }
+
+BoxFactory& BoxFactory::manage() {
+	Gtk::manage(box);
+	return *this;
+}
+
+BoxFactory& BoxFactory::addWidget(Gtk::Widget* widget) {
+	widgets.insert(widgets.end(), widget);
+	return *this;
+}
+Gtk::Box* BoxFactory::build() {
+	// Add widgets
+	for(auto widget : widgets)
+		box->add(*widget);
+
+	return box;
+}

@@ -12,9 +12,12 @@
 class BoxFactory {
   private:
 	Gtk::Box* box;
+	std::vector<Gtk::Widget*> widgets;
 
   public:
-	BoxFactory(Gtk::Orientation orientation, int spacing = 2);
+	BoxFactory(const Gtk::Orientation orientation, const int spacing = 2, const bool managed = true);
+	BoxFactory& manage();
+	BoxFactory& addWidget(Gtk::Widget* widget);
 	Gtk::Box* build();
 };
 

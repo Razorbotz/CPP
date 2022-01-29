@@ -17,8 +17,9 @@
 #include <glibmm/ustring.h>
 #include <gtkmm.h>
 
-#include "InfoFrame.hpp"
 #include "GuiBox.hpp"
+#include "InfoFrame.hpp"
+#include "WindowFactory.hpp"
 
 // Port for communicating with the robot
 constexpr unsigned int PORT = 31337;
@@ -329,14 +330,6 @@ bool on_key_press_event(GdkEventKey* key_event) {
 // GUI Boilerplate
 // TODO: Refactor to reduce code reuse
 void setupGui(const Glib::RefPtr<Gtk::Application>& application) {
-	window = new Gtk::Window();
-
-	window->add_events(Gdk::KEY_PRESS_MASK);
-	window->add_events(Gdk::KEY_RELEASE_MASK);
-
-	window->signal_key_press_event().connect(sigc::ptr_fun(&on_key_press_event));
-	window->signal_key_release_event().connect(sigc::ptr_fun(&on_key_release_event));
-
 	auto topLevelBox = makeBox(Gtk::ORIENTATION_VERTICAL, 5);
 
 	auto controlsBox = makeBox(Gtk::ORIENTATION_HORIZONTAL, 5);
@@ -367,14 +360,14 @@ void setupGui(const Glib::RefPtr<Gtk::Application>& application) {
 	Gtk::Label* modeLabel = Gtk::manage(new Gtk::Label("  Control Mode: "));
 	controlModeLabel = Gtk::manage(new Gtk::Label("Drive "));
 
-	auto remoteControlBox =makeBox(Gtk::ORIENTATION_HORIZONTAL, 2);
+	auto remoteControlBox = makeBox(Gtk::ORIENTATION_HORIZONTAL, 2);
 	auto shutdownRobotButton = Gtk::manage(new Gtk::Button("Shutdown Robot"));
 	shutdownRobotButton->signal_clicked().connect(sigc::bind<Gtk::Window*>(sigc::ptr_fun(&shutdownDialog), window));
 
 	auto sensorBox = makeBox(Gtk::ORIENTATION_HORIZONTAL);
 	auto talonBox = makeBox(Gtk::ORIENTATION_VERTICAL);
 	auto victor1Box = makeBox(Gtk::ORIENTATION_VERTICAL);
-        auto  victor2Box = makeBox(Gtk::ORIENTATION_VERTICAL);
+	auto victor2Box = makeBox(Gtk::ORIENTATION_VERTICAL);
 
 	auto powerDistributionPanelFrame = Gtk::manage(new Gtk::Frame("Power Distribution Panel"));
 	auto powerDistributionPanelBox = makeBox(Gtk::ORIENTATION_VERTICAL, 5);
@@ -384,36 +377,36 @@ void setupGui(const Glib::RefPtr<Gtk::Application>& application) {
 
 	voltageLabel = Gtk::manage(new Gtk::Label("0"));
 
-        auto current0Box = makeBox(Gtk::ORIENTATION_HORIZONTAL);
-        auto current0TextLabel = Gtk::manage(new Gtk::Label("Current 0: "));
+	auto current0Box = makeBox(Gtk::ORIENTATION_HORIZONTAL);
+	auto current0TextLabel = Gtk::manage(new Gtk::Label("Current 0: "));
 	current0Label = Gtk::manage(new Gtk::Label("0"));
 
-        auto current1Box = makeBox(Gtk::ORIENTATION_HORIZONTAL);
-        auto current1TextLabel = Gtk::manage(new Gtk::Label("Current 1:"));
+	auto current1Box = makeBox(Gtk::ORIENTATION_HORIZONTAL);
+	auto current1TextLabel = Gtk::manage(new Gtk::Label("Current 1:"));
 	current1Label = Gtk::manage(new Gtk::Label("0"));
 
-        auto current2Box = makeBox(Gtk::ORIENTATION_HORIZONTAL);
-        auto current2TextLabel = Gtk::manage(new Gtk::Label("Current 2:"));
+	auto current2Box = makeBox(Gtk::ORIENTATION_HORIZONTAL);
+	auto current2TextLabel = Gtk::manage(new Gtk::Label("Current 2:"));
 	current2Label = Gtk::manage(new Gtk::Label("0"));
 
-        auto current3Box = makeBox(Gtk::ORIENTATION_HORIZONTAL);
-        auto current3TextLabel = Gtk::manage(new Gtk::Label("Current 3:"));
+	auto current3Box = makeBox(Gtk::ORIENTATION_HORIZONTAL);
+	auto current3TextLabel = Gtk::manage(new Gtk::Label("Current 3:"));
 	current3Label = Gtk::manage(new Gtk::Label("0"));
 
-        auto current4Box = makeBox(Gtk::ORIENTATION_HORIZONTAL);
-        auto current4TextLabel = Gtk::manage(new Gtk::Label("Current 4:"));
+	auto current4Box = makeBox(Gtk::ORIENTATION_HORIZONTAL);
+	auto current4TextLabel = Gtk::manage(new Gtk::Label("Current 4:"));
 	current4Label = Gtk::manage(new Gtk::Label("0"));
 
-        auto current5Box = makeBox(Gtk::ORIENTATION_HORIZONTAL);
+	auto current5Box = makeBox(Gtk::ORIENTATION_HORIZONTAL);
 	auto current5TextLabel = Gtk::manage(new Gtk::Label("Current 5:"));
 	current5Label = Gtk::manage(new Gtk::Label("0"));
 
-        auto current6Box = makeBox(Gtk::ORIENTATION_HORIZONTAL);
-        auto current6TextLabel = Gtk::manage(new Gtk::Label("Current 6:"));
+	auto current6Box = makeBox(Gtk::ORIENTATION_HORIZONTAL);
+	auto current6TextLabel = Gtk::manage(new Gtk::Label("Current 6:"));
 	current6Label = Gtk::manage(new Gtk::Label("0"));
 
-        auto current7Box = makeBox(Gtk::ORIENTATION_HORIZONTAL);
-        auto current7TextLabel = Gtk::manage(new Gtk::Label("Current 7:"));
+	auto current7Box = makeBox(Gtk::ORIENTATION_HORIZONTAL);
+	auto current7TextLabel = Gtk::manage(new Gtk::Label("Current 7:"));
 	current7Label = Gtk::manage(new Gtk::Label("0"));
 
 	Gtk::Box* current8Box = makeBox(Gtk::ORIENTATION_HORIZONTAL);
@@ -597,9 +590,16 @@ void setupGui(const Glib::RefPtr<Gtk::Application>& application) {
 
 	topLevelBox->add(*controlsBox);
 	topLevelBox->add(*sensorBox);
-	window->add(*topLevelBox);
 
-	window->signal_delete_event().connect(sigc::ptr_fun(quit));
+	// Create the window
+	window = WindowFactory()
+				 .addEventWithCallback(Gdk::KEY_PRESS_MASK, on_key_press_event)
+				 .addEventWithCallback(Gdk::KEY_RELEASE_MASK, on_key_release_event)
+				 .addWidget(topLevelBox)
+				 .addDeleteEvent(quit)
+				 .build();
+
+	// Show the window
 	window->show_all();
 }
 
@@ -754,7 +754,7 @@ void adjustRobotList() {
 int main(int argc, char** argv) {
 	// Initialize GTK
 	Glib::RefPtr<Gtk::Application> application = Gtk::Application::create(argc, argv, "edu.uark.razorbotz");
-        setupGui(application);
+	setupGui(application);
 
 	// Create network listener
 	std::thread broadcastListenThread(broadcastListen);
@@ -829,7 +829,7 @@ int main(int argc, char** argv) {
 			messageBytesList.pop_front();
 			messageSize--;
 			for(int index = 0; index < messageSize; index++) {
-                          headMessage[index] = messageBytesList.front();
+				headMessage[index] = messageBytesList.front();
 				messageBytesList.pop_front();
 			}
 

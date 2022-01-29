@@ -5,6 +5,7 @@ project(control)
 set(CMAKE_BINARY_DIR ${CMAKE_SOURCE_DIR}/bin)
 set(EXECUTABLE_OUTPUT_PATH ${CMAKE_BINARY_DIR})
 
+set(CMAKE_CXX_STANDARD 17)
 
 include_directories(
   include
@@ -66,7 +67,7 @@ add_executable(control
   src/control.cpp
   src/InfoFrame.cpp
   src/InfoItem.cpp
-)
+		src/GuiBox.cpp src/GuiBox.hpp src/WindowFactory.cpp src/WindowFactory.hpp src/BoxFactory.cpp src/BoxFactory.hpp)
 
 
 target_link_libraries(control

@@ -529,7 +529,7 @@ void setupGUI(const Glib::RefPtr<Gtk::Application>& application) {
 	talon1InfoFrame->addItem("Sensor Velocity");
 	talon1InfoFrame->addItem("Closed Loop Error");
 	talon1InfoFrame->addItem("Integral Accumulator");
-	talon1InfoFrame->addItem("Error Drivative");
+	talon1InfoFrame->addItem("Error Derivative");
 
 	talon2InfoFrame = Gtk::manage(new InfoFrame("Talon 2"));
 	talon2InfoFrame->addItem("Device ID");
@@ -542,7 +542,7 @@ void setupGUI(const Glib::RefPtr<Gtk::Application>& application) {
 	talon2InfoFrame->addItem("Sensor Velocity");
 	talon2InfoFrame->addItem("Closed Loop Error");
 	talon2InfoFrame->addItem("Integral Accumulator");
-	talon2InfoFrame->addItem("Error Drivative");
+	talon2InfoFrame->addItem("Error Derivative");
 
 	victor1InfoFrame = Gtk::manage(new InfoFrame("Victor 1"));
 	victor1InfoFrame->addItem("Device ID");
@@ -778,10 +778,10 @@ int main(int argc, char** argv) {
 
 			if(joystickList[joystickIndex]) {
 				std::cout << "Opened Joystick " << joystickIndex << std::endl;
-				std::cout << "   Name: " << SDL_JoystickName(joystickList[joystickIndex]) << std::endl;
-				std::cout << "   Number of Axes: " << SDL_JoystickNumAxes(joystickList[joystickIndex]) << std::endl;
-				std::cout << "   Number of Buttons: " << SDL_JoystickNumButtons(joystickList[joystickIndex]) << std::endl;
-				std::cout << "   Number of Balls: " << SDL_JoystickNumBalls(joystickList[joystickIndex]) << std::endl;
+				std::cout << "\tName: " << SDL_JoystickName(joystickList[joystickIndex]) << std::endl;
+				std::cout << "\tNumber of Axes: " << SDL_JoystickNumAxes(joystickList[joystickIndex]) << std::endl;
+				std::cout << "\tNumber of Buttons: " << SDL_JoystickNumButtons(joystickList[joystickIndex]) << std::endl;
+				std::cout << "\tNumber of Balls: " << SDL_JoystickNumBalls(joystickList[joystickIndex]) << std::endl;
 			} else {
 				std::cout << "Couldn't open Joystick " << joystickIndex << std::endl;
 			}
@@ -894,7 +894,7 @@ int main(int argc, char** argv) {
 				talon1InfoFrame->setItem("Sensor Velocity", sensorVelocity);
 				talon1InfoFrame->setItem("Closed Loop Error", closedLoopError);
 				talon1InfoFrame->setItem("Integral Accumulator", integralAccumulator);
-				talon1InfoFrame->setItem("Error Drivative", errorDerivative);
+				talon1InfoFrame->setItem("Error Derivative", errorDerivative);
 			}
 			if(command == 3) {
 				auto deviceID = parseType<int>((uint8_t*)&headMessage[1]);
@@ -918,7 +918,7 @@ int main(int argc, char** argv) {
 				talon2InfoFrame->setItem("Sensor Velocity", sensorVelocity);
 				talon2InfoFrame->setItem("Closed Loop Error", closedLoopError);
 				talon2InfoFrame->setItem("Integral Accumulator", integralAccumulator);
-				talon2InfoFrame->setItem("Error Drivative", errorDerivative);
+				talon2InfoFrame->setItem("Error Derivative", errorDerivative);
 			}
 			if(command == 4) {
 				auto deviceID = parseType<int>((uint8_t*)&headMessage[1]);
@@ -983,12 +983,12 @@ int main(int argc, char** argv) {
 
 				case SDL_KEYDOWN: {
 					std::cout << event.key.keysym.sym << std::endl;
-					std::cout << "key down" << std::endl;
+					std::cout << "Key Down" << std::endl;
 					break;
 				}
 
 				case SDL_KEYUP: {
-					std::cout << "key up" << std::endl;
+					std::cout << "Key Up" << std::endl;
 					break;
 				}
 

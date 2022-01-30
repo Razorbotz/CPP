@@ -522,40 +522,44 @@ void setupGui(const Glib::RefPtr<Gtk::Application>& application) {
 						  .addWidget(victor3InfoFrame)
 						  .build();
 
+	// Controls Right Box
+	auto controlsRightBox = BoxFactory(Gtk::ORIENTATION_VERTICAL, 5)
+								.addWidget(connectBox)
+								.addWidget(stateBox)
+								.addWidget(remoteControlBox)
+								.build();
+
+	// Talon Box
+	auto talonBox = BoxFactory(Gtk::ORIENTATION_VERTICAL)
+						.addWidget(talon1InfoFrame)
+						.addWidget(talon2InfoFrame)
+						.build();
+
+	// Controls Box
+	auto controlsBox = BoxFactory(Gtk::ORIENTATION_HORIZONTAL, 5)
+						   .addWidget(scrolledList)
+						   .addWidget(controlsRightBox)
+						   .build();
+
+	// Sensor Box
+	auto sensorBox = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
+						 .addWidget(powerDistributionPanelFrame)
+						 .addWidget(talonBox)
+						 .addWidget(victor1Box)
+						 .build();
+
 	// Create the window
 	window = WindowFactory()
+				 .setTitle("Razorbotz Robot Remote Monitor and Controller")
 				 .addEventWithCallback(Gdk::KEY_PRESS_MASK, on_key_press_event)
 				 .addEventWithCallback(Gdk::KEY_RELEASE_MASK, on_key_release_event)
 				 .addDeleteEvent(quit)
 				 .addWidget(
 					 // Parent box
 					 BoxFactory(Gtk::ORIENTATION_VERTICAL, 5)
-						 .addWidget(
-							 // Controls box
-							 BoxFactory(Gtk::ORIENTATION_HORIZONTAL, 5)
-								 .addWidget(scrolledList)
-								 .addWidget(
-									 // Controls Right Box
-									 BoxFactory(Gtk::ORIENTATION_VERTICAL, 5)
-										 .addWidget(connectBox)
-										 .addWidget(stateBox)
-										 .addWidget(remoteControlBox)
-										 .build())
-								 .build())
-						 .addWidget(
-							 // Sensor Box
-							 BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
-								 .addWidget(powerDistributionPanelFrame)
-								 .addWidget(
-									 // Talon Box
-									 BoxFactory(Gtk::ORIENTATION_VERTICAL)
-										 .addWidget(talon1InfoFrame)
-										 .addWidget(talon2InfoFrame)
-										 .build())
-								 .addWidget(victor1Box)
-								 .build())
+						 .addWidget(controlsBox)
+						 .addWidget(sensorBox)
 						 .build())
-				 .setTitle("Razorbotz Robot Remote Monitor and Controller")
 				 .build();
 
 	// Show the window

@@ -50,3 +50,7 @@ Gtk::Window* WindowFactory::build() {
 
 	return window;
 }
+WindowFactory& WindowFactory::setTitle(const Glib::ustring& title) {
+	window->set_title(title);
+	return *this;
+}

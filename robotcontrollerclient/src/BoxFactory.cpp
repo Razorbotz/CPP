@@ -38,3 +38,7 @@ BoxFactory& BoxFactory::packEnd(Gtk::Widget* widget, bool expand, bool fill, gui
 	box->pack_end(*widget, false, true, 10);
 	return *this;
 }
+BoxFactory& BoxFactory::addFrontLabel(Glib::ustring text) {
+	packStart(Gtk::manage(new Gtk::Label(text)));
+	return *this;
+}

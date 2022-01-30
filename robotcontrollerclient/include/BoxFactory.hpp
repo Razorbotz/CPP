@@ -20,6 +20,7 @@ class BoxFactory {
 	BoxFactory& addWidget(Gtk::Widget* widget);
 	BoxFactory& setSizeRequest(int width = -1, int height = -1);
 	BoxFactory& packStart(Gtk::Widget* widget, bool expand = false, bool fill = true, guint padding = 10);
+	BoxFactory& addFrontLabel(Glib::ustring text);
 	BoxFactory& packEnd(Gtk::Widget* widget, bool expand = false, bool fill = true, guint padding = 10);
 	Gtk::Box* build();
 };

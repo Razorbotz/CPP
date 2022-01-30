@@ -24,6 +24,7 @@ class WindowFactory {
 	WindowFactory& addEventWithCallback(Gdk::EventMask event, eventCallback callback);
 	WindowFactory& addWidget(Gtk::Widget* widget);
 	WindowFactory& addDeleteEvent(deleteCallback callback);
+	WindowFactory& setTitle(const Glib::ustring& title);
 	Gtk::Window* build();
 };
 

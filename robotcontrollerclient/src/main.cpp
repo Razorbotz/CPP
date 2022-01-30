@@ -21,6 +21,8 @@
 #include "GuiBox.hpp"
 #include "InfoFrame.hpp"
 #include "WindowFactory.hpp"
+#include "TalonInfoFrame.hpp"
+#include "VictorInfoFrame.hpp"
 
 // Port for communicating with the robot
 constexpr unsigned int PORT = 31337;
@@ -82,11 +84,11 @@ Gtk::Button* silentRunButton;
 Gtk::Button* connectButton;
 Gtk::Label* controlModeLabel;
 
-InfoFrame* talon1InfoFrame;
-InfoFrame* talon2InfoFrame;
-InfoFrame* victor1InfoFrame;
-InfoFrame* victor2InfoFrame;
-InfoFrame* victor3InfoFrame;
+TalonInfoFrame* talon1InfoFrame;
+TalonInfoFrame* talon2InfoFrame;
+VictorInfoFrame* victor1InfoFrame;
+VictorInfoFrame* victor2InfoFrame;
+VictorInfoFrame* victor3InfoFrame;
 
 Gtk::Window* window;
 int sock = 0;
@@ -331,216 +333,137 @@ bool on_key_press_event(GdkEventKey* key_event) {
 // GUI Boilerplate
 // TODO: Refactor to reduce code reuse
 void setupGui(const Glib::RefPtr<Gtk::Application>& application) {
-	auto scrolledList = Gtk::manage(new Gtk::ScrolledWindow());
+	// Create List Box
 	addressListBox = Gtk::manage(new Gtk::ListBox());
 	addressListBox->signal_row_activated().connect(sigc::ptr_fun(&rowActivated));
+	addressListBox->set_size_request(200, 100);
 
-	auto ipAddressLabel = Gtk::manage(new Gtk::Label(" IP Address "));
-	ipAddressEntry = Gtk::manage(new Gtk::Entry());
-	ipAddressEntry->set_can_focus(true);
-	ipAddressEntry->set_editable(true);
+	// Create Scrolled List
+	auto scrolledList = Gtk::manage(new Gtk::ScrolledWindow());
+	scrolledList->set_size_request(200, 100);
+	scrolledList->add(*addressListBox);
+
+	// Connect Button
 	connectButton = Gtk::manage(new Gtk::Button("Connect"));
 	connectButton->signal_clicked().connect(sigc::ptr_fun(&connectOrDisconnect));
+
+	// Connect Status Label
 	connectionStatusLabel = Gtk::manage(new Gtk::Label("Not Connected"));
 	Gdk::RGBA red;
 	red.set_rgba(1.0, 0, 0, 1.0);
 	connectionStatusLabel->override_background_color(red);
 
+	// IP Address Label
+	auto ipAddressLabel = Gtk::manage(new Gtk::Label("IP Address"));
+	ipAddressEntry = Gtk::manage(new Gtk::Entry());
+	ipAddressEntry->set_can_focus(true);
+	ipAddressEntry->set_editable(true);
+
+	// Mode Label
+	Gtk::Label* modeLabel = Gtk::manage(new Gtk::Label("Control Mode: "));
+	controlModeLabel = Gtk::manage(new Gtk::Label("Drive"));
+
+	// Silent Run Button
 	silentRunButton = Gtk::manage(new Gtk::Button("Silent Running"));
 	silentRunButton->signal_clicked().connect(sigc::ptr_fun(&silentRun));
-	Gtk::Label* modeLabel = Gtk::manage(new Gtk::Label("  Control Mode: "));
-	controlModeLabel = Gtk::manage(new Gtk::Label("Drive "));
 
+	// Shutdown Robot Button
 	auto shutdownRobotButton = Gtk::manage(new Gtk::Button("Shutdown Robot"));
 	shutdownRobotButton->signal_clicked().connect(sigc::bind<Gtk::Window*>(sigc::ptr_fun(&shutdownDialog), window));
 
+	// Power Distribution Frame
 	auto powerDistributionPanelFrame = Gtk::manage(new Gtk::Frame("Power Distribution Panel"));
 
-	auto voltageTextLabel = Gtk::manage(new Gtk::Label("Voltage:"));
-
+	// Power Labels
 	voltageLabel = Gtk::manage(new Gtk::Label("0"));
-
-	auto current0TextLabel = Gtk::manage(new Gtk::Label("Current 0: "));
 	current0Label = Gtk::manage(new Gtk::Label("0"));
-
-	auto current1TextLabel = Gtk::manage(new Gtk::Label("Current 1:"));
 	current1Label = Gtk::manage(new Gtk::Label("0"));
-
-	auto current2TextLabel = Gtk::manage(new Gtk::Label("Current 2:"));
 	current2Label = Gtk::manage(new Gtk::Label("0"));
-
-	auto current3TextLabel = Gtk::manage(new Gtk::Label("Current 3:"));
 	current3Label = Gtk::manage(new Gtk::Label("0"));
-
-	auto current4TextLabel = Gtk::manage(new Gtk::Label("Current 4:"));
 	current4Label = Gtk::manage(new Gtk::Label("0"));
-
-	auto current5TextLabel = Gtk::manage(new Gtk::Label("Current 5:"));
 	current5Label = Gtk::manage(new Gtk::Label("0"));
-
-	auto current6TextLabel = Gtk::manage(new Gtk::Label("Current 6:"));
 	current6Label = Gtk::manage(new Gtk::Label("0"));
-
-	auto current7TextLabel = Gtk::manage(new Gtk::Label("Current 7:"));
 	current7Label = Gtk::manage(new Gtk::Label("0"));
-
-	Gtk::Label* current8TextLabel = Gtk::manage(new Gtk::Label("Current 8:"));
 	current8Label = Gtk::manage(new Gtk::Label("0"));
-
-	Gtk::Label* current9TextLabel = Gtk::manage(new Gtk::Label("Current 9:"));
 	current9Label = Gtk::manage(new Gtk::Label("0"));
-
-	Gtk::Label* current10TextLabel = Gtk::manage(new Gtk::Label("Current 10:"));
 	current10Label = Gtk::manage(new Gtk::Label("0"));
-
-	Gtk::Label* current11TextLabel = Gtk::manage(new Gtk::Label("Current 11:"));
 	current11Label = Gtk::manage(new Gtk::Label("0"));
-
-	Gtk::Label* current12TextLabel = Gtk::manage(new Gtk::Label("Current 12:"));
 	current12Label = Gtk::manage(new Gtk::Label("0"));
-
-	Gtk::Label* current13TextLabel = Gtk::manage(new Gtk::Label("Current 13:"));
 	current13Label = Gtk::manage(new Gtk::Label("0"));
-
-	Gtk::Label* current14TextLabel = Gtk::manage(new Gtk::Label("Current 14:"));
 	current14Label = Gtk::manage(new Gtk::Label("0"));
-
-	Gtk::Label* current15TextLabel = Gtk::manage(new Gtk::Label("Current 15:"));
 	current15Label = Gtk::manage(new Gtk::Label("0"));
 
+	// Power Boxes
 	auto voltageBox = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
-						  .packStart(voltageTextLabel)
+						  .addFrontLabel("Voltage:")
 						  .packEnd(voltageLabel)
 						  .build();
-
 	auto current0Box = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
-						   .packStart(current0TextLabel)
+						   .addFrontLabel("Current 0:")
 						   .packEnd(current0Label)
 						   .build();
-
 	auto current1Box = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
-						   .packStart(current1TextLabel)
+						   .addFrontLabel("Current 1:")
 						   .packEnd(current1Label)
 						   .build();
-
 	auto current2Box = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
-						   .packStart(current2TextLabel)
+						   .addFrontLabel("Current 2:")
 						   .packEnd(current2Label)
 						   .build();
-
 	auto current3Box = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
-						   .packStart(current3TextLabel)
+						   .addFrontLabel("Current 3:")
 						   .packEnd(current3Label)
 						   .build();
-
 	auto current4Box = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
-						   .packStart(current4TextLabel)
+						   .addFrontLabel("Current 4:")
 						   .packEnd(current4Label)
 						   .build();
-
 	auto current5Box = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
-						   .packStart(current5TextLabel)
+						   .addFrontLabel("Current 5:")
 						   .packEnd(current5Label)
 						   .build();
-
 	auto current6Box = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
-						   .packStart(current6TextLabel)
+						   .addFrontLabel("Current 6:")
 						   .packEnd(current6Label)
 						   .build();
-
 	auto current7Box = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
-						   .packStart(current7TextLabel)
+						   .addFrontLabel("Current 7:")
 						   .packEnd(current7Label)
 						   .build();
-
 	auto current8Box = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
-						   .packStart(current8TextLabel)
+						   .addFrontLabel("Current 8:")
 						   .packEnd(current8Label)
 						   .build();
-
 	auto current9Box = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
-						   .packStart(current9TextLabel)
+						   .addFrontLabel("Current 9:")
 						   .packEnd(current9Label)
 						   .build();
-
 	auto current10Box = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
-							.packStart(current10TextLabel)
+							.addFrontLabel("Current 10:")
 							.packEnd(current10Label)
 							.build();
-
 	auto current11Box = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
-							.packStart(current11TextLabel)
+							.addFrontLabel("Current 11:")
 							.packEnd(current11Label)
 							.build();
-
 	auto current12Box = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
-							.packStart(current12TextLabel)
+							.addFrontLabel("Current 12:")
 							.packEnd(current12Label)
 							.build();
-
 	auto current13Box = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
-							.packStart(current13TextLabel)
+							.addFrontLabel("Current 13:")
 							.packEnd(current13Label)
 							.build();
-
 	auto current14Box = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
-							.packStart(current14TextLabel)
+							.addFrontLabel("Current 14:")
 							.packEnd(current14Label)
 							.build();
-
 	auto current15Box = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
-							.packStart(current15TextLabel)
+							.addFrontLabel("Current 15:")
 							.packEnd(current15Label)
 							.build();
 
-	talon1InfoFrame = Gtk::manage(new InfoFrame("Talon 1"));
-	talon1InfoFrame->addItem("Device ID");
-	talon1InfoFrame->addItem("Bus Voltage");
-	talon1InfoFrame->addItem("Output Current");
-	talon1InfoFrame->addItem("Output Voltage");
-	talon1InfoFrame->addItem("Output Percent");
-	talon1InfoFrame->addItem("Temperature");
-	//	talon1InfoFrame->addItem("Sensor Position");
-	talon1InfoFrame->addItem("Sensor Velocity");
-	talon1InfoFrame->addItem("Closed Loop Error");
-	talon1InfoFrame->addItem("Integral Accumulator");
-	talon1InfoFrame->addItem("Error Derivative");
-
-	talon2InfoFrame = Gtk::manage(new InfoFrame("Talon 2"));
-	talon2InfoFrame->addItem("Device ID");
-	talon2InfoFrame->addItem("Bus Voltage");
-	talon2InfoFrame->addItem("Output Current");
-	talon2InfoFrame->addItem("Output Voltage");
-	talon2InfoFrame->addItem("Output Percent");
-	talon2InfoFrame->addItem("Temperature");
-	talon2InfoFrame->addItem("Sensor Velocity");
-	talon2InfoFrame->addItem("Closed Loop Error");
-	talon2InfoFrame->addItem("Integral Accumulator");
-	talon2InfoFrame->addItem("Error Derivative");
-
-	victor1InfoFrame = Gtk::manage(new InfoFrame("Victor 1"));
-	victor1InfoFrame->addItem("Device ID");
-	victor1InfoFrame->addItem("Bus Voltage");
-	victor1InfoFrame->addItem("Output Voltage");
-	victor1InfoFrame->addItem("Output Percent");
-
-	victor2InfoFrame = Gtk::manage(new InfoFrame("Victor 2"));
-	victor2InfoFrame->addItem("Device ID");
-	victor2InfoFrame->addItem("Bus Voltage");
-	victor2InfoFrame->addItem("Output Voltage");
-	victor2InfoFrame->addItem("Output Percent");
-
-	victor3InfoFrame = Gtk::manage(new InfoFrame("Victor 3"));
-	victor3InfoFrame->addItem("Device ID");
-	victor3InfoFrame->addItem("Bus Voltage");
-	victor3InfoFrame->addItem("Output Voltage");
-	victor3InfoFrame->addItem("Output Percent");
-
-	scrolledList->set_size_request(200, 100);
-	scrolledList->add(*addressListBox);
-
-	addressListBox->set_size_request(200, 100);
-
+	// Power Distribution Panel Box
 	auto powerDistributionPanelBox = BoxFactory(Gtk::ORIENTATION_VERTICAL, 5)
 										 .addWidget(voltageBox)
 										 .addWidget(current0Box)
@@ -563,21 +486,40 @@ void setupGui(const Glib::RefPtr<Gtk::Application>& application) {
 
 	powerDistributionPanelFrame->add(*powerDistributionPanelBox);
 
+	// Info Frame
+	// Talon Info Frames
+	talon1InfoFrame = new TalonInfoFrame("Talon 1");
+	talon2InfoFrame = new TalonInfoFrame("Talon 2");
+
+	// Remote Control Box
 	auto remoteControlBox = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
 								.addWidget(shutdownRobotButton)
 								.build();
 
+	// State Box
 	auto stateBox = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
 						.addWidget(silentRunButton)
 						.addWidget(modeLabel)
 						.addWidget(controlModeLabel)
 						.build();
-
+	// Connect Box
 	auto connectBox = BoxFactory(Gtk::ORIENTATION_HORIZONTAL, 5)
 						  .addWidget(ipAddressLabel)
 						  .addWidget(ipAddressEntry)
 						  .addWidget(connectButton)
 						  .addWidget(connectionStatusLabel)
+						  .build();
+
+	// Victor Info Frames
+	victor1InfoFrame = new VictorInfoFrame("Victor 1");
+	victor2InfoFrame = new VictorInfoFrame("Victor 2");
+	victor3InfoFrame = new VictorInfoFrame("Victor 3");
+
+	// Victor 1 Box
+	auto victor1Box = BoxFactory(Gtk::ORIENTATION_VERTICAL)
+						  .addWidget(victor1InfoFrame)
+						  .addWidget(victor2InfoFrame)
+						  .addWidget(victor3InfoFrame)
 						  .build();
 
 	// Create the window
@@ -610,15 +552,10 @@ void setupGui(const Glib::RefPtr<Gtk::Application>& application) {
 										 .addWidget(talon1InfoFrame)
 										 .addWidget(talon2InfoFrame)
 										 .build())
-								 .addWidget(
-									 // Victor 1 Box
-									 BoxFactory(Gtk::ORIENTATION_VERTICAL)
-										 .addWidget(victor1InfoFrame)
-										 .addWidget(victor2InfoFrame)
-										 .addWidget(victor3InfoFrame)
-										 .build())
+								 .addWidget(victor1Box)
 								 .build())
 						 .build())
+				 .setTitle("Razorbotz Robot Remote Monitor and Controller")
 				 .build();
 
 	// Show the window

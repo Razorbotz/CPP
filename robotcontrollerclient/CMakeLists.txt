@@ -63,11 +63,11 @@ include_directories(
 )
 
 
-add_executable(control 
-  src/control.cpp
+add_executable(control
+		src/main.cpp
   src/InfoFrame.cpp
   src/InfoItem.cpp
-		src/GuiBox.cpp src/GuiBox.hpp src/WindowFactory.cpp src/WindowFactory.hpp src/BoxFactory.cpp src/BoxFactory.hpp)
+		src/GuiBox.cpp include/GuiBox.hpp src/WindowFactory.cpp include/WindowFactory.hpp src/BoxFactory.cpp include/BoxFactory.hpp src/TalonInfoFrame.cpp include/TalonInfoFrame.hpp src/VictorInfoFrame.cpp include/VictorInfoFrame.hpp)
 
 
 target_link_libraries(control

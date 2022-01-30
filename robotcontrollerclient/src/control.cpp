@@ -331,21 +331,14 @@ bool on_key_press_event(GdkEventKey* key_event) {
 // GUI Boilerplate
 // TODO: Refactor to reduce code reuse
 void setupGui(const Glib::RefPtr<Gtk::Application>& application) {
-	auto controlsBox = makeBox(Gtk::ORIENTATION_HORIZONTAL, 5);
-
 	auto scrolledList = Gtk::manage(new Gtk::ScrolledWindow());
 	addressListBox = Gtk::manage(new Gtk::ListBox());
-	//	addressListBox->signal_row_selected().connect(sigc::ptr_fun(&rowSelected));
 	addressListBox->signal_row_activated().connect(sigc::ptr_fun(&rowActivated));
 
-	auto controlsRightBox = makeBox(Gtk::ORIENTATION_VERTICAL, 5);
-
-	auto connectBox = makeBox(Gtk::ORIENTATION_HORIZONTAL, 5);
 	auto ipAddressLabel = Gtk::manage(new Gtk::Label(" IP Address "));
 	ipAddressEntry = Gtk::manage(new Gtk::Entry());
 	ipAddressEntry->set_can_focus(true);
 	ipAddressEntry->set_editable(true);
-	//ipAddressEntry->set_text("192.168.1.2");
 	connectButton = Gtk::manage(new Gtk::Button("Connect"));
 	connectButton->signal_clicked().connect(sigc::ptr_fun(&connectOrDisconnect));
 	connectionStatusLabel = Gtk::manage(new Gtk::Label("Not Connected"));
@@ -353,163 +346,152 @@ void setupGui(const Glib::RefPtr<Gtk::Application>& application) {
 	red.set_rgba(1.0, 0, 0, 1.0);
 	connectionStatusLabel->override_background_color(red);
 
-	auto stateBox = makeBox(Gtk::ORIENTATION_HORIZONTAL);
 	silentRunButton = Gtk::manage(new Gtk::Button("Silent Running"));
 	silentRunButton->signal_clicked().connect(sigc::ptr_fun(&silentRun));
 	Gtk::Label* modeLabel = Gtk::manage(new Gtk::Label("  Control Mode: "));
 	controlModeLabel = Gtk::manage(new Gtk::Label("Drive "));
 
-	auto remoteControlBox = makeBox(Gtk::ORIENTATION_HORIZONTAL, 2);
 	auto shutdownRobotButton = Gtk::manage(new Gtk::Button("Shutdown Robot"));
 	shutdownRobotButton->signal_clicked().connect(sigc::bind<Gtk::Window*>(sigc::ptr_fun(&shutdownDialog), window));
 
-	auto sensorBox = makeBox(Gtk::ORIENTATION_HORIZONTAL);
-	auto talonBox = makeBox(Gtk::ORIENTATION_VERTICAL);
-	auto victor1Box = makeBox(Gtk::ORIENTATION_VERTICAL);
-	auto victor2Box = makeBox(Gtk::ORIENTATION_VERTICAL);
-
 	auto powerDistributionPanelFrame = Gtk::manage(new Gtk::Frame("Power Distribution Panel"));
-	auto powerDistributionPanelBox = makeBox(Gtk::ORIENTATION_VERTICAL, 5);
 
-	auto voltageBox = makeBox(Gtk::ORIENTATION_HORIZONTAL);
 	auto voltageTextLabel = Gtk::manage(new Gtk::Label("Voltage:"));
 
 	voltageLabel = Gtk::manage(new Gtk::Label("0"));
 
-	auto current0Box = makeBox(Gtk::ORIENTATION_HORIZONTAL);
 	auto current0TextLabel = Gtk::manage(new Gtk::Label("Current 0: "));
 	current0Label = Gtk::manage(new Gtk::Label("0"));
 
-	auto current1Box = makeBox(Gtk::ORIENTATION_HORIZONTAL);
 	auto current1TextLabel = Gtk::manage(new Gtk::Label("Current 1:"));
 	current1Label = Gtk::manage(new Gtk::Label("0"));
 
-	auto current2Box = makeBox(Gtk::ORIENTATION_HORIZONTAL);
 	auto current2TextLabel = Gtk::manage(new Gtk::Label("Current 2:"));
 	current2Label = Gtk::manage(new Gtk::Label("0"));
 
-	auto current3Box = makeBox(Gtk::ORIENTATION_HORIZONTAL);
 	auto current3TextLabel = Gtk::manage(new Gtk::Label("Current 3:"));
 	current3Label = Gtk::manage(new Gtk::Label("0"));
 
-	auto current4Box = makeBox(Gtk::ORIENTATION_HORIZONTAL);
 	auto current4TextLabel = Gtk::manage(new Gtk::Label("Current 4:"));
 	current4Label = Gtk::manage(new Gtk::Label("0"));
 
-	auto current5Box = makeBox(Gtk::ORIENTATION_HORIZONTAL);
 	auto current5TextLabel = Gtk::manage(new Gtk::Label("Current 5:"));
 	current5Label = Gtk::manage(new Gtk::Label("0"));
 
-	auto current6Box = makeBox(Gtk::ORIENTATION_HORIZONTAL);
 	auto current6TextLabel = Gtk::manage(new Gtk::Label("Current 6:"));
 	current6Label = Gtk::manage(new Gtk::Label("0"));
 
-	auto current7Box = makeBox(Gtk::ORIENTATION_HORIZONTAL);
 	auto current7TextLabel = Gtk::manage(new Gtk::Label("Current 7:"));
 	current7Label = Gtk::manage(new Gtk::Label("0"));
 
-	Gtk::Box* current8Box = makeBox(Gtk::ORIENTATION_HORIZONTAL);
 	Gtk::Label* current8TextLabel = Gtk::manage(new Gtk::Label("Current 8:"));
 	current8Label = Gtk::manage(new Gtk::Label("0"));
 
-	Gtk::Box* current9Box = makeBox(Gtk::ORIENTATION_HORIZONTAL);
 	Gtk::Label* current9TextLabel = Gtk::manage(new Gtk::Label("Current 9:"));
 	current9Label = Gtk::manage(new Gtk::Label("0"));
 
-	Gtk::Box* current10Box = makeBox(Gtk::ORIENTATION_HORIZONTAL);
 	Gtk::Label* current10TextLabel = Gtk::manage(new Gtk::Label("Current 10:"));
 	current10Label = Gtk::manage(new Gtk::Label("0"));
 
-	Gtk::Box* current11Box = makeBox(Gtk::ORIENTATION_HORIZONTAL);
 	Gtk::Label* current11TextLabel = Gtk::manage(new Gtk::Label("Current 11:"));
 	current11Label = Gtk::manage(new Gtk::Label("0"));
 
-	Gtk::Box* current12Box = makeBox(Gtk::ORIENTATION_HORIZONTAL);
 	Gtk::Label* current12TextLabel = Gtk::manage(new Gtk::Label("Current 12:"));
 	current12Label = Gtk::manage(new Gtk::Label("0"));
 
-	Gtk::Box* current13Box = makeBox(Gtk::ORIENTATION_HORIZONTAL);
 	Gtk::Label* current13TextLabel = Gtk::manage(new Gtk::Label("Current 13:"));
 	current13Label = Gtk::manage(new Gtk::Label("0"));
 
-	Gtk::Box* current14Box = makeBox(Gtk::ORIENTATION_HORIZONTAL);
 	Gtk::Label* current14TextLabel = Gtk::manage(new Gtk::Label("Current 14:"));
 	current14Label = Gtk::manage(new Gtk::Label("0"));
 
-	Gtk::Box* current15Box = makeBox(Gtk::ORIENTATION_HORIZONTAL);
 	Gtk::Label* current15TextLabel = Gtk::manage(new Gtk::Label("Current 15:"));
 	current15Label = Gtk::manage(new Gtk::Label("0"));
 
-	voltageBox->pack_start(*voltageTextLabel, false, true, 10);
-	voltageBox->pack_end(*voltageLabel, false, true, 10);
+	auto voltageBox = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
+						  .packStart(voltageTextLabel)
+						  .packEnd(voltageLabel)
+						  .build();
 
-	current0Box->pack_start(*current0TextLabel, false, true, 10);
-	current0Box->pack_end(*current0Label, false, true, 10);
+	auto current0Box = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
+						   .packStart(current0TextLabel)
+						   .packEnd(current0Label)
+						   .build();
 
-	current1Box->pack_start(*current1TextLabel, false, true, 10);
-	current1Box->pack_end(*current1Label, false, true, 10);
+	auto current1Box = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
+						   .packStart(current1TextLabel)
+						   .packEnd(current1Label)
+						   .build();
 
-	current2Box->pack_start(*current2TextLabel, false, true, 10);
-	current2Box->pack_end(*current2Label, false, true, 10);
+	auto current2Box = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
+						   .packStart(current2TextLabel)
+						   .packEnd(current2Label)
+						   .build();
 
-	current3Box->pack_start(*current3TextLabel, false, true, 10);
-	current3Box->pack_end(*current3Label, false, true, 10);
+	auto current3Box = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
+						   .packStart(current3TextLabel)
+						   .packEnd(current3Label)
+						   .build();
 
-	current4Box->pack_start(*current4TextLabel, false, true, 10);
-	current4Box->pack_end(*current4Label, false, true, 10);
+	auto current4Box = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
+						   .packStart(current4TextLabel)
+						   .packEnd(current4Label)
+						   .build();
 
-	current5Box->pack_start(*current5TextLabel, false, true, 10);
-	current5Box->pack_end(*current5Label, false, true, 10);
+	auto current5Box = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
+						   .packStart(current5TextLabel)
+						   .packEnd(current5Label)
+						   .build();
 
-	current6Box->pack_start(*current6TextLabel, false, true, 10);
-	current6Box->pack_end(*current6Label, false, true, 10);
+	auto current6Box = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
+						   .packStart(current6TextLabel)
+						   .packEnd(current6Label)
+						   .build();
 
-	current7Box->pack_start(*current7TextLabel, false, true, 10);
-	current7Box->pack_end(*current7Label, false, true, 10);
+	auto current7Box = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
+						   .packStart(current7TextLabel)
+						   .packEnd(current7Label)
+						   .build();
 
-	current8Box->pack_start(*current8TextLabel, false, true, 10);
-	current8Box->pack_end(*current8Label, false, true, 10);
+	auto current8Box = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
+						   .packStart(current8TextLabel)
+						   .packEnd(current8Label)
+						   .build();
 
-	current9Box->pack_start(*current9TextLabel, false, true, 10);
-	current9Box->pack_end(*current9Label, false, true, 10);
+	auto current9Box = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
+						   .packStart(current9TextLabel)
+						   .packEnd(current9Label)
+						   .build();
 
-	current10Box->pack_start(*current10TextLabel, false, true, 10);
-	current10Box->pack_end(*current10Label, false, true, 10);
+	auto current10Box = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
+							.packStart(current10TextLabel)
+							.packEnd(current10Label)
+							.build();
 
-	current11Box->pack_start(*current11TextLabel, false, true, 10);
-	current11Box->pack_end(*current11Label, false, true, 10);
+	auto current11Box = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
+							.packStart(current11TextLabel)
+							.packEnd(current11Label)
+							.build();
 
-	current12Box->pack_start(*current12TextLabel, false, true, 10);
-	current12Box->pack_end(*current12Label, false, true, 10);
+	auto current12Box = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
+							.packStart(current12TextLabel)
+							.packEnd(current12Label)
+							.build();
 
-	current13Box->pack_start(*current13TextLabel, false, true, 10);
-	current13Box->pack_end(*current13Label, false, true, 10);
+	auto current13Box = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
+							.packStart(current13TextLabel)
+							.packEnd(current13Label)
+							.build();
 
-	current14Box->pack_start(*current14TextLabel, false, true, 10);
-	current14Box->pack_end(*current14Label, false, true, 10);
+	auto current14Box = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
+							.packStart(current14TextLabel)
+							.packEnd(current14Label)
+							.build();
 
-	current15Box->pack_start(*current15TextLabel, false, true, 10);
-	current15Box->pack_end(*current15Label, false, true, 10);
-
-	powerDistributionPanelBox->add(*voltageBox);
-	powerDistributionPanelBox->add(*current0Box);
-	powerDistributionPanelBox->add(*current1Box);
-	powerDistributionPanelBox->add(*current2Box);
-	powerDistributionPanelBox->add(*current3Box);
-	powerDistributionPanelBox->add(*current4Box);
-	powerDistributionPanelBox->add(*current5Box);
-	powerDistributionPanelBox->add(*current6Box);
-	powerDistributionPanelBox->add(*current7Box);
-	powerDistributionPanelBox->add(*current8Box);
-	powerDistributionPanelBox->add(*current9Box);
-	powerDistributionPanelBox->add(*current10Box);
-	powerDistributionPanelBox->add(*current11Box);
-	powerDistributionPanelBox->add(*current12Box);
-	powerDistributionPanelBox->add(*current13Box);
-	powerDistributionPanelBox->add(*current14Box);
-	powerDistributionPanelBox->add(*current15Box);
-
-	powerDistributionPanelFrame->add(*powerDistributionPanelBox);
+	auto current15Box = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
+							.packStart(current15TextLabel)
+							.packEnd(current15Label)
+							.build();
 
 	talon1InfoFrame = Gtk::manage(new InfoFrame("Talon 1"));
 	talon1InfoFrame->addItem("Device ID");
@@ -531,7 +513,6 @@ void setupGui(const Glib::RefPtr<Gtk::Application>& application) {
 	talon2InfoFrame->addItem("Output Voltage");
 	talon2InfoFrame->addItem("Output Percent");
 	talon2InfoFrame->addItem("Temperature");
-	//	talon2InfoFrame->addItem("Sensor Position");
 	talon2InfoFrame->addItem("Sensor Velocity");
 	talon2InfoFrame->addItem("Closed Loop Error");
 	talon2InfoFrame->addItem("Integral Accumulator");
@@ -555,47 +536,89 @@ void setupGui(const Glib::RefPtr<Gtk::Application>& application) {
 	victor3InfoFrame->addItem("Output Voltage");
 	victor3InfoFrame->addItem("Output Percent");
 
-	addressListBox->set_size_request(200, 100);
 	scrolledList->set_size_request(200, 100);
-
-	connectBox->add(*ipAddressLabel);
-	connectBox->add(*ipAddressEntry);
-	connectBox->add(*connectButton);
-	connectBox->add(*connectionStatusLabel);
-
-	sensorBox->add(*powerDistributionPanelFrame);
-	talonBox->add(*talon1InfoFrame);
-	talonBox->add(*talon2InfoFrame);
-	sensorBox->add(*talonBox);
-	victor1Box->add(*victor1InfoFrame);
-	victor1Box->add(*victor2InfoFrame);
-	victor1Box->add(*victor3InfoFrame);
-	sensorBox->add(*victor1Box);
-
-	stateBox->add(*silentRunButton);
-	stateBox->add(*modeLabel);
-	stateBox->add(*controlModeLabel);
-
-	remoteControlBox->add(*shutdownRobotButton);
-
-	controlsRightBox->add(*connectBox);
-	controlsRightBox->add(*stateBox);
-	controlsRightBox->add(*remoteControlBox);
-
 	scrolledList->add(*addressListBox);
 
-	controlsBox->add(*scrolledList);
-	controlsBox->add(*controlsRightBox);
+	addressListBox->set_size_request(200, 100);
+
+	auto powerDistributionPanelBox = BoxFactory(Gtk::ORIENTATION_VERTICAL, 5)
+										 .addWidget(voltageBox)
+										 .addWidget(current0Box)
+										 .addWidget(current1Box)
+										 .addWidget(current2Box)
+										 .addWidget(current3Box)
+										 .addWidget(current4Box)
+										 .addWidget(current5Box)
+										 .addWidget(current6Box)
+										 .addWidget(current7Box)
+										 .addWidget(current8Box)
+										 .addWidget(current9Box)
+										 .addWidget(current10Box)
+										 .addWidget(current11Box)
+										 .addWidget(current12Box)
+										 .addWidget(current13Box)
+										 .addWidget(current14Box)
+										 .addWidget(current15Box)
+										 .build();
+
+	powerDistributionPanelFrame->add(*powerDistributionPanelBox);
+
+	auto remoteControlBox = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
+								.addWidget(shutdownRobotButton)
+								.build();
+
+	auto stateBox = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
+						.addWidget(silentRunButton)
+						.addWidget(modeLabel)
+						.addWidget(controlModeLabel)
+						.build();
+
+	auto connectBox = BoxFactory(Gtk::ORIENTATION_HORIZONTAL, 5)
+						  .addWidget(ipAddressLabel)
+						  .addWidget(ipAddressEntry)
+						  .addWidget(connectButton)
+						  .addWidget(connectionStatusLabel)
+						  .build();
 
 	// Create the window
 	window = WindowFactory()
 				 .addEventWithCallback(Gdk::KEY_PRESS_MASK, on_key_press_event)
 				 .addEventWithCallback(Gdk::KEY_RELEASE_MASK, on_key_release_event)
-				 .addWidget(BoxFactory(Gtk::ORIENTATION_VERTICAL, 5)
-								.addWidget(controlsBox)
-								.addWidget(sensorBox)
-								.build())
 				 .addDeleteEvent(quit)
+				 .addWidget(
+					 // Parent box
+					 BoxFactory(Gtk::ORIENTATION_VERTICAL, 5)
+						 .addWidget(
+							 // Controls box
+							 BoxFactory(Gtk::ORIENTATION_HORIZONTAL, 5)
+								 .addWidget(scrolledList)
+								 .addWidget(
+									 // Controls Right Box
+									 BoxFactory(Gtk::ORIENTATION_VERTICAL, 5)
+										 .addWidget(connectBox)
+										 .addWidget(stateBox)
+										 .addWidget(remoteControlBox)
+										 .build())
+								 .build())
+						 .addWidget(
+							 // Sensor Box
+							 BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
+								 .addWidget(powerDistributionPanelFrame)
+								 .addWidget(
+									 // Talon Box
+									 BoxFactory(Gtk::ORIENTATION_VERTICAL)
+										 .addWidget(talon1InfoFrame)
+										 .addWidget(talon2InfoFrame)
+										 .build())
+								 .addWidget(
+									 // Victor 1 Box
+									 BoxFactory(Gtk::ORIENTATION_VERTICAL)
+										 .addWidget(victor1InfoFrame)
+										 .addWidget(victor2InfoFrame)
+										 .addWidget(victor3InfoFrame)
+										 .build())
+								 .build())
+						 .build())
 				 .build();
 
 	// Show the window

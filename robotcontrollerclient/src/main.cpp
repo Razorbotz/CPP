@@ -20,9 +20,9 @@
 #include "BoxFactory.hpp"
 #include "GuiBox.hpp"
 #include "InfoFrame.hpp"
-#include "WindowFactory.hpp"
 #include "TalonInfoFrame.hpp"
 #include "VictorInfoFrame.hpp"
+#include "WindowFactory.hpp"
 
 // Port for communicating with the robot
 constexpr unsigned int PORT = 31337;

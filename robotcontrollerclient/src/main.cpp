@@ -60,22 +60,9 @@ bool quit(GdkEventAny* event) {
 
 // GUI Element Variables
 Gtk::Label* voltageLabel;
-Gtk::Label* current0Label;
-Gtk::Label* current1Label;
-Gtk::Label* current2Label;
-Gtk::Label* current3Label;
-Gtk::Label* current4Label;
-Gtk::Label* current5Label;
-Gtk::Label* current6Label;
-Gtk::Label* current7Label;
-Gtk::Label* current8Label;
-Gtk::Label* current9Label;
-Gtk::Label* current10Label;
-Gtk::Label* current11Label;
-Gtk::Label* current12Label;
-Gtk::Label* current13Label;
-Gtk::Label* current14Label;
-Gtk::Label* current15Label;
+
+constexpr size_t numCurrents = 16;
+Gtk::Label* currentLabels[numCurrents];
 
 Gtk::ListBox* addressListBox;
 Gtk::Entry* ipAddressEntry;
@@ -85,17 +72,35 @@ Gtk::Button* silentRunButton;
 Gtk::Button* connectButton;
 Gtk::Label* controlModeLabel;
 
-TalonInfoFrame* talon1InfoFrame;
-TalonInfoFrame* talon2InfoFrame;
-VictorInfoFrame* victor1InfoFrame;
-VictorInfoFrame* victor2InfoFrame;
-VictorInfoFrame* victor3InfoFrame;
+constexpr size_t numTalonInfoFrames = 2;
+TalonInfoFrame* talonInfoFrames[numTalonInfoFrames];
+
+constexpr size_t numVictorInfoFrames = 3;
+VictorInfoFrame* victorInfoFrames[numVictorInfoFrames];
 
 Gtk::Window* window;
+
 int sock = 0;
 bool connected = false;
 
-// Helper function to set GUI info when robot disconnects/is not connected
+// Net Commands
+enum Commands {
+	COMMAND_POWER_DISTRIBUTION_PANEL = 1,
+	COMMAND_TALON_1,
+	COMMAND_TALON_2,
+	COMMAND_VICTOR_1,
+	COMMAND_VICTOR_2,
+	COMMAND_VICTOR_3,
+	COMMAND_CONTROL
+};
+
+// Robot Modes
+enum Modes {
+	MODE_DRIVE = 1,
+	MODE_DIG
+};
+
+// Helper function to set status and GUI info when robot disconnects/is not connected
 void setDisconnectedState() {
 	connectButton->set_label("Connect");
 	connectionStatusLabel->set_text("Not Connected");
@@ -335,132 +340,60 @@ void setupGui(const Glib::RefPtr<Gtk::Application>& application) {
 	controlModeLabel = Gtk::manage(new Gtk::Label("Drive"));
 
 	// Silent Run Button
-	silentRunButton = Gtk::manage(new Gtk::Button("Silent Running"));
-	silentRunButton->signal_clicked().connect(sigc::ptr_fun(&silentRun));
+	auto silentRunButton = ButtonFactory("Silent Running")
+							   .addClickedCallback<std::function<typeof(silentRun)>>(silentRun)
+							   .build();
 
 	// Shutdown Robot Button
-	auto shutdownRobotButton = Gtk::manage(new Gtk::Button("Shutdown Robot"));
-	shutdownRobotButton->signal_clicked().connect(sigc::bind<Gtk::Window*>(sigc::ptr_fun(&shutdownDialog), window));
+	const auto shutdownCallback = [] { return shutdownDialog(window); };
+	auto shutdownRobotButton = ButtonFactory("Shutdown Robot")
+								   .addClickedCallback<typeof(shutdownCallback)>(shutdownCallback)
+								   .build();
 
 	// Power Distribution Frame
 	auto powerDistributionPanelFrame = Gtk::manage(new Gtk::Frame("Power Distribution Panel"));
 
 	// Power Labels
 	voltageLabel = Gtk::manage(new Gtk::Label("0"));
-	current0Label = Gtk::manage(new Gtk::Label("0"));
-	current1Label = Gtk::manage(new Gtk::Label("0"));
-	current2Label = Gtk::manage(new Gtk::Label("0"));
-	current3Label = Gtk::manage(new Gtk::Label("0"));
-	current4Label = Gtk::manage(new Gtk::Label("0"));
-	current5Label = Gtk::manage(new Gtk::Label("0"));
-	current6Label = Gtk::manage(new Gtk::Label("0"));
-	current7Label = Gtk::manage(new Gtk::Label("0"));
-	current8Label = Gtk::manage(new Gtk::Label("0"));
-	current9Label = Gtk::manage(new Gtk::Label("0"));
-	current10Label = Gtk::manage(new Gtk::Label("0"));
-	current11Label = Gtk::manage(new Gtk::Label("0"));
-	current12Label = Gtk::manage(new Gtk::Label("0"));
-	current13Label = Gtk::manage(new Gtk::Label("0"));
-	current14Label = Gtk::manage(new Gtk::Label("0"));
-	current15Label = Gtk::manage(new Gtk::Label("0"));
+
+	for(auto& label : currentLabels) {
+		label = Gtk::manage(new Gtk::Label("0"));
+	}
 
 	// Power Boxes
 	auto voltageBox = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
 						  .addFrontLabel("Voltage:")
 						  .packEnd(voltageLabel)
 						  .build();
-	auto current0Box = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
-						   .addFrontLabel("Current 0:")
-						   .packEnd(current0Label)
-						   .build();
-	auto current1Box = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
-						   .addFrontLabel("Current 1:")
-						   .packEnd(current1Label)
-						   .build();
-	auto current2Box = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
-						   .addFrontLabel("Current 2:")
-						   .packEnd(current2Label)
-						   .build();
-	auto current3Box = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
-						   .addFrontLabel("Current 3:")
-						   .packEnd(current3Label)
-						   .build();
-	auto current4Box = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
-						   .addFrontLabel("Current 4:")
-						   .packEnd(current4Label)
-						   .build();
-	auto current5Box = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
-						   .addFrontLabel("Current 5:")
-						   .packEnd(current5Label)
-						   .build();
-	auto current6Box = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
-						   .addFrontLabel("Current 6:")
-						   .packEnd(current6Label)
-						   .build();
-	auto current7Box = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
-						   .addFrontLabel("Current 7:")
-						   .packEnd(current7Label)
-						   .build();
-	auto current8Box = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
-						   .addFrontLabel("Current 8:")
-						   .packEnd(current8Label)
-						   .build();
-	auto current9Box = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
-						   .addFrontLabel("Current 9:")
-						   .packEnd(current9Label)
-						   .build();
-	auto current10Box = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
-							.addFrontLabel("Current 10:")
-							.packEnd(current10Label)
-							.build();
-	auto current11Box = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
-							.addFrontLabel("Current 11:")
-							.packEnd(current11Label)
-							.build();
-	auto current12Box = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
-							.addFrontLabel("Current 12:")
-							.packEnd(current12Label)
-							.build();
-	auto current13Box = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
-							.addFrontLabel("Current 13:")
-							.packEnd(current13Label)
-							.build();
-	auto current14Box = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
-							.addFrontLabel("Current 14:")
-							.packEnd(current14Label)
-							.build();
-	auto current15Box = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
-							.addFrontLabel("Current 15:")
-							.packEnd(current15Label)
-							.build();
+
+	Gtk::Box* currentBoxes[numCurrents];
+	for(int i = 0; i < numCurrents; i++) {
+		currentBoxes[i] = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
+							  .addFrontLabel("Current " + std::to_string(i) + ":")
+							  .packEnd(currentLabels[i])
+							  .build();
+	}
 
 	// Power Distribution Panel Box
-	auto powerDistributionPanelBox = BoxFactory(Gtk::ORIENTATION_VERTICAL, 5)
-										 .addWidget(voltageBox)
-										 .addWidget(current0Box)
-										 .addWidget(current1Box)
-										 .addWidget(current2Box)
-										 .addWidget(current3Box)
-										 .addWidget(current4Box)
-										 .addWidget(current5Box)
-										 .addWidget(current6Box)
-										 .addWidget(current7Box)
-										 .addWidget(current8Box)
-										 .addWidget(current9Box)
-										 .addWidget(current10Box)
-										 .addWidget(current11Box)
-										 .addWidget(current12Box)
-										 .addWidget(current13Box)
-										 .addWidget(current14Box)
-										 .addWidget(current15Box)
-										 .build();
+	auto powerDistributionPanelBoxFactory = BoxFactory(Gtk::ORIENTATION_VERTICAL, 5)
+												.addWidget(voltageBox);
+	for(auto& box : currentBoxes) {
+		powerDistributionPanelBoxFactory.addWidget(box);
+	}
+	auto powerDistributionPanelBox = powerDistributionPanelBoxFactory.build();
 
 	powerDistributionPanelFrame->add(*powerDistributionPanelBox);
 
 	// Info Frame
 	// Talon Info Frames
-	talon1InfoFrame = new TalonInfoFrame("Talon 1");
-	talon2InfoFrame = new TalonInfoFrame("Talon 2");
+	for(int i = 0; i < numTalonInfoFrames; i++) {
+		talonInfoFrames[i] = new TalonInfoFrame("Talon " + std::to_string(1 + i));
+	}
+
+	// Victor Info Frames
+	for(int i = 0; i < numVictorInfoFrames; i++) {
+		victorInfoFrames[i] = new VictorInfoFrame("Victor " + std::to_string(1 + i));
+	}
 
 	// Remote Control Box
 	auto remoteControlBox = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
@@ -481,17 +414,12 @@ void setupGui(const Glib::RefPtr<Gtk::Application>& application) {
 						  .addWidget(connectionStatusLabel)
 						  .build();
 
-	// Victor Info Frames
-	victor1InfoFrame = new VictorInfoFrame("Victor 1");
-	victor2InfoFrame = new VictorInfoFrame("Victor 2");
-	victor3InfoFrame = new VictorInfoFrame("Victor 3");
-
 	// Victor 1 Box
-	auto victor1Box = BoxFactory(Gtk::ORIENTATION_VERTICAL)
-						  .addWidget(victor1InfoFrame)
-						  .addWidget(victor2InfoFrame)
-						  .addWidget(victor3InfoFrame)
-						  .build();
+	auto victor1BoxFactory = BoxFactory(Gtk::ORIENTATION_VERTICAL);
+	for(auto& victorInfoFrame : victorInfoFrames) {
+		victor1BoxFactory.addWidget(victorInfoFrame);
+	}
+	auto victor1Box = victor1BoxFactory.build();
 
 	// Controls Right Box
 	auto controlsRightBox = BoxFactory(Gtk::ORIENTATION_VERTICAL, 5)
@@ -501,10 +429,11 @@ void setupGui(const Glib::RefPtr<Gtk::Application>& application) {
 								.build();
 
 	// Talon Box
-	auto talonBox = BoxFactory(Gtk::ORIENTATION_VERTICAL)
-						.addWidget(talon1InfoFrame)
-						.addWidget(talon2InfoFrame)
-						.build();
+	auto talonBoxFactory = BoxFactory(Gtk::ORIENTATION_VERTICAL);
+	for(auto& talonInfoFrame : talonInfoFrames) {
+		talonBoxFactory.addWidget(talonInfoFrame);
+	}
+	auto talonBox = talonBoxFactory.build();
 
 	// Controls Box
 	auto controlsBox = BoxFactory(Gtk::ORIENTATION_HORIZONTAL, 5)
@@ -519,42 +448,39 @@ void setupGui(const Glib::RefPtr<Gtk::Application>& application) {
 						 .addWidget(victor1Box)
 						 .build();
 
+	auto parentBox = BoxFactory(Gtk::ORIENTATION_VERTICAL, 5)
+						 .addWidget(controlsBox)
+						 .addWidget(sensorBox)
+						 .build();
+
 	// Create the window
 	window = WindowFactory()
 				 .setTitle("Razorbotz Robot Remote Monitor and Controller")
 				 .addEventWithCallback(Gdk::KEY_PRESS_MASK, on_key_press_event)
 				 .addEventWithCallback(Gdk::KEY_RELEASE_MASK, on_key_release_event)
 				 .addDeleteEvent(quit)
-				 .addWidget(
-					 // Parent box
-					 BoxFactory(Gtk::ORIENTATION_VERTICAL, 5)
-						 .addWidget(controlsBox)
-						 .addWidget(sensorBox)
-						 .build())
+				 .addWidget(parentBox)
 				 .build();
 
 	// Show the window
 	window->show_all();
 }
 
-struct RemoteRobot {
-	std::string tag;
-	time_t lastSeenTime{};
-};
-std::vector<RemoteRobot> robotList;
-
+// Find if string is in vector of strings
 bool contains(std::vector<std::string>& list, std::string& value) {
 	return std::any_of(list.begin(), list.end(), [value](const std::string& storedValue) {
 		return storedValue == value;
 	});
 }
 
+// Find if robot tag is in remote robot list
 bool contains(std::vector<RemoteRobot>& list, std::string& robotTag) {
 	return std::any_of(list.begin(), list.end(), [robotTag](const RemoteRobot& storedValue) {
 		return robotTag == storedValue.tag;
 	});
 }
 
+// Set last seen time
 void update(std::vector<RemoteRobot>& list, std::string& robotTag) {
 	for(auto& index : list) {
 		time_t now;
@@ -685,6 +611,42 @@ void adjustRobotList() {
 	}
 }
 
+void displayVictorInfo(VictorInfoFrame* victorInfoFrame, uint8_t* headMessage) {
+	auto deviceId = parseType<int>((uint8_t*)&headMessage[1]);
+	auto busVoltage = parseType<float>((uint8_t*)&headMessage[5]);
+	auto outputVoltage = parseType<float>((uint8_t*)&headMessage[9]);
+	auto outputPercent = parseType<float>((uint8_t*)&headMessage[13]);
+	victorInfoFrame->setItem("Device ID", deviceId);
+	victorInfoFrame->setItem("Bus Voltage", busVoltage);
+	victorInfoFrame->setItem("Output Voltage", outputVoltage);
+	victorInfoFrame->setItem("Output Percent", outputPercent);
+}
+
+void displayTalonInfo(TalonInfoFrame* talonInfoFrame, uint8_t* headMessage) {
+	auto deviceId = parseType<int>((uint8_t*)&headMessage[1]);
+	auto busVoltage = parseType<float>((uint8_t*)&headMessage[5]);
+	auto outputCurrent = parseType<float>((uint8_t*)&headMessage[9]);
+	auto outputVoltage = parseType<float>((uint8_t*)&headMessage[13]);
+	auto outputPercent = parseType<float>((uint8_t*)&headMessage[17]);
+	auto temperature = parseType<float>((uint8_t*)&headMessage[21]);
+	auto sensorPosition = parseType<int>((uint8_t*)&headMessage[25]);
+	auto sensorVelocity = parseType<int>((uint8_t*)&headMessage[29]);
+	auto closedLoopError = parseType<int>((uint8_t*)&headMessage[33]);
+	auto integralAccumulator = parseType<int>((uint8_t*)&headMessage[37]);
+	auto errorDerivative = parseType<int>((uint8_t*)&headMessage[41]);
+	talonInfoFrame->setItem("Device ID", deviceId);
+	talonInfoFrame->setItem("Bus Voltage", busVoltage);
+	talonInfoFrame->setItem("Output Current", outputCurrent);
+	talonInfoFrame->setItem("Output Voltage", outputVoltage);
+	talonInfoFrame->setItem("Output Percent", outputPercent);
+	talonInfoFrame->setItem("Temperature", temperature);
+	talonInfoFrame->setItem("Sensor Position", sensorPosition);
+	talonInfoFrame->setItem("Sensor Velocity", sensorVelocity);
+	talonInfoFrame->setItem("Closed Loop Error", closedLoopError);
+	talonInfoFrame->setItem("Integral Accumulator", integralAccumulator);
+	talonInfoFrame->setItem("Error Derivative", errorDerivative);
+}
+
 int main(int argc, char** argv) {
 	// Initialize GTK
 	Glib::RefPtr<Gtk::Application> application = Gtk::Application::create(argc, argv, "edu.uark.razorbotz");
@@ -767,133 +729,66 @@ int main(int argc, char** argv) {
 				messageBytesList.pop_front();
 			}
 
-			//std::cout << "Got Message" << std::endl;
+#ifdef DEBUG
+			std::cout << "Got Message" << std::endl;
+#endif // DEBUG
+	   // Get command
 			uint8_t command = headMessage[0];
-			//std::cout << "command " << (int)command << std::endl;
-			// TODO: Refactor to reduce code duplication
-			if(command == 1) {
-				auto voltage = parseType<float>((uint8_t*)&headMessage[1]);
-				auto current0 = parseType<float>((uint8_t*)&headMessage[5]);
-				auto current1 = parseType<float>((uint8_t*)&headMessage[9]);
-				auto current2 = parseType<float>((uint8_t*)&headMessage[13]);
-				auto current3 = parseType<float>((uint8_t*)&headMessage[17]);
-				auto current4 = parseType<float>((uint8_t*)&headMessage[21]);
-				auto current5 = parseType<float>((uint8_t*)&headMessage[25]);
-				auto current6 = parseType<float>((uint8_t*)&headMessage[29]);
-				auto current7 = parseType<float>((uint8_t*)&headMessage[33]);
-				auto current8 = parseType<float>((uint8_t*)&headMessage[37]);
-				auto current9 = parseType<float>((uint8_t*)&headMessage[41]);
-				auto current10 = parseType<float>((uint8_t*)&headMessage[45]);
-				auto current11 = parseType<float>((uint8_t*)&headMessage[49]);
-				auto current12 = parseType<float>((uint8_t*)&headMessage[53]);
-				auto current13 = parseType<float>((uint8_t*)&headMessage[57]);
-				auto current14 = parseType<float>((uint8_t*)&headMessage[61]);
-				auto current15 = parseType<float>((uint8_t*)&headMessage[65]);
-				voltageLabel->set_label(std::to_string(voltage).c_str());
-				current0Label->set_label(std::to_string(current0).c_str());
-				current1Label->set_label(std::to_string(current1).c_str());
-				current2Label->set_label(std::to_string(current2).c_str());
-				current3Label->set_label(std::to_string(current3).c_str());
-				current4Label->set_label(std::to_string(current4).c_str());
-				current5Label->set_label(std::to_string(current5).c_str());
-				current6Label->set_label(std::to_string(current6).c_str());
-				current7Label->set_label(std::to_string(current7).c_str());
-				current8Label->set_label(std::to_string(current8).c_str());
-				current9Label->set_label(std::to_string(current9).c_str());
-				current10Label->set_label(std::to_string(current10).c_str());
-				current11Label->set_label(std::to_string(current11).c_str());
-				current12Label->set_label(std::to_string(current12).c_str());
-				current13Label->set_label(std::to_string(current13).c_str());
-				current14Label->set_label(std::to_string(current14).c_str());
-				current15Label->set_label(std::to_string(current15).c_str());
-			}
-			if(command == 2) {
-				auto deviceID = parseType<int>((uint8_t*)&headMessage[1]);
-				auto busVoltage = parseType<float>((uint8_t*)&headMessage[5]);
-				auto outputCurrent = parseType<float>((uint8_t*)&headMessage[9]);
-				auto outputVoltage = parseType<float>((uint8_t*)&headMessage[13]);
-				auto outputPercent = parseType<float>((uint8_t*)&headMessage[17]);
-				auto temperature = parseType<float>((uint8_t*)&headMessage[21]);
-				auto sensorPosition = parseType<int>((uint8_t*)&headMessage[25]);
-				auto sensorVelocity = parseType<int>((uint8_t*)&headMessage[29]);
-				auto closedLoopError = parseType<int>((uint8_t*)&headMessage[33]);
-				auto integralAccumulator = parseType<int>((uint8_t*)&headMessage[37]);
-				auto errorDerivative = parseType<int>((uint8_t*)&headMessage[41]);
-				talon1InfoFrame->setItem("Device ID", deviceID);
-				talon1InfoFrame->setItem("Bus Voltage", busVoltage);
-				talon1InfoFrame->setItem("Output Current", outputCurrent);
-				talon1InfoFrame->setItem("Output Voltage", outputVoltage);
-				talon1InfoFrame->setItem("Output Percent", outputPercent);
-				talon1InfoFrame->setItem("Temperature", temperature);
-				talon1InfoFrame->setItem("Sensor Position", sensorPosition);
-				talon1InfoFrame->setItem("Sensor Velocity", sensorVelocity);
-				talon1InfoFrame->setItem("Closed Loop Error", closedLoopError);
-				talon1InfoFrame->setItem("Integral Accumulator", integralAccumulator);
-				talon1InfoFrame->setItem("Error Derivative", errorDerivative);
-			}
-			if(command == 3) {
-				auto deviceID = parseType<int>((uint8_t*)&headMessage[1]);
-				auto busVoltage = parseType<float>((uint8_t*)&headMessage[5]);
-				auto outputCurrent = parseType<float>((uint8_t*)&headMessage[9]);
-				auto outputVoltage = parseType<float>((uint8_t*)&headMessage[13]);
-				auto outputPercent = parseType<float>((uint8_t*)&headMessage[17]);
-				auto temperature = parseType<float>((uint8_t*)&headMessage[21]);
-				auto sensorPosition = parseType<int>((uint8_t*)&headMessage[25]);
-				auto sensorVelocity = parseType<int>((uint8_t*)&headMessage[29]);
-				auto closedLoopError = parseType<int>((uint8_t*)&headMessage[33]);
-				auto integralAccumulator = parseType<int>((uint8_t*)&headMessage[37]);
-				auto errorDerivative = parseType<int>((uint8_t*)&headMessage[41]);
-				talon2InfoFrame->setItem("Device ID", deviceID);
-				talon2InfoFrame->setItem("Bus Voltage", busVoltage);
-				talon2InfoFrame->setItem("Output Current", outputCurrent);
-				talon2InfoFrame->setItem("Output Voltage", outputVoltage);
-				talon2InfoFrame->setItem("Output Percent", outputPercent);
-				talon2InfoFrame->setItem("Temperature", temperature);
-				talon2InfoFrame->setItem("Sensor Position", sensorPosition);
-				talon2InfoFrame->setItem("Sensor Velocity", sensorVelocity);
-				talon2InfoFrame->setItem("Closed Loop Error", closedLoopError);
-				talon2InfoFrame->setItem("Integral Accumulator", integralAccumulator);
-				talon2InfoFrame->setItem("Error Derivative", errorDerivative);
-			}
-			if(command == 4) {
-				auto deviceID = parseType<int>((uint8_t*)&headMessage[1]);
-				auto busVoltage = parseType<float>((uint8_t*)&headMessage[5]);
-				auto outputVoltage = parseType<float>((uint8_t*)&headMessage[9]);
-				auto outputPercent = parseType<float>((uint8_t*)&headMessage[13]);
-				victor1InfoFrame->setItem("Device ID", deviceID);
-				victor1InfoFrame->setItem("Bus Voltage", busVoltage);
-				victor1InfoFrame->setItem("Output Voltage", outputVoltage);
-				victor1InfoFrame->setItem("Output Percent", outputPercent);
-			}
-			if(command == 5) {
-				auto deviceID = parseType<int>((uint8_t*)&headMessage[1]);
-				auto busVoltage = parseType<float>((uint8_t*)&headMessage[5]);
-				auto outputVoltage = parseType<float>((uint8_t*)&headMessage[9]);
-				auto outputPercent = parseType<float>((uint8_t*)&headMessage[13]);
-				victor2InfoFrame->setItem("Device ID", deviceID);
-				victor2InfoFrame->setItem("Bus Voltage", busVoltage);
-				victor2InfoFrame->setItem("Output Voltage", outputVoltage);
-				victor2InfoFrame->setItem("Output Percent", outputPercent);
-			}
-			if(command == 6) {
-				auto deviceID = parseType<int>((uint8_t*)&headMessage[1]);
-				auto busVoltage = parseType<float>((uint8_t*)&headMessage[5]);
-				auto outputVoltage = parseType<float>((uint8_t*)&headMessage[9]);
-				auto outputPercent = parseType<float>((uint8_t*)&headMessage[13]);
-				victor3InfoFrame->setItem("Device ID", deviceID);
-				victor3InfoFrame->setItem("Bus Voltage", busVoltage);
-				victor3InfoFrame->setItem("Output Voltage", outputVoltage);
-				victor3InfoFrame->setItem("Output Percent", outputPercent);
-			}
-			if(command == 7) { //control mode
-				int mode = headMessage[1];
-				//std::cout << mode << std::endl;
-				if(mode == 1) {
-					controlModeLabel->set_label("Drive");
-				}
-				if(mode == 0) {
-					controlModeLabel->set_label("Dig");
-				}
+#ifdef DEBUG
+			std::cout << "Command: " << (int)command << std::endl;
+#endif // DEBUG
+
+			// Handle command
+			switch(command) {
+				case COMMAND_POWER_DISTRIBUTION_PANEL: {
+					// Display voltage
+					auto voltage = parseType<float>((uint8_t*)&headMessage[1]);
+					voltageLabel->set_label(std::to_string(voltage).c_str());
+
+					// Display Currents
+					for(int index = 0; index < numCurrents; index++) {
+						const auto current = parseType<float>((uint8_t*)&headMessage[5 + index * sizeof(float)]);
+						currentLabels[index]->set_label(std::to_string(current).c_str());
+					}
+				} break;
+
+				case COMMAND_TALON_1:
+					displayTalonInfo(talonInfoFrames[0], headMessage);
+					break;
+
+				case COMMAND_TALON_2:
+					displayTalonInfo(talonInfoFrames[1], headMessage);
+					break;
+
+				case COMMAND_VICTOR_1:
+					displayVictorInfo(victorInfoFrames[0], headMessage);
+					break;
+
+				case COMMAND_VICTOR_2:
+					displayVictorInfo(victorInfoFrames[1], headMessage);
+					break;
+
+				case COMMAND_VICTOR_3:
+					displayVictorInfo(victorInfoFrames[2], headMessage);
+					break;
+
+				case COMMAND_CONTROL: { // Control mode
+					const int mode = headMessage[1];
+#ifdef DEBUG
+					std::cout << "Mode: " << mode << std::endl;
+#endif // DEBUG
+
+					switch(mode) {
+						case MODE_DRIVE:
+							controlModeLabel->set_label("Drive");
+							break;
+						case MODE_DIG:
+							controlModeLabel->set_label("Dig");
+							break;
+					}
+				} break;
+				default:
+					break;
 			}
 		}
 

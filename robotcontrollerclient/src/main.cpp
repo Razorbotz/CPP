@@ -26,7 +26,7 @@
 #include "WindowFactory.hpp"
 
 // Port for communicating with the robot
-constexpr unsigned int PORT = 31337;
+constexpr unsigned int netPortNumber = 31337;
 
 // Takes a BE type as a byte array and returns that type. Will truncate if array is longer than uint32_t (4 bytes)
 // This code may produce undefined behavior on specific machines/compilers since it is not standards compliant and uses bitwise/casting trickery (endianness and type size)
@@ -129,7 +129,7 @@ void connectToServer() {
 	memset(&serv_addr, 0, sizeof(serv_addr));
 
 	serv_addr.sin_family = AF_INET;
-	serv_addr.sin_port = htons(PORT);
+	serv_addr.sin_port = htons(netPortNumber);
 
 	char buffer[1024] = {0};
 	if((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {

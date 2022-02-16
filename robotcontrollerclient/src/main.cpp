@@ -136,13 +136,6 @@ void connectToServer() {
 		printf("\n Socket creation error \n");
 
 		setDisconnectedState();
-		//		  connectionStatusLabel->set_text("Socket Creation Error");
-		//		  Gdk::RGBA red;
-		//		  red.set_rgba(1.0,0,0,1.0);
-		//		  connectionStatusLabel->override_background_color(red);
-		//        ipAddressEntry->set_can_focus(true);
-		//        ipAddressEntry->set_editable(true);
-		//        connected=false;
 		return;
 	}
 	if(inet_pton(AF_INET, ipAddressEntry->get_text().c_str(), &serv_addr.sin_addr) <= 0) {
@@ -152,13 +145,6 @@ void connectToServer() {
 		int result = dialog.run();
 
 		setDisconnectedState();
-		//        connectionStatusLabel->set_text("Invalid Address");
-		//		  Gdk::RGBA red;
-		//		  red.set_rgba(1.0,0,0,1.0);
-		//		  connectionStatusLabel->override_background_color(red);
-		//        ipAddressEntry->set_can_focus(true);
-		//        ipAddressEntry->set_editable(true);
-		//        connected=false;
 		return;
 	}
 	if(connect(sock, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0) {
@@ -168,27 +154,12 @@ void connectToServer() {
 		int result = dialog.run();
 
 		setDisconnectedState();
-		//        connectionStatusLabel->set_text("Connection Failed");
-		//		  Gdk::RGBA red;
-		//		  red.set_rgba(1.0,0,0,1.0);
-		//		  connectionStatusLabel->override_background_color(red);
-		//        ipAddressEntry->set_can_focus(true);
-		//        ipAddressEntry->set_editable(true);
-		//        connected=false;
 	} else {
 		send(sock, hello.c_str(), strlen(hello.c_str()), 0);
 		bytesRead = read(sock, buffer, 1024);
 		fcntl(sock, F_SETFL, O_NONBLOCK);
 
 		setConnectedState();
-		//        connectButton->set_label("Disconnect");
-		//		  connectionStatusLabel->set_text("Connected");
-		//		  Gdk::RGBA green;
-		//		  green.set_rgba(0,1.0,0,1.0);
-		//		  connectionStatusLabel->override_background_color(green);
-		//        ipAddressEntry->set_can_focus(false);
-		//        ipAddressEntry->set_editable(false);
-		//        connected=true;
 	}
 }
 
@@ -221,7 +192,7 @@ void disconnectFromServer() {
 
 void connectOrDisconnect() {
 	Glib::ustring string = connectButton->get_label();
-	//std::cout << "connect" << string << std::endl;
+
 	if(string == "Connect") {
 		connectToServer();
 	} else {
@@ -281,7 +252,6 @@ void shutdownRobot() {
 
 void shutdownDialog(Gtk::Window* parentWindow) {
 	Gtk::MessageDialog dialog(*parentWindow, "Shutdown now?", false, Gtk::MESSAGE_QUESTION, Gtk::BUTTONS_OK_CANCEL);
-	//dialog.set_secondary_text("Do you want to shutdown now?");
 	int result = dialog.run();
 
 	switch(result) {
@@ -1033,65 +1003,10 @@ int main(int argc, char** argv) {
 
 					send(sock, message, length, 0);
 				}
-
-				//				if(event.jaxis.axis == 0){
-				//					uint8_t command=1;
-				//					float value=(float) event.jaxis.value/-32768.0;
-				//
-				//					int length=8;
-				//					uint8_t headMessage[length];
-				//					headMessage[0]=length;
-				//                    headMessage[1]=command;
-				//                    headMessage[2]=event.jaxis.axis;//0-roll 1-pitch 2-throttle 3-yaw
-				//                    headMessage[3]=event.jaxis.which;
-				//					insert(value,&headMessage[4]);
-				//
-				//					send(sock, headMessage, length, 0);
-				//				}
-				//				if(event.jaxis.axis == 1){
-				//					uint8_t command=2;// pitch
-				//					float value=(float) event.jaxis.value/-32768.0;
-				//
-				//                  int length=7;
-				//					uint8_t headMessage[length];
-				//					headMessage[0]=length;
-				//					headMessage[1]=command;
-				//                  headMessage[2]=event.jhat.which;
-				//					insert(value,&headMessage[3]);
-				//
-				//					send(sock, headMessage, length, 0);
-				//				}
-				//				if(event.jaxis.axis == 2){
-				//					uint8_t command=3;// throttle
-				//					float value=(float) event.jaxis.value/-32768.0;
-				//
-				//                    int length=7;
-				//					uint8_t headMessage[length];
-				//					headMessage[0]=length;
-				//					headMessage[1]=command;
-				//                    headMessage[2]=event.jhat.which;
-				//					insert(value,&headMessage[3]);
-				//
-				//					send(sock, headMessage, length, 0);
-				//				}
-				//				if(event.jaxis.axis == 3){
-				//					uint8_t command=4;// yaw
-				//					float value=(float) event.jaxis.value/-32768.0;
-				//
-				//                    int length=7;
-				//					uint8_t headMessage[length];
-				//					headMessage[0]=length;
-				//					headMessage[1]=command;
-				//                    headMessage[2]=event.jhat.which;
-				//					insert(value,&headMessage[3]);
-				//
-				//					send(sock, headMessage, length, 0);
-				//				}
 				break;
 				default:
 					break;
 			}
 		}
 	}
-	return 0;
 }

@@ -18,8 +18,9 @@
 #include <gtkmm.h>
 
 #include "BoxFactory.hpp"
+#include "ButtonFactory.hpp"
 #include "GuiBox.hpp"
-#include "InfoFrame.hpp"
+#include "RemoteRobot.hpp"
 #include "TalonInfoFrame.hpp"
 #include "VictorInfoFrame.hpp"
 #include "WindowFactory.hpp"

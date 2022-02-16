@@ -112,6 +112,9 @@ void setDisconnectedState() {
 	ipAddressEntry->set_can_focus(true);
 	ipAddressEntry->set_editable(true);
 	connected = false;
+
+	// Reset socket
+	sock = 0;
 }
 
 // Helper function to set GUI info when robot connects/is connected
@@ -276,6 +279,7 @@ bool on_key_release_event(GdkEventKey* key_event) {
 	//std::cout << "key released" << std::endl;
 	//std::cout << std::hex << key_event->keyval << "  " << key_event->state << std::dec << std::endl;
 
+	if(sock) {
 	int messageSize = 5;
 	uint8_t command = 2; // keyboard
 	uint8_t message[messageSize];
@@ -287,6 +291,7 @@ bool on_key_release_event(GdkEventKey* key_event) {
 	send(sock, message, messageSize, 0);
 	//std::cout << std::hex << (uint)message[2] << "  " << (uint)message[3] << std::dec << std::endl;
 
+	}
 	return false;
 }
 
@@ -294,6 +299,7 @@ bool on_key_press_event(GdkEventKey* key_event) {
 	//std::cout << "key pressed" << std::endl;
 	//std::cout << std::hex << key_event->keyval << "  " << key_event->state << std::dec << std::endl;
 
+	if(sock) {
 	int messageSize = 5;
 	uint8_t command = 2; // keyboard
 	uint8_t message[messageSize];
@@ -305,6 +311,7 @@ bool on_key_press_event(GdkEventKey* key_event) {
 	send(sock, message, messageSize, 0);
 	//std::cout << std::hex << (uint)message[2] << "  " << (uint)message[3] << std::dec << std::endl;
 
+	}
 	return false;
 }
 

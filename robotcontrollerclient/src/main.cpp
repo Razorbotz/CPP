@@ -44,9 +44,11 @@ T parseType(const uint8_t* array) {
 
 // Takes a data type and fills byte array with its data in BE form
 // This code may produce undefined behavior on specific machines/compilers since it is not standards compliant and uses bitwise/casting trickery (endianness and int size)
-// TODO: Make this standards compliant and platform independent; Make this have an array bounds check
+// TODO: Make this standards compliant and platform independent
 template <typename T>
-void insert(T value, uint8_t* array) {
+void insert(T value, uint8_t* array, const size_t arrayLen) {
+	if(arrayLen < sizeof(T)) throw std::out_of_range("Type of value doesn't fit in array!"); // Throw an exception if variable doesn't fit in array
+
 	constexpr size_t valueSize = sizeof(value);
 	for(size_t i = 0; i < valueSize; i++)
 		array[i] = uint8_t((uint32_t(*(static_cast<uint32_t*>(static_cast<void*>(&value)))) >> ((valueSize - 1 - i) * 8)));

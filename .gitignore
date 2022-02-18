@@ -1,2 +1,5 @@
 robotcontrollerclient/bin
 robotcontrollerclient/build
+.vscode/
+robotcontrollerclient/.idea/
+robotcontrollerclient/cmake-build-debug/

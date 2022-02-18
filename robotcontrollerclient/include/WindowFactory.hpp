@@ -11,7 +11,6 @@
 
 class WindowFactory {
 	typedef std::function<bool(GdkEventKey*)> eventCallback;
-	typedef std::function<bool(GdkEventAny*)> deleteCallback;
 
   private:
 	Gtk::Window* window;
@@ -20,10 +19,33 @@ class WindowFactory {
 
   public:
 	WindowFactory();
-	WindowFactory& addEvent(Gdk::EventMask);
-	WindowFactory& addEventWithCallback(Gdk::EventMask event, eventCallback callback);
+
+	template <class T>
+	WindowFactory& addEventWithCallback(Gdk::EventMask event, T callback) {
+		window->add_events(event);
+
+		// Add event handlers for specific events
+		switch(event) {
+			case Gdk::KEY_PRESS_MASK:
+				window->signal_key_press_event().connect(callback);
+				break;
+			case Gdk::KEY_RELEASE_MASK:
+				window->signal_key_release_event().connect(callback);
+				break;
+		}
+
+		return *this;
+	}
 	WindowFactory& addWidget(Gtk::Widget* widget);
-	WindowFactory& addDeleteEvent(deleteCallback callback);
+
+	template <class T>
+	WindowFactory& addDeleteEvent(T callback) {
+		// Add delete event
+		window->signal_delete_event().connect(callback);
+
+		return *this;
+	}
+
 	WindowFactory& setTitle(const Glib::ustring& title);
 	Gtk::Window* build();
 };

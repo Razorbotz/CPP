@@ -12,7 +12,6 @@
 class ButtonFactory {
   private:
 	Gtk::Button* button;
-	typedef std::function<void(Gtk::Window*)> clickCallback;
 
   public:
 	ButtonFactory(const char* label, const bool managed = true);

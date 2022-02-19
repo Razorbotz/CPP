@@ -54,8 +54,14 @@ void insert(T value, uint8_t* array, const size_t arrayLen) {
 		array[i] = uint8_t((uint32_t(*(static_cast<uint32_t*>(static_cast<void*>(&value)))) >> ((valueSize - 1 - i) * 8)));
 }
 
-// Callback for quitting the program
-bool quit(GdkEventAny* event) {
+/** @brief Callback function to quit the program
+ *
+ * Exits the program with status zero when called.
+ *
+ * @param[in]   event   Unused. A pointer to any GDK Event.
+ * @return true
+ * */
+bool quit(const GdkEventAny* event) {
 	exit(0);
 	return true;
 }

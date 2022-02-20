@@ -1,3 +1,20 @@
+/** @file
+ * @brief GUI client program to control and display info for with the robot.
+ *
+ * @author Bill
+ * @author Luke Simmons
+ *
+ * @date 2022-2-18
+ *
+ * This program will connect to the robot via the internet in order to display
+ * information about the robot and allow the user to control the robot. The
+ * interface is written in GTK and uses the Gtkmm library. It allows the usage
+ * of controllers and joysticks on the client to control the robot by using the
+ * SDL library. In order to connect to the robot, the user must enter the IP
+ * address of the robot in the GUI. It will display information about the
+ * voltages and motors on the robot.
+ * */
+
 #include <arpa/inet.h>
 #include <cstdio>
 #include <cstdlib>
@@ -25,12 +42,21 @@
 #include "VictorInfoFrame.hpp"
 #include "WindowFactory.hpp"
 
-// Port for communicating with the robot
+/// Port for communicating with the robot over the network
 constexpr unsigned int netPortNumber = 31337;
 
-// Takes a BE type as a byte array and returns that type. Will truncate if array is longer than uint32_t (4 bytes)
-// This code may produce undefined behavior on specific machines/compilers since it is not standards compliant and uses bitwise/casting trickery (endianness and type size)
-// TODO: Make this standards compliant and platform independent
+/** @brief Converts a byte array to a specified type.
+ *
+ * Takes a big-endian type as a byte array and returns that type. Will truncate if
+ * array is longer than uint32_t (4 bytes). This code may produce undefined
+ * behavior on specific machines/compilers since it is not standards compliant
+ * and uses bitwise/casting trickery (endianness and type size).
+ *
+ * @todo Add array length so that it can be size other than uint32_t (4 bytes) and not truncate.
+ *
+ * @param[in]   array   The array to be converted to a type T
+ * @return Value of type T filled with data from input array
+ * */
 template <typename T>
 T parseType(const uint8_t* array) {
 	constexpr size_t size = sizeof(uint32_t);
@@ -42,13 +68,28 @@ T parseType(const uint8_t* array) {
 	return (T) * (static_cast<T*>(static_cast<void*>(&result)));
 }
 
-// Takes a data type and fills byte array with its data in BE form
-// This code may produce undefined behavior on specific machines/compilers since it is not standards compliant and uses bitwise/casting trickery (endianness and int size)
-// TODO: Make this standards compliant and platform independent
+/** @brief Converts a variable of a given type to a byte array.
+ *
+ * Takes a data type and fills byte array with its data in big-endian form.
+ * This code may produce undefined behavior on specific machines/compilers
+ * since it is not standards compliant and uses bitwise/casting trickery
+ * (endianness and int size).
+
+ * @todo Make this standards compliant and platform independent by not using trickery.
+ *
+ * @throw   std::out_of_range   If variable doesn't fit in array
+ *
+ * @param[in]   value     Variable to fill array with
+ * @param[out]  array    The array to be converted to a type T
+ * @param[in]   arrayLen  Size of array to be filled
+ * @return void
+ * */
 template <typename T>
 void insert(T value, uint8_t* array, const size_t arrayLen) {
-	if(arrayLen < sizeof(T)) throw std::out_of_range("Type of value doesn't fit in array!"); // Throw an exception if variable doesn't fit in array
+	// Check if value fits into array
+	if(arrayLen < sizeof(T)) throw std::out_of_range("Type of value doesn't fit in array!");
 
+	// Convert to byte-array by looping through each byte and bit-shifting
 	constexpr size_t valueSize = sizeof(value);
 	for(size_t i = 0; i < valueSize; i++)
 		array[i] = uint8_t((uint32_t(*(static_cast<uint32_t*>(static_cast<void*>(&value)))) >> ((valueSize - 1 - i) * 8)));
@@ -60,6 +101,7 @@ void insert(T value, uint8_t* array, const size_t arrayLen) {
  *
  * @param[in]   event   Unused. A pointer to any GDK Event.
  * @return true
+ * @retval  true Always returns true.
  * */
 bool quit(const GdkEventAny* event) {
 	exit(0);
@@ -67,48 +109,87 @@ bool quit(const GdkEventAny* event) {
 }
 
 // GUI Element Variables
+/// Label for the voltage
 Gtk::Label* voltageLabel;
 
+/// Number of currents on the robot
 constexpr size_t numCurrents = 16;
+/// Array to store current labels. Size is number of currents.
 Gtk::Label* currentLabels[numCurrents];
 
+/// List box for IP addresses.
 Gtk::ListBox* addressListBox;
+/// Entry box to enter IP address of robot.
 Gtk::Entry* ipAddressEntry;
+/// Label to show connection status to robot.
 Gtk::Label* connectionStatusLabel;
 
+/// Button to enable silent running mode.
 Gtk::Button* silentRunButton;
+/// Button to connect to robot.
 Gtk::Button* connectButton;
+/// Label to show what mode is running. \see Modes for values.
 Gtk::Label* controlModeLabel;
 
+/// Number of Talon motors on the robot
 constexpr size_t numTalonInfoFrames = 2;
+/// Array of Talon Info Frames. Size is number of Talon motors.
 TalonInfoFrame* talonInfoFrames[numTalonInfoFrames];
 
+/// Number of Victor motors on the robot
 constexpr size_t numVictorInfoFrames = 3;
+/// Array of Victor Info Frames. Size is number of Victor motors.
 VictorInfoFrame* victorInfoFrames[numVictorInfoFrames];
 
+/// GTK Window for the GUI
 Gtk::Window* window;
 
+/// Socket for network communication
 int sock = 0;
+/// Variable for storing if the robot is connected to the client or not.
 bool connected = false;
 
-// Net Commands
+/** @brief Different commands sent between the robot and client.
+ *
+ * Used to specify what kind of message is sent/received between the robot
+ * and the client. Used at the first byte of messages.
+ */
 enum Commands {
+	/// Message contains information about the Power Distribution Panel (PDP) (Voltage and Currents).
 	COMMAND_POWER_DISTRIBUTION_PANEL = 1,
+	/// Message contains information about Talon motor 1.
 	COMMAND_TALON_1,
+	/// Message contains information about Talon motor 2.
 	COMMAND_TALON_2,
+	/// Message contains information about Victor motor 1.
 	COMMAND_VICTOR_1,
+	/// Message contains information about Victor motor 2.
 	COMMAND_VICTOR_2,
+	/// Message contains information about Victor motor 3.
 	COMMAND_VICTOR_3,
-	COMMAND_CONTROL
+	/// Message contains information about what control mode the robot is in. \see Modes for control modes.
+	COMMAND_CONTROL,
+	/// Shutdown the robot
+	COMMAND_SHUTDOWN
 };
 
-// Robot Modes
+/** @brief Modes for driving the robot.
+ *
+ * Used to specify which part of the robot should be controlled by the client.
+ */
 enum Modes {
+	/// Robot in drive mode.
 	MODE_DRIVE = 1,
+	/// Robot in dig mode.
 	MODE_DIG
 };
 
-// Helper function to set status and GUI info when robot disconnects/is not connected
+/** @brief Set the program's state to disconnected from robot.
+ *
+ * Change GUI state and internal variables to represent that the robot is disconnected from the client.
+ *
+ * @return void
+ * */
 void setDisconnectedState() {
 	connectButton->set_label("Connect");
 	connectionStatusLabel->set_text("Not Connected");
@@ -125,7 +206,12 @@ void setDisconnectedState() {
 	sock = 0;
 }
 
-// Helper function to set status and GUI info when robot connects/is connected
+/** @brief Set the program's state to connected to robot.
+ *
+ * Change GUI state and internal variables to represent that the robot is connected to the client.
+ *
+ * @return void
+ * */
 void setConnectedState() {
 	connectButton->set_label("Disconnect");
 	connectionStatusLabel->set_text("Connected");
@@ -140,6 +226,15 @@ void setConnectedState() {
 	connected = true;
 }
 
+/** @brief Connect to the robot.
+ *
+ * Connects to the robot remotely via the internet through a POSIX socket.
+ * Connects to port specified by "netPortNumber" and the IP address in the IP
+ * entry box. Will alter the connection state based on result of connection.
+ * Saves the socket to the global variable. Will show a message on failure.
+ *
+ * @return void
+ * */
 void connectToServer() {
 	if(connected) return;
 	struct sockaddr_in address {};
@@ -160,7 +255,9 @@ void connectToServer() {
 		return;
 	}
 	if(inet_pton(AF_INET, ipAddressEntry->get_text().c_str(), &serv_addr.sin_addr) <= 0) {
+#ifdef DEBUG
 		std::cout << "Invalid address/address not supported!" << std::endl;
+#endif // DEBUG
 
 		Gtk::MessageDialog dialog(*window, "Invalid Address", false, Gtk::MESSAGE_QUESTION, Gtk::BUTTONS_OK);
 		int result = dialog.run();
@@ -184,6 +281,14 @@ void connectToServer() {
 	}
 }
 
+/** @brief Disconnect from the robot.
+ *
+ * Will display a message asking user to confirm to disconnect and will
+ * disconnect from robot if user confirms. Will set the disconnected state if
+ * the shutdown is successful.
+ *
+ * @return void
+ * */
 void disconnectFromServer() {
 	Gtk::MessageDialog dialogDisconnect(*window, "Disconnect now?", false, Gtk::MESSAGE_QUESTION, Gtk::BUTTONS_OK_CANCEL);
 	int resultDisconnect = dialogDisconnect.run();
@@ -211,6 +316,12 @@ void disconnectFromServer() {
 	}
 }
 
+/** @brief Toggles the connection state between the client and robot.
+ *
+ * Runs the opposite connection function of the current status.
+ *
+ * @return void
+ * */
 void connectOrDisconnect() {
 	const Glib::ustring string = connectButton->get_label();
 
@@ -225,6 +336,15 @@ void connectOrDisconnect() {
 	}
 }
 
+/** @brief Toggles silent run mode on the robot.
+ *
+ * Checks the state of silent running from the silent run button text.
+ * Sends a message to enable or disable silent running mode on the robot.
+ * Updates silent run button text to show if it is silent or not.
+ * Only works if connected to the robot.
+ *
+ * @return void
+ * */
 void silentRun() {
 	if(!connected) return;
 	std::string currentButtonState = silentRunButton->get_label();
@@ -251,6 +371,18 @@ void silentRun() {
 	}
 }
 
+/** @brief Sets IP Address Entry to selected IP address from the Address List Box
+ *
+ * Callback function for addressListBox when a row is activated.
+ * Sets the text for ipAddressEntry to the address string in the selected row
+ * passed in.
+ *
+ * @see addressListBox
+ * @see ipAddressEntry
+ *
+ * @param[in]   listBoxRow  The selected row
+ * @return void
+ * */
 void rowActivated(Gtk::ListBoxRow* listBoxRow) {
 #ifdef DEBUG
 	std::cout << "Row activated: " << std::endl;
@@ -270,34 +402,47 @@ void rowActivated(Gtk::ListBoxRow* listBoxRow) {
 	ipAddressEntry->set_text(addressString);
 }
 
-void shutdownRobot() {
-#ifdef DEBUG
-	std::cout << "Shutdown robot." << std::endl;
-#endif // DEBUG
-
-	constexpr int messageSize = 2;
-	constexpr uint8_t command = 8; // shutdown
-	uint8_t message[messageSize];
-	message[0] = messageSize;
-	message[1] = command;
-	send(sock, message, messageSize, 0);
-}
-
+/** @brief Shuts down robot after user confirms.
+ *
+ * Callback function for the Shutdown Robot Button. Only works if connected,
+ * otherwise show an error.
+ *
+ * @param[in]   parentWindow    The window that the message dialog will be spawned in.
+ * @return void
+ * */
 void shutdownDialog(Gtk::Window* parentWindow) {
+	if(!connected) {
+		Gtk::MessageDialog dialog(*parentWindow, "Not connected to robot!", false, Gtk::MESSAGE_ERROR, Gtk::BUTTONS_OK);
+		dialog.run();
+		return;
+	}
+
 	Gtk::MessageDialog dialog(*parentWindow, "Shutdown now?", false, Gtk::MESSAGE_QUESTION, Gtk::BUTTONS_OK_CANCEL);
 	int result = dialog.run();
 
-	switch(result) {
-		case(Gtk::RESPONSE_OK):
-			shutdownRobot();
-			break;
-		case(Gtk::RESPONSE_CANCEL):
-		case(Gtk::RESPONSE_NONE):
-		default:
-			break;
+	if(result == Gtk::RESPONSE_OK) {
+#ifdef DEBUG
+		std::cout << "Shutdown robot." << std::endl;
+#endif // DEBUG
+
+		constexpr int messageSize = 2;
+		constexpr uint8_t command = COMMAND_SHUTDOWN; // Shutdown
+		uint8_t message[messageSize];
+		message[0] = messageSize;
+		message[1] = command;
+		send(sock, message, messageSize, 0);
+
 	}
 }
 
+/** @brief Sends when a specific key is released to the robot.
+ *
+ * Sends a message to the robot when a key is released on the keyboard.
+ * Callback for window.
+ *
+ * @return  false
+ * @retval  false   Always returns false.
+ * */
 bool on_key_release_event(GdkEventKey* keyEvent) {
 #ifdef DEBUG
 	std::cout << "Key released:" << std::endl;
@@ -320,6 +465,16 @@ bool on_key_release_event(GdkEventKey* keyEvent) {
 	return false;
 }
 
+/** @brief Sends when a specific key is pressed to the robot.
+ *
+ * Sends a message to the robot when a key is pressed on the keyboard.
+ * Callback for window.
+ *
+ * @see window
+ *
+ * @return  false
+ * @retval  false   Always returns false.
+ * */
 bool on_key_press_event(GdkEventKey* keyEvent) {
 #ifdef DEBUG
 	std::cout << "Key pressed:" << std::endl;
@@ -342,7 +497,34 @@ bool on_key_press_event(GdkEventKey* keyEvent) {
 	return false;
 }
 
-// GUI Boilerplate
+/** @brief Creates, sets up, and displays the GUI window.
+ *
+ * Creates and sets up all sub-elements of the main window.
+ * Generates main window and displays it.
+ *
+ * @see window
+ * @see voltageLabel
+ * @see numCurrents
+ * @see currentLabels
+ * @see addressListBox
+ * @see ipAddressEntry
+ * @see connectionStatusLabel
+ * @see silentRunButton
+ * @see connectButton
+ * @see controlModeLabel
+ * @see numTalonInfoFrames
+ * @see talonInfoFrames
+ * @see numVictorInfoFrames
+ * @see victorInfoFrames
+ * @see BoxFactory
+ * @see ButtonFactory
+ * @see InfoFrame
+ * @see InfoItem
+ * @see TalonInfoFrame
+ * @see WindowFactory
+ *
+ * @return void
+ * */
 void setupGui(const Glib::RefPtr<Gtk::Application>& application) {
 	// Create List Box
 	addressListBox = Gtk::manage(new Gtk::ListBox());
@@ -504,21 +686,51 @@ void setupGui(const Glib::RefPtr<Gtk::Application>& application) {
 	window->show_all();
 }
 
-// Find if string is in vector of strings
+
+/** @brief Checks if a string is contained in a vector of strings.
+ *
+ * Loops through each element in a vector of strings to find if a
+ * given string fully matches.
+ *
+ * @return If string is contained in vector
+ * @retval  true    String is in vector
+ * @retval  false   String not in vector
+ * */
 bool contains(std::vector<std::string>& list, std::string& value) {
 	return std::any_of(list.begin(), list.end(), [value](const std::string& storedValue) {
 		return storedValue == value;
 	});
 }
 
-// Find if robot tag is in remote robot list
+/** @brief Checks if a robot is contained in a vector.
+ *
+ * Loops through each element in a vector of strings to find if a
+ * given string fully matches.
+ *
+ * @see RemoteRobot
+ *
+ * @param[in] list      Vector of Remote Robots
+ * @param[in] robotTag  String for the robot tag
+ * @return If tag is contained in list
+ * @retval  true    Robot tag is in list
+ * @retval  false   Robot tag not in list
+ * */
 bool contains(std::vector<RemoteRobot>& list, std::string& robotTag) {
 	return std::any_of(list.begin(), list.end(), [robotTag](const RemoteRobot& storedValue) {
 		return robotTag == storedValue.tag;
 	});
 }
 
-// Set last seen time
+/** @brief Set last seen time for a robot.
+ *
+ * Sets the list seen time for s specified robot.
+ *
+ * @see RemoteRobot
+ *
+ * @param[in] list      Vector of Remote Robots
+ * @param[in] robotTag  String for the robot tag
+ * @return void
+ * */
 void update(std::vector<RemoteRobot>& list, std::string& robotTag) {
 	for(auto& index : list) {
 		time_t now;
@@ -527,6 +739,12 @@ void update(std::vector<RemoteRobot>& list, std::string& robotTag) {
 	}
 }
 
+/** @brief Get IP addresses of local computer.
+ *
+ * Returns non-loopback IP addresses of computer running the client.
+ *
+ * @return Vector of IP addresses as a string
+ * */
 std::vector<std::string> getAddressList() {
 	std::vector<std::string> addressList;
 	ifaddrs* interfaceAddresses = nullptr;
@@ -534,15 +752,28 @@ std::vector<std::string> getAddressList() {
 		if(interfaceAddresses->ifa_addr != nullptr && interfaceAddresses->ifa_addr->sa_family == AF_INET) {
 			auto* socketAddress = reinterpret_cast<sockaddr_in*>(interfaceAddresses->ifa_addr);
 			std::string addressString(inet_ntoa(socketAddress->sin_addr));
+
+			// Ignore loopback addresses
 			if(addressString == "0.0.0.0") continue;
 			if(addressString == "127.0.0.1") continue;
+
+			// Ignore already found addresses
 			if(contains(addressList, addressString)) continue;
+
 			addressList.push_back(addressString);
 		}
 	}
 	return addressList;
 }
 
+/** @brief Listen to multicast.
+ *
+ * Function for thread to listen to network multicast.
+ * Joins the multicast group 226.1.1.1 on the local 203.106.93.94 interface.
+ * Runs infinite loop for event loop (no exit condition).
+ *
+ * @return void
+ * */
 void broadcastListen() {
 	int sd = socket(AF_INET, SOCK_DGRAM, 0);
 	if(sd < 0) {
@@ -550,7 +781,7 @@ void broadcastListen() {
 		return;
 	}
 
-	int reuse = 1;
+	constexpr int reuse = 1;
 	if(setsockopt(sd, SOL_SOCKET, SO_REUSEADDR, (char*)&reuse, sizeof(reuse)) < 0) {
 		perror("Setting SO_REUSEADDR error!");
 		close(sd);
@@ -568,17 +799,13 @@ void broadcastListen() {
 		return;
 	}
 
-	// Join the multicast group 226.1.1.1 on the local 203.106.93.94
-	// interface. Note that this IP_ADD_MEMBERSHIP option must be
-	// called for each local interface over which the multicast
-	// datagrams are to be received.
-
-	std::vector<std::string> addressList = getAddressList();
+	const std::vector<std::string> addressList = getAddressList();
 	for(const std::string& addressString : addressList) {
 #ifdef DEBUG
 		std::cout << "Client Address: " << addressString << std::endl;
 #endif // DEBUG
 
+		// Join the multicast groupS
 		struct ip_mreq group {};
 		group.imr_multiaddr.s_addr = inet_addr("226.1.1.1");
 		group.imr_interface.s_addr = inet_addr(addressString.c_str());
@@ -588,7 +815,7 @@ void broadcastListen() {
 	}
 
 	char databuf[1024];
-	int datalen = sizeof(databuf);
+	constexpr int datalen = sizeof(databuf);
 	while(true) {
 		if(read(sd, databuf, datalen) >= 0) {
 			std::string message(databuf);
@@ -603,7 +830,16 @@ void broadcastListen() {
 	}
 }
 
+/** @brief Display connected robots on the GUI.
+ *
+ * Removes robots if they timeout (12 seconds).
+ * Display robots to the Address List Box.
+ * Remove old robots from the GUI.
+ *
+ * @return void
+ * */
 void robotList() {
+	// Remove robots that timeout (12 seconds)
 	for(int index = 0; index < RemoteRobot::robotList.size(); ++index) {
 		time_t now;
 		time(&now);
@@ -611,6 +847,7 @@ void robotList() {
 			RemoteRobot::robotList.erase(RemoteRobot::robotList.begin() + index--);
 		}
 	}
+
 	// Add new elements
 	for(const RemoteRobot& remoteRobot : RemoteRobot::robotList) {
 		std::string robotId = remoteRobot.tag;
@@ -651,6 +888,15 @@ void robotList() {
 	}
 }
 
+/** @brief Display information about a Victor motor.
+ *
+ * Parses a message byte array and displays the information to the given Victor
+ * Info Frame.
+ *
+ * @param[in]   victorInfoFrame The frame to display the information on
+ * @param[in]   headMessage     The message to be parsed
+ * @return void
+ * */
 void displayVictorInfo(VictorInfoFrame* victorInfoFrame, uint8_t* headMessage) {
 	auto deviceId = parseType<int>((uint8_t*)&headMessage[1]);
 	auto busVoltage = parseType<float>((uint8_t*)&headMessage[5]);
@@ -662,6 +908,15 @@ void displayVictorInfo(VictorInfoFrame* victorInfoFrame, uint8_t* headMessage) {
 	victorInfoFrame->setItem("Output Percent", outputPercent);
 }
 
+/** @brief Display information about a Talon motor.
+ *
+ * Parses a message byte array and displays the information to the given Talon
+ * Info Frame.
+ *
+ * @param[in]   talonInfoFrame  The frame to display the information on
+ * @param[in]   headMessage     The message to be parsed
+ * @return void
+ * */
 void displayTalonInfo(TalonInfoFrame* talonInfoFrame, uint8_t* headMessage) {
 	auto deviceId = parseType<int>((uint8_t*)&headMessage[1]);
 	auto busVoltage = parseType<float>((uint8_t*)&headMessage[5]);
@@ -687,6 +942,18 @@ void displayTalonInfo(TalonInfoFrame* talonInfoFrame, uint8_t* headMessage) {
 	talonInfoFrame->setItem("Error Derivative", errorDerivative);
 }
 
+/** @brief Entry point.
+ *
+ * Runs the program. Event loop is an infinite loop (no exit condition).
+ * Sets up the client.
+ * Reads and parses messages.
+ *
+ * @param[in]   argc    Number of arguments
+ * @param[in]   argv    Arguments
+ * @return  Program status
+ * @retval  0    Success
+ * @retval  Non-Zero   Error
+ * */
 int main(int argc, char** argv) {
 	// Initialize GTK
 	Glib::RefPtr<Gtk::Application> application = Gtk::Application::create(argc, argv, "edu.uark.razorbotz");

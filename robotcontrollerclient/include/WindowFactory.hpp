@@ -1,5 +1,5 @@
 /** @file
- * @brief Declares a class to streamline creating GTK Windows.
+ * @brief Declares a class, WindowFactory, to streamline creating GTK Windows.
  *
  * @author Luke Simmons
  *

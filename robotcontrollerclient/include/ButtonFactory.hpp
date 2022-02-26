@@ -1,5 +1,5 @@
 /** @file
-* @brief Declares a class to streamline creating GTK Buttons.
+* @brief Declares a class, ButtonFactory, to streamline creating GTK Buttons.
 *
 * @author Luke Simmons
 *

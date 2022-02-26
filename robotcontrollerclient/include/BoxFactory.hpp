@@ -1,5 +1,5 @@
 /** @file
- * @brief Declares a class to streamline creating GTK Boxes.
+ * @brief Declares a class, BoxFactory, to streamline creating GTK Boxes.
  *
  * @author Luke Simmons
  *

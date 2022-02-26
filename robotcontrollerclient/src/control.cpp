@@ -982,6 +982,7 @@ int main(int argc, char** argv) {
 
 	SDL_Event event;
 	char buffer[1024] = {0};
+	/// TODO: Try making bytesRead a long or ssize_t
 	int bytesRead;
 
 	std::list<uint8_t> messageBytesList;

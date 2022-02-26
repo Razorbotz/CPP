@@ -7,7 +7,7 @@
  *
  * Declares the class WindowFactory to make creating GKT3 Windows easier.
  *
- * @see src/main.cpp
+ * @see src/control.cpp
 *
 * */
 
@@ -24,7 +24,7 @@
  * a reference to itself, except for build, which returns the pointer to the
  * actual GTK window. Build should be called once per instance of this class.
  *
- * @see src/main.cpp:setupGui
+ * @see src/control.cpp:setupGui
  * @see src/ButtonFactory.cpp
  */
 class WindowFactory {

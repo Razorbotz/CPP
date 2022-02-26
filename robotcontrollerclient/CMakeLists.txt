@@ -64,7 +64,7 @@ include_directories(
 
 
 add_executable(control
-		src/main.cpp
+		src/control.cpp
   src/InfoFrame.cpp
   src/InfoItem.cpp
 		src/WindowFactory.cpp include/WindowFactory.hpp src/BoxFactory.cpp include/BoxFactory.hpp src/TalonInfoFrame.cpp include/TalonInfoFrame.hpp src/VictorInfoFrame.cpp include/VictorInfoFrame.hpp src/ButtonFactory.cpp include/ButtonFactory.hpp

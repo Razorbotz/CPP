@@ -7,7 +7,7 @@
 *
 * Declares the struct RemoteRobot to hold information about connected robots.
 *
-* @see src/main.cpp
+* @see src/control.cpp
 *
 * */
 #ifndef CONTROL_REMOTEROBOT_HPP
@@ -25,10 +25,10 @@
  * from it after a specified timeout.
  *
  * @see src/RemoteRobot.cpp
- * @see src/main.cpp:broadcastListen
- * @see src/main.cpp:robotList
- * @see src/main.cpp:contains
- * @see src/main.cpp:update
+ * @see src/control.cpp:broadcastListen
+ * @see src/control.cpp:robotList
+ * @see src/control.cpp:contains
+ * @see src/control.cpp:update
  */
 struct RemoteRobot {
 	/// List to hold robots in

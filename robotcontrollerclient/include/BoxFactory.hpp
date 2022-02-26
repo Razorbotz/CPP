@@ -15,9 +15,10 @@
 #ifndef CONTROL_BOXFACTORY_HPP
 #define CONTROL_BOXFACTORY_HPP
 
+#include <vector>
+
 #include <gdkmm.h>
 #include <gtkmm.h>
-#include <vector>
 
 /** @brief Class to streamline creating GTK Boxes.
  *

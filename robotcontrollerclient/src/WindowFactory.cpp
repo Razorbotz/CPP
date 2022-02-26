@@ -12,6 +12,7 @@
  * */
 
 #include "WindowFactory.hpp"
+
 WindowFactory::WindowFactory() {
 	window = new Gtk::Window();
 }

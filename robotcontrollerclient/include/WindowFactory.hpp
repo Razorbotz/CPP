@@ -25,7 +25,7 @@
  *
  * @see src/control.cpp:setupGui
  * @see src/ButtonFactory.cpp
- */
+ * */
 class WindowFactory {
   private:
 	/// The window that is created

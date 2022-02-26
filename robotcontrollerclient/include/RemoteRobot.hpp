@@ -29,7 +29,7 @@
  * @see src/control.cpp:robotList
  * @see src/control.cpp:contains
  * @see src/control.cpp:update
- */
+ * */
 struct RemoteRobot {
 	/// List to hold robots in
 	static std::vector<RemoteRobot> robotList;

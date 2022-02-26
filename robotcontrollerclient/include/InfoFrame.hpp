@@ -36,7 +36,7 @@
  * @see src/InfoItem.cpp
  * @see include/TalonInfoFrame.hpp
  * @see include/VictorInfoFrame.hpp
- */
+ * */
 class InfoFrame : public Gtk::Frame {
   private:
 	/// GTK Box to hold all the InfoItem objects.

@@ -25,7 +25,7 @@
  *
  * @see src/control.cpp:setupGui
  * @see src/ButtonFactory.cpp
- */
+ * */
 class ButtonFactory {
   private:
 	/// The button that is created

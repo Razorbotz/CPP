@@ -25,7 +25,7 @@
  *
  * @see src/control.cpp:setupGui
  * @see src/BoxFactory.cpp
- */
+ * */
 class BoxFactory {
   private:
 	/// The box that is created

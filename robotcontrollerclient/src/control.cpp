@@ -151,7 +151,7 @@ bool connected = false;
  *
  * Used to specify what kind of message is sent/received between the robot
  * and the client. Used at the first byte of messages.
- */
+ * */
 enum Commands {
 	/// Message contains information about the Power Distribution Panel (PDP) (Voltage and Currents).
 	COMMAND_POWER_DISTRIBUTION_PANEL = 1,
@@ -174,7 +174,7 @@ enum Commands {
 /** @brief Modes for driving the robot.
  *
  * Used to specify which part of the robot should be controlled by the client.
- */
+ * */
 enum Modes {
 	/// Robot in drive mode.
 	MODE_DRIVE = 1,

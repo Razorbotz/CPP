@@ -29,7 +29,7 @@
  * @see src/InfoItem.cpp
  * @see include/InfoFrame.hpp:setItem
  * @see include/InfoFrame.hpp:itemList
- */
+ * */
 class InfoItem : public Gtk::Box {
   private:
 	/// GTK Label for the name

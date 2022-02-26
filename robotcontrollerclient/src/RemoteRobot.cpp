@@ -4,4 +4,5 @@
 
 #include <vector>
 #include "RemoteRobot.hpp"
-extern std::vector<RemoteRobot> RemoteRobot::robotList;
+
+std::vector<RemoteRobot> RemoteRobot::robotList;

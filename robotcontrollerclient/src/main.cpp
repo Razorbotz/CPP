@@ -985,7 +985,7 @@ int main(int argc, char** argv) {
 
 	SDL_Event event;
 	char buffer[1024] = {0};
-	size_t bytesRead = 0;
+	int bytesRead = 0;
 
 	std::list<uint8_t> messageBytesList;
 	uint8_t headMessage[256];

@@ -20,12 +20,12 @@
 
 /** @brief Class to streamline creating GTK Buttons.
  *
- * * A class that helps to create GTK3 buttons easily. Each function call returns
+ * A class that helps to create GTK3 buttons easily. Each function call returns
  * a reference to itself, except for build, which returns the pointer to the
  * actual GTK button. Build should be called once per instance of this class.
  *
  * @see src/main.cpp:setupGui
- * @see include/ButtonFactory.cpp
+ * @see src/ButtonFactory.cpp
  */
 class ButtonFactory {
   private:

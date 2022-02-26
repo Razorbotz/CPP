@@ -20,7 +20,7 @@
 
 /** @brief Class to streamline creating GTK Windows.
  *
- * * A class that helps to create GTK3 Window easily. Each function call returns
+ * A class that helps to create GTK3 Window easily. Each function call returns
  * a reference to itself, except for build, which returns the pointer to the
  * actual GTK window. Build should be called once per instance of this class.
  *

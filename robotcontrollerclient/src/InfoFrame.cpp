@@ -1,3 +1,16 @@
+/** @file
+ * @brief Implementation for the InfoFrame class.
+ *
+ * @author Luke Simmons
+ *
+ * @date 2022-2-5
+ *
+ * Implements the InfoFrame class.
+ *
+ * @see include/InfoFrame.hpp
+ * @see InfoFrame
+ * */
+
 #include <memory>
 #include <vector>
 

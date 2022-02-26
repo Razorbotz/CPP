@@ -981,7 +981,7 @@ int main(int argc, char** argv) {
 
 	SDL_Event event;
 	char buffer[1024] = {0};
-	int bytesRead = 0;
+	int bytesRead;
 
 	std::list<uint8_t> messageBytesList;
 	uint8_t headMessage[256];
@@ -1030,7 +1030,7 @@ int main(int argc, char** argv) {
 	   // Get command
 			uint8_t command = headMessage[0];
 #ifdef DEBUG
-			std::cout << "Command: " << (int)command << std::endl;
+			std::cout << "Command: " << command << std::endl;
 #endif // DEBUG
 
 			// Handle command
@@ -1067,7 +1067,7 @@ int main(int argc, char** argv) {
 					displayVictorInfo(victorInfoFrames[2], headMessage);
 					break;
 
-				case COMMAND_CONTROL: { // Control mode
+				case COMMAND_CONTROL: {
 					const int mode = headMessage[1];
 #ifdef DEBUG
 					std::cout << "Mode: " << mode << std::endl;

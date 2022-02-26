@@ -791,7 +791,7 @@ void broadcastListen() {
 		std::cout << "Client Address: " << addressString << std::endl;
 #endif // DEBUG
 
-		// Join the multicast groupS
+		// Join the multicast groups
 		struct ip_mreq group {};
 		group.imr_multiaddr.s_addr = inet_addr("226.1.1.1");
 		group.imr_interface.s_addr = inet_addr(addressString.c_str());

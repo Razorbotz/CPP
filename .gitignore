@@ -6,3 +6,5 @@ robotcontrollerclient/cmake-build-debug/
 html/
 
 latex/
+
+robotcontrollerclient/obj/

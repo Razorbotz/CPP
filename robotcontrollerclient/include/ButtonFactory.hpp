@@ -1,15 +1,14 @@
 /** @file
-* @brief Declares a class, ButtonFactory, to streamline creating GTK Buttons.
-*
-* @author Luke Simmons
-*
-* @date 2022-1-29
-*
-* Declares the class BoxFactory to make creating GKT3 Buttons easier.
-*
-* @see src/control.cpp
-*
-* */
+ * @brief Declares a class, ButtonFactory, to streamline creating GTK Buttons.
+ *
+ * @author Luke Simmons
+ *
+ * @date 2022-1-29
+ *
+ * Declares the class BoxFactory to make creating GKT3 Buttons easier.
+ *
+ * @see src/control.cpp
+ * */
 
 #ifndef CONTROL_BUTTONFACTORY_HPP
 #define CONTROL_BUTTONFACTORY_HPP
@@ -40,7 +39,7 @@ class ButtonFactory {
 	 * Creates a new GTK Button on the heap.
 	 *
 	 * @param[in]   label   Text to make the button display.
-	 * @param[in]   managed Whether to make the button managed by its parent. Default is true. @see manage
+	 * @param[in]   managed Whether to make the button managed by its parent. Default is true. \see manage
 	 * @return ButtonFactory object
 	 * */
 	explicit ButtonFactory(const char* label, const bool managed = true);

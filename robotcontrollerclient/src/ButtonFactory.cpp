@@ -1,16 +1,15 @@
 /** @file
-* @brief Implementation for ButtonFactory.
-*
-* @author Luke Simmons
-*
-* @date 2022-1-29
-*
-* Implements the ButtonFactory class.
-*
-* @see include/ButtonFactory.hpp
-* @see ButtonFactory
-*
-* */
+ * @brief Implementation for ButtonFactory.
+ *
+ * @author Luke Simmons
+ *
+ * @date 2022-1-29
+ *
+ * Implements the ButtonFactory class.
+ *
+ * @see include/ButtonFactory.hpp
+ * @see ButtonFactory
+ * */
 
 #include "ButtonFactory.hpp"
 

@@ -8,7 +8,6 @@
  * Declares the class BoxFactory to make creating GKT3 Boxes easier.
  *
  * @see src/control.cpp
- *
  * */
 
 #ifndef CONTROL_BOXFACTORY_HPP
@@ -43,7 +42,7 @@ class BoxFactory {
 	 *
 	 * @param[in]   orientation     Orientation of the box (horizontal or vertical).
 	 * @param[in]   spacing         Padding of the child widgets in pixels. Default is 2 px.
-	 * @param[in]   managed         Whether to make the box managed by its parent. Default is true. @see manage
+	 * @param[in]   managed         Whether to make the box managed by its parent. Default is true. \see manage
 	 * @return BoxFactory object
 	 * */
 	explicit BoxFactory(const Gtk::Orientation orientation, const int spacing = 2, const bool managed = true);

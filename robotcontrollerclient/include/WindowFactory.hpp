@@ -8,8 +8,7 @@
  * Declares the class WindowFactory to make creating GKT3 Windows easier.
  *
  * @see src/control.cpp
-*
-* */
+ * */
 
 #ifndef CONTROL_WINDOWFACTORY_HPP
 #define CONTROL_WINDOWFACTORY_HPP

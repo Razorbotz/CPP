@@ -1,15 +1,15 @@
 /** @file
-* @brief Declares a struct, RemoteRobot, to hold robot information.
-*
-* @author Luke Simmons
-*
-* @date 2022-2-11
-*
-* Declares the struct RemoteRobot to hold information about connected robots.
-*
-* @see src/control.cpp
-*
-* */
+ * @brief Declares a struct, RemoteRobot, to hold robot information.
+ *
+ * @author Luke Simmons
+ *
+ * @date 2022-2-11
+ *
+ * Declares the struct RemoteRobot to hold information about connected robots.
+ *
+ * @see src/control.cpp
+ * */
+
 #ifndef CONTROL_REMOTEROBOT_HPP
 #define CONTROL_REMOTEROBOT_HPP
 

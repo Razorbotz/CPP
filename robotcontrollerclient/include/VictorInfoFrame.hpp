@@ -17,4 +17,4 @@ class VictorInfoFrame : public InfoFrame{
 	explicit VictorInfoFrame(const std::string& name, bool managed = true);
 };
 
-#endif // CONTROL_VICTORINFOFRAME_HPP
+#endif // !CONTROL_VICTORINFOFRAME_HPP

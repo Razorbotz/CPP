@@ -9,7 +9,6 @@
  *
  * @see include/BoxFactory.hpp
  * @see BoxFactory
- *
  * */
 
 #include "BoxFactory.hpp"

@@ -1003,7 +1003,7 @@ int main(int argc, char** argv) {
 		if(!connected) continue;
 
 		// Read from the socket
-		bytesRead = read(sock, buffer, 1024);
+		bytesRead = read(sock, buffer, sizeof(buffer)/sizeof(buffer[0]));
 		for(int index = 0; index < bytesRead; index++) {
 			messageBytesList.push_back(buffer[index]);
 		}

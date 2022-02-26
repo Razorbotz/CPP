@@ -5,7 +5,7 @@
  *
  * @date 2022-1-29
  *
- * Declares the class BoxFactory to make creating GKT3 Buttons easier.
+ * Declares the class ButtonFactory to make creating GKT3 Buttons easier.
  *
  * @see src/control.cpp
  * */
@@ -35,7 +35,7 @@ class ButtonFactory {
 	/** @brief Constructor for ButtonFactory.
 	 *
 	 * Constructor for ButtonFactory.
-	 * Set parameters for how box will look and be managed.
+	 * Set parameters for how button will look and be managed.
 	 * Creates a new GTK Button on the heap.
 	 *
 	 * @param[in]   label   Text to make the button display.

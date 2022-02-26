@@ -2,6 +2,7 @@
  * @brief GUI client program to control and display info for with the robot.
  *
  * @author Bill
+ * @author Johnston
  * @author Luke Simmons
  *
  * @date 2022-2-18
@@ -12,7 +13,7 @@
  * of controllers and joysticks on the client to control the robot by using the
  * SDL library. In order to connect to the robot, the user must enter the IP
  * address of the robot in the GUI. It will display information about the
- * voltages and motors on the robot.
+ * voltages and motors on the robot. Define "DEBUG" to print debug information.
  * */
 
 #include <arpa/inet.h>

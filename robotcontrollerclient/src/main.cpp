@@ -36,7 +36,6 @@
 
 #include "BoxFactory.hpp"
 #include "ButtonFactory.hpp"
-#include "GuiBox.hpp"
 #include "RemoteRobot.hpp"
 #include "TalonInfoFrame.hpp"
 #include "VictorInfoFrame.hpp"

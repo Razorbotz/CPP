@@ -14,7 +14,7 @@
 
 #include "ButtonFactory.hpp"
 
-ButtonFactory::ButtonFactory(Glib::ustring& label, const bool managed) {
+ButtonFactory::ButtonFactory(const char* label, const bool managed) {
 	button = new Gtk::Button(label);
 
 	if(managed) manage();

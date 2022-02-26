@@ -69,17 +69,6 @@ class BoxFactory {
 	 * */
 	BoxFactory& addWidget(Gtk::Widget* widget);
 
-	/** @brief Sets the request for the size of the box.
-	 *
-	 * Adds a child widget to the box. Widget should already be initialized
-	 * before adding. Defaults are unset (-1).
-	 *
-	 * @param[in]   width   Width, in pixels, to set the box to. Default is unset (-1).
-	 * @param[in]   height  Height, in pixels, to set the box to. Default is unset (-1).
-	 * @return Reference to instance of current object
-	 * */
-	BoxFactory& setSizeRequest(int width = -1, int height = -1);
-
 	/** @brief Insert a widget to the left side of the box.
 	 *
 	 * Adds a child widget to the box. Widget should already be initialized

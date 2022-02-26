@@ -43,7 +43,7 @@ class ButtonFactory {
 	 * @param[in]   managed Whether to make the button managed by its parent. Default is true. @see manage
 	 * @return ButtonFactory object
 	 * */
-	ButtonFactory(Glib::ustring& label, const bool managed = true);
+	explicit ButtonFactory(const char* label, const bool managed = true);
 
 	/** @brief Makes the button managed by its parent.
 	 *

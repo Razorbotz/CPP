@@ -37,12 +37,6 @@ Gtk::Box* BoxFactory::build() {
 	return box;
 }
 
-BoxFactory& BoxFactory::setSizeRequest(int width, int height) {
-	box->set_size_request(width, height);
-
-	return *this;
-}
-
 BoxFactory& BoxFactory::packStart(Gtk::Widget* widget, bool expand, bool fill, guint padding) {
 	box->pack_start(*widget, false, true, 10);
 

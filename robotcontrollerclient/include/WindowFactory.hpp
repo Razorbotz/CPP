@@ -24,7 +24,7 @@
  * actual GTK window. Build should be called once per instance of this class.
  *
  * @see src/control.cpp:setupGui
- * @see src/ButtonFactory.cpp
+ * @see src/WindowFactory.cpp
  * */
 class WindowFactory {
   private:

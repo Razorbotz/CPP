@@ -9,6 +9,7 @@
  * Declares the class InfoItem, which is a child of GTK Box, to show information
  * in the form of a name and a value.
  *
+ * @see InfoItem
  * @see src/InfoItem.cpp
  * @see include/InfoFrame.hpp
  * */
@@ -26,6 +27,7 @@
  *
  * A subclass of Gtk::Box to display information in a key (name) and value form.
  *
+ * @see includeInfoItem.hpp
  * @see src/InfoItem.cpp
  * @see include/InfoFrame.hpp:setItem
  * @see include/InfoFrame.hpp:itemList

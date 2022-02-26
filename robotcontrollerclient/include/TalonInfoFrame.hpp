@@ -9,6 +9,7 @@
  * Declares the class TalonInfoFrame, which is a child of GTK InfoFrame, to show information
  * about a Talon motor.
  *
+ * @see TalonInfoFrame
  * @see src/TalonInfoFrame.cpp
  * @see include/InfoFrame.hpp
  * @see src/control.cpp
@@ -24,6 +25,9 @@
  * Declares the class TalonInfoFrame, which is a child of InfoFrame, to show information
  * about Talon motors. Has a set of predefined values to display.
  *
+ * @see include/TalonInfoFrame.hpp
+ * @see src/TalonInfoFrame.cpp
+ * @see InfoFrame
  * @see src/control.cpp:talonInfoFrames
  * @see src/control.cpp:setupGui
  * @see src/control.cpp:displayTalonInfo

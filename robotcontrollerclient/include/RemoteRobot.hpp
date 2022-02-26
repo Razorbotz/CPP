@@ -7,6 +7,7 @@
  *
  * Declares the struct RemoteRobot to hold information about connected robots.
  *
+ * @see src/RemoteRobot.cpp
  * @see src/control.cpp
  * */
 

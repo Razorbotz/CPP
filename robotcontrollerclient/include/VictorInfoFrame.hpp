@@ -9,6 +9,7 @@
  * Declares the class VictorInfoFrame, which is a child of GTK InfoFrame, to show information
  * about a Victor motor.
  *
+ * @see VictorInfoFrame
  * @see src/VictorInfoFrame.cpp
  * @see include/InfoFrame.hpp
  * @see src/control.cpp
@@ -24,6 +25,9 @@
  * Declares the class VictorInfoFrame, which is a child of InfoFrame, to show information
  * about Victor motors. Has a set of predefined values to display.
  *
+ * @see include/VictorInfoFrame.hpp
+ * @see src/VictorInfoFrame.cpp
+ * @see InfoFrame
  * @see src/control.cpp:victorInfoFrames
  * @see src/control.cpp:setupGui
  * @see src/control.cpp:displayVictorInfo

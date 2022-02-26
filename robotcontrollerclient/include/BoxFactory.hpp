@@ -7,6 +7,8 @@
  *
  * Declares the class BoxFactory to make creating GKT3 Boxes easier.
  *
+ * @see BoxFactory
+ * @see src/BoxFactory.cpp
  * @see src/control.cpp
  * */
 
@@ -23,8 +25,9 @@
  * a reference to itself, except for build, which returns the pointer to the
  * actual GTK box. Build should be called once per instance of this class.
  *
- * @see src/control.cpp:setupGui
+ * @see include/BoxFactory.hpp
  * @see src/BoxFactory.cpp
+ * @see src/control.cpp:setupGui
  * */
 class BoxFactory {
   private:

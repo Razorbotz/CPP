@@ -9,6 +9,7 @@
  * Declares the class InfoFrame, which is a child of GTK Frame, to show related
  * InfoItem objects and give an overarching label to them all.
  *
+ * @see InfoFrame
  * @see src/InfoFrame.cpp
  * @see include/TalonInfoFrame.hpp
  * @see include/VictorInfoFrame.hpp
@@ -33,9 +34,11 @@
  * InfoItem objects and give an overarching label to them all. Can create new InfoItem
  * objects and set their values at any time.
  *
- * @see src/InfoItem.cpp
- * @see include/TalonInfoFrame.hpp
- * @see include/VictorInfoFrame.hpp
+ * @see include/InfoFrame.hpp
+ * @see src/InfoFrame.cpp
+ * @see InfoItem
+ * @see TalonInfoFrame
+ * @see VictorInfoFrame
  * */
 class InfoFrame : public Gtk::Frame {
   private:

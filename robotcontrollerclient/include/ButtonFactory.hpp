@@ -7,6 +7,8 @@
  *
  * Declares the class ButtonFactory to make creating GKT3 Buttons easier.
  *
+ * @see ButtonFactory
+ * @see src/ButtonFactory.cpp
  * @see src/control.cpp
  * */
 
@@ -23,8 +25,9 @@
  * a reference to itself, except for build, which returns the pointer to the
  * actual GTK button. Build should be called once per instance of this class.
  *
- * @see src/control.cpp:setupGui
+ * @see include/ButtonFactory.hpp
  * @see src/ButtonFactory.cpp
+ * @see src/control.cpp:setupGui
  * */
 class ButtonFactory {
   private:

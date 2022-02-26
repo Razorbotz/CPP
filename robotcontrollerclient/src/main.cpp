@@ -100,12 +100,10 @@ void insert(T value, uint8_t* array, const size_t arrayLen) {
  * Exits the program with status zero when called.
  *
  * @param[in]   event   Unused. A pointer to any GDK Event.
- * @return true
- * @retval  true Always returns true.
+ * @return Nothing (program exits)
  * */
 bool quit(const GdkEventAny* event) {
 	exit(0);
-	return true;
 }
 
 // GUI Element Variables
@@ -237,10 +235,8 @@ void setConnectedState() {
  * */
 void connectToServer() {
 	if(connected) return;
-	struct sockaddr_in address {};
-	size_t bytesRead;
 	struct sockaddr_in serv_addr {};
-	std::string hello = "Hello Robot";
+	const char* hello = "Hello Robot";
 
 	memset(&serv_addr, 0, sizeof(serv_addr));
 
@@ -273,8 +269,8 @@ void connectToServer() {
 
 		setDisconnectedState();
 	} else {
-		send(sock, hello.c_str(), strlen(hello.c_str()), 0);
-		bytesRead = read(sock, buffer, 1024);
+		send(sock, hello, strlen(hello), 0);
+		read(sock, buffer, 1024);
 		fcntl(sock, F_SETFL, O_NONBLOCK);
 
 		setConnectedState();
@@ -291,28 +287,20 @@ void connectToServer() {
  * */
 void disconnectFromServer() {
 	Gtk::MessageDialog dialogDisconnect(*window, "Disconnect now?", false, Gtk::MESSAGE_QUESTION, Gtk::BUTTONS_OK_CANCEL);
-	int resultDisconnect = dialogDisconnect.run();
 
-	switch(resultDisconnect) {
-		case(Gtk::RESPONSE_OK):
-			// Shutdown failed
-			if(shutdown(sock, SHUT_RDWR) == -1) {
-				Gtk::MessageDialog dialogShutdown(*window, "Failed Shutdown", false, Gtk::MESSAGE_ERROR, Gtk::BUTTONS_OK);
-				dialogShutdown.run();
-			}
-			// Shutdown successful
-			if(close(sock) == 0) {
-				setDisconnectedState();
-			} else {
-				Gtk::MessageDialog dialogClose(*window, "Failed Close", false, Gtk::MESSAGE_ERROR, Gtk::BUTTONS_OK);
-				dialogClose.run();
-			}
-
-			break;
-		case(Gtk::RESPONSE_CANCEL):
-		case(Gtk::RESPONSE_NONE):
-		default:
-			break;
+	if(dialogDisconnect.run() == Gtk::RESPONSE_OK) {
+		// Shutdown failed
+		if(shutdown(sock, SHUT_RDWR) == -1) {
+			Gtk::MessageDialog dialogShutdown(*window, "Failed Shutdown", false, Gtk::MESSAGE_ERROR, Gtk::BUTTONS_OK);
+			dialogShutdown.run();
+		}
+		// Shutdown successful
+		if(close(sock) == 0) {
+			setDisconnectedState();
+		} else {
+			Gtk::MessageDialog dialogClose(*window, "Failed Close", false, Gtk::MESSAGE_ERROR, Gtk::BUTTONS_OK);
+			dialogClose.run();
+		}
 	}
 }
 
@@ -323,17 +311,12 @@ void disconnectFromServer() {
  * @return void
  * */
 void connectOrDisconnect() {
-	const Glib::ustring string = connectButton->get_label();
-
 #ifdef DEBUG
-	std::cout << "Connect " << string << std::endl;
+	std::cout << "Connected: " << connected << std::endl;
 #endif // DEBUG
 
-	if(string == "Connect") {
-		connectToServer();
-	} else {
-		disconnectFromServer();
-	}
+	if(connected) disconnectFromServer();
+	else connectToServer();
 }
 
 /** @brief Toggles silent run mode on the robot.
@@ -346,29 +329,26 @@ void connectOrDisconnect() {
  * @return void
  * */
 void silentRun() {
+	// Only run if connected
 	if(!connected) return;
+
+	// Get silent running state
 	std::string currentButtonState = silentRunButton->get_label();
-	if(currentButtonState == "Silent Running") {
-		constexpr int messageSize = 3;
-		constexpr uint8_t command = 7; // Silence
-		uint8_t message[messageSize];
-		message[0] = messageSize;
-		message[1] = command;
-		message[2] = 0;
-		send(sock, message, messageSize, 0);
+	bool silentRunning = currentButtonState == "Silent Running";
 
-		silentRunButton->set_label("Not Silent Running");
-	} else {
-		constexpr int messageSize = 3;
-		constexpr uint8_t command = 7; // Silence
-		uint8_t message[messageSize];
-		message[0] = messageSize;
-		message[1] = command;
-		message[2] = 1;
-		send(sock, message, messageSize, 0);
+	// Generate message
+	constexpr int messageSize = 3;
+	constexpr uint8_t command = 7; // Silence
+	uint8_t message[messageSize];
+	message[0] = messageSize;
+	message[1] = command;
+	message[2] = silentRunning;
 
-		silentRunButton->set_label("Silent Running");
-	}
+	// Send message
+	send(sock, message, messageSize, 0);
+
+	// Set GUI
+	silentRunButton->set_label(silentRunning ? "Not Silent Running" : "Silent Running");
 }
 
 /** @brief Sets IP Address Entry to selected IP address from the Address List Box
@@ -383,23 +363,31 @@ void silentRun() {
  * @param[in]   listBoxRow  The selected row
  * @return void
  * */
-void rowActivated(Gtk::ListBoxRow* listBoxRow) {
+void rowActivated(const Gtk::ListBoxRow* listBoxRow) {
 #ifdef DEBUG
 	std::cout << "Row activated: " << std::endl;
 #endif // DEBUG
-	auto* label = dynamic_cast<Gtk::Label*>(listBoxRow->get_child());
+
+	const auto* label = dynamic_cast<const Gtk::Label*>(listBoxRow->get_child());
+
 #ifdef DEBUG
 	std::cout << "\t" << label->get_text() << std::endl;
 #endif // DEBUG
-	Glib::ustring connectionString(label->get_text());
+
+	const Glib::ustring connectionString(label->get_text());
+
 #ifdef DEBUG
 	std::cout << "\t" << connectionString << std::endl;
 #endif // DEBUG
+
+	// Search for "@" in string
 	size_t index = connectionString.rfind('@');
-	if(index == -1) return;
-	++index;
-	Glib::ustring addressString = connectionString.substr(index, connectionString.length() - index);
-	ipAddressEntry->set_text(addressString);
+
+	// Check if search was successful and exit if not
+	if(index++ == -1) return;
+
+	// Set IP Address entry to substring
+	ipAddressEntry->set_text(connectionString.substr(index, connectionString.length() - index));
 }
 
 /** @brief Shuts down robot after user confirms.
@@ -418,9 +406,8 @@ void shutdownDialog(Gtk::Window* parentWindow) {
 	}
 
 	Gtk::MessageDialog dialog(*parentWindow, "Shutdown now?", false, Gtk::MESSAGE_QUESTION, Gtk::BUTTONS_OK_CANCEL);
-	int result = dialog.run();
 
-	if(result == Gtk::RESPONSE_OK) {
+	if(dialog.run() == Gtk::RESPONSE_OK) {
 #ifdef DEBUG
 		std::cout << "Shutdown robot." << std::endl;
 #endif // DEBUG

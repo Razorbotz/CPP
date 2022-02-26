@@ -1,10 +1,20 @@
-//
-// Created by luke on 1/30/22.
-//
+/** @file
+* @brief Implementation for ButtonFactory.
+*
+* @author Luke Simmons
+*
+* @date 2022-1-29
+*
+* Implements the ButtonFactory class.
+*
+* @see include/ButtonFactory.hpp
+* @see ButtonFactory
+*
+* */
 
 #include "ButtonFactory.hpp"
 
-ButtonFactory::ButtonFactory(const char* label, const bool managed) {
+ButtonFactory::ButtonFactory(Glib::ustring& label, const bool managed) {
 	button = new Gtk::Button(label);
 
 	if(managed) manage();

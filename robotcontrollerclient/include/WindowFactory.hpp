@@ -5,9 +5,9 @@
  *
  * @date 2022-1-29
  *
- * Declares the class BoxFactory to make creating GKT3 Windows easier.
+ * Declares the class WindowFactory to make creating GKT3 Windows easier.
  *
- * @see main.cpp
+ * @see src/main.cpp
 *
 * */
 
@@ -18,17 +18,16 @@
 #include <gtkmm.h>
 #include <vector>
 
-/** @brief Class to streamline creating GTK Boxes.
+/** @brief Class to streamline creating GTK Windows.
  *
- * * A class that helps to create GTK3 boxes easily. Each function call returns
+ * * A class that helps to create GTK3 Window easily. Each function call returns
  * a reference to itself, except for build, which returns the pointer to the
  * actual GTK window. Build should be called once per instance of this class.
  *
- * @see main.cpp:setupGui
+ * @see src/main.cpp:setupGui
+ * @see src/ButtonFactory.cpp
  */
 class WindowFactory {
-	typedef std::function<bool(GdkEventKey*)> eventCallback;
-
   private:
 	/// The window that is created
 	Gtk::Window* window;
@@ -36,9 +35,9 @@ class WindowFactory {
 	std::vector<Gtk::Widget*> widgets;
 
   public:
-	/** @brief Constructor for BoxFactory.
+	/** @brief Constructor for WindowFactory.
 	 *
-	 * Constructor for BoxFactory.
+	 * Constructor for WindowFactory.
 	 * Creates a new GTK window on the heap.
 	 *
 	 * @return WindowFactory object
@@ -52,7 +51,7 @@ class WindowFactory {
 	 * long as its parameters are compatible with the caller.
 	 *
 	 * @param[in]   event       Which event to add the callback for (as an event mask). Only key press or a key release is supported.
-	 * @param[in]   callback    Function to call back to.
+	 * @param[in]   callback    Function to callback to.
 	 * @return Reference to instance of current object.
 	 * */
 	template <class T>
@@ -83,7 +82,7 @@ class WindowFactory {
 	 * Any kind of function can be passed into callback, as long as its
 	 * parameters are compatible with the caller.
 	 *
-	 * @param[in]   callback    Function to call back to.
+	 * @param[in]   callback    Function to callback to.
 	 * @return Reference to instance of current object.
 	 * */
 	template <class T>

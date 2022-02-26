@@ -7,7 +7,7 @@
  *
  * Declares the class BoxFactory to make creating GKT3 Boxes easier.
  *
- * @see main.cpp
+ * @see src/main.cpp
  *
  * */
 
@@ -20,11 +20,12 @@
 
 /** @brief Class to streamline creating GTK Boxes.
  *
- * * A class that helps to create GTK3 boxes easily. Each function call returns
+ * * A class that helps to create GTK3 Boxes easily. Each function call returns
  * a reference to itself, except for build, which returns the pointer to the
  * actual GTK box. Build should be called once per instance of this class.
  *
- * @see main.cpp:setupGui
+ * @see src/main.cpp:setupGui
+ * @see src/BoxFactory.cpp
  */
 class BoxFactory {
   private:
@@ -37,12 +38,12 @@ class BoxFactory {
 	/** @brief Constructor for BoxFactory.
 	 *
 	 * Constructor for BoxFactory.
-	 * Set parameters for how box will be laid out and managed.
+	 * Set parameters for how box will be laid out and be managed.
 	 * Creates a new GTK Box on the heap.
 	 *
 	 * @param[in]   orientation     Orientation of the box (horizontal or vertical).
 	 * @param[in]   spacing         Padding of the child widgets in pixels. Default is 2 px.
-	 * @param[in]   managed         Whether to make the Box managed by its parent. Default is true.
+	 * @param[in]   managed         Whether to make the box managed by its parent. Default is true. @see manage
 	 * @return BoxFactory object
 	 * */
 	explicit BoxFactory(const Gtk::Orientation orientation, const int spacing = 2, const bool managed = true);
@@ -51,6 +52,8 @@ class BoxFactory {
 	 *
 	 * Sets the box to be destroyed when its parent is.
 	 * Unnecessary to call if managed was set to true in the constructor.
+	 *
+	 * @see BoxFactory:BoxFactory
 	 *
 	 * @return Reference to instance of current object.
 	 * */

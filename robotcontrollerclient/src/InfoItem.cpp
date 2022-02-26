@@ -1,3 +1,17 @@
+/** @file
+ * @brief Implementation for InfoItem.
+ *
+ * @author Luke Simmons
+ *
+ * @date 2022-2-5
+ *
+ * Implements the InfoItem class.
+ *
+ * @see include/InfoItem.hpp
+ * @see InfoItem
+ *
+ * */
+
 #include "InfoItem.hpp"
 #include <string>
 

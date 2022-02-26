@@ -14,9 +14,9 @@
 #ifndef CONTROL_REMOTEROBOT_HPP
 #define CONTROL_REMOTEROBOT_HPP
 
-#include <vector>
-#include <thread>
 #include <string>
+#include <thread>
+#include <vector>
 
 /** @brief Struct to hold information about connected robots.
  *

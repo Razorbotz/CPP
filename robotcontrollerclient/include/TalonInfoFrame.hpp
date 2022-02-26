@@ -44,8 +44,8 @@ class TalonInfoFrame : public InfoFrame {
 		"Sensor Velocity",
 		"Close Loop Error",
 		"Integral Accumulator",
-		"Error Derivative"
-	};
+		"Error Derivative"};
+
   public:
 	/** @brief Constructor for TalonInfoFrame.
 	 *

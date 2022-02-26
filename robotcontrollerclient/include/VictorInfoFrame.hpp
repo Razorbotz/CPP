@@ -32,14 +32,14 @@
  * @see src/control.cpp:setupGui
  * @see src/control.cpp:displayVictorInfo
  * */
-class VictorInfoFrame : public InfoFrame{
+class VictorInfoFrame : public InfoFrame {
 	/// Names of the values for a Victor motor to be displayed
 	static constexpr const char* items[] = {
 		"Device ID",
 		"Bus Voltage",
 		"Output Voltage",
-		"Output Percent"
-	};
+		"Output Percent"};
+
   public:
 	/** @brief Constructor for VictorInfoFrame.
 	 *

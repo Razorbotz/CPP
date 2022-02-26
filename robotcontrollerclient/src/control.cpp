@@ -315,8 +315,10 @@ void connectOrDisconnect() {
 	std::cout << "Connected: " << connected << std::endl;
 #endif // DEBUG
 
-	if(connected) disconnectFromServer();
-	else connectToServer();
+	if(connected)
+		disconnectFromServer();
+	else
+		connectToServer();
 }
 
 /** @brief Toggles silent run mode on the robot.
@@ -418,7 +420,6 @@ void shutdownDialog(Gtk::Window* parentWindow) {
 		message[0] = messageSize;
 		message[1] = command;
 		send(sock, message, messageSize, 0);
-
 	}
 }
 
@@ -672,7 +673,6 @@ void setupGui(const Glib::RefPtr<Gtk::Application>& application) {
 	// Show the window
 	window->show_all();
 }
-
 
 /** @brief Checks if a string is contained in a vector of strings.
  *
@@ -1000,7 +1000,7 @@ int main(int argc, char** argv) {
 		if(!connected) continue;
 
 		// Read from the socket
-		bytesRead = read(sock, buffer, sizeof(buffer)/sizeof(buffer[0]));
+		bytesRead = read(sock, buffer, sizeof(buffer) / sizeof(buffer[0]));
 		for(int index = 0; index < bytesRead; index++) {
 			messageBytesList.push_back(buffer[index]);
 		}

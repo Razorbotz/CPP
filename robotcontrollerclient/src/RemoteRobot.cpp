@@ -11,7 +11,7 @@
  * @see RemoteRobot
  * */
 
-#include <vector>
 #include "RemoteRobot.hpp"
+#include <vector>
 
 std::vector<RemoteRobot> RemoteRobot::robotList;

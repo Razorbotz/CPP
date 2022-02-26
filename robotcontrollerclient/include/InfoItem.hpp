@@ -1,6 +1,7 @@
 /** @file
  * @brief Declares a class, InfoItem, as a GTK Box show information.
  *
+ * @author Johnston
  * @author Luke Simmons
  *
  * @date 2022-2-5
@@ -8,9 +9,8 @@
  * Declares the class InfoItem, which is a child of GTK Box, to show information
  * in the form of a name and a value.
  *
+ * @see src/InfoItem.cpp
  * @see include/InfoFrame.hpp
- * @see src/InfoFrame.cpp
- *
  * */
 
 #ifndef CONTROL_INFOITEM_HPP
@@ -42,7 +42,7 @@ class InfoItem : public Gtk::Box {
 	 *
 	 * Constructor for InfoItem.
 	 * Creates the labels to display dynamically on the heap.
-	 * Labels are managed by the InfoItem box
+	 * Labels are managed by the InfoItem box.
 	 * Sets value to "0".
 	 *
 	 * @param[in]   name   Name of the information/value to display.

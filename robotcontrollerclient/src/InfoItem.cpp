@@ -1,5 +1,5 @@
 /** @file
- * @brief Implementation for InfoItem.
+ * @brief Implementation for the InfoItem class.
  *
  * @author Luke Simmons
  *
@@ -9,11 +9,11 @@
  *
  * @see include/InfoItem.hpp
  * @see InfoItem
- *
  * */
 
-#include "InfoItem.hpp"
 #include <string>
+
+#include "InfoItem.hpp"
 
 InfoItem::InfoItem(const std::string& name) : Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 2) {
 	nameLabel = std::unique_ptr<Gtk::Label>(Gtk::manage(new Gtk::Label(name)));

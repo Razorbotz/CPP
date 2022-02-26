@@ -41,7 +41,7 @@ class InfoFrame : public Gtk::Frame {
   private:
 	/// GTK Box to hold all the InfoItem objects.
 	std::unique_ptr<Gtk::Box> contentsBox;
-	/// List of InfoItem objects to display. @see InfoItem
+	/// List of InfoItem objects to display. \see InfoItem
 	std::vector<std::shared_ptr<InfoItem>> itemList;
 
   public:

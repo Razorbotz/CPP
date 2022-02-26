@@ -9,4 +9,4 @@
 
 Gtk::Box* makeBox(Gtk::Orientation orientation, int spacing = 2);
 
-#endif // CONTROL_GUIBOX_HPP
+#endif // !CONTROL_GUIBOX_HPP

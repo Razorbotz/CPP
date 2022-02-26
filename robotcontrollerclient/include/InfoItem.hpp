@@ -1,5 +1,5 @@
-#ifndef INFOITEM_HPP
-#define INFOITEM_HPP
+#ifndef CONTROL_INFOITEM_HPP
+#define CONTROL_INFOITEM_HPP
 
 #include <iostream>
 #include <memory>
@@ -23,4 +23,4 @@ class InfoItem : public Gtk::Box {
 	std::string getName() const;
 };
 
-#endif // !INFOITEM_HPP
+#endif // !CONTROL_INFOITEM_HPP

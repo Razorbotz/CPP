@@ -1,5 +1,5 @@
-#ifndef INFOFRAME_HPP
-#define INFOFRAME_HPP
+#ifndef CONTROL_INFOFRAME_HPP
+#define CONTROL_INFOFRAME_HPP
 
 #include <iostream>
 #include <memory>
@@ -32,4 +32,4 @@ class InfoFrame : public Gtk::Frame {
 	}
 };
 
-#endif // !INFOFRAME_HPP
+#endif // !CONTROL_INFOFRAME_HPP

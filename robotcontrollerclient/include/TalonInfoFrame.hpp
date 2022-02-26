@@ -24,4 +24,4 @@ class TalonInfoFrame : public InfoFrame {
 	explicit TalonInfoFrame(const std::string& name, bool managed = true);
 };
 
-#endif // CONTROL_TALONINFOFRAME_HPP
+#endif // !CONTROL_TALONINFOFRAME_HPP

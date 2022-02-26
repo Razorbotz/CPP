@@ -114,4 +114,4 @@ class WindowFactory {
 	Gtk::Window* build();
 };
 
-#endif // CONTROL_WINDOWFACTORY_HPP
+#endif // !CONTROL_WINDOWFACTORY_HPP

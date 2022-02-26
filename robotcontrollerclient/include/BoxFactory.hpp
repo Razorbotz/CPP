@@ -117,4 +117,4 @@ class BoxFactory {
 	Gtk::Box* build();
 };
 
-#endif // CONTROL_BOXFACTORY_HPP
+#endif // !CONTROL_BOXFACTORY_HPP

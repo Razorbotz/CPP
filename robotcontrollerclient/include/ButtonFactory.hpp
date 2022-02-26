@@ -80,4 +80,4 @@ class ButtonFactory {
 	Gtk::Button* build();
 };
 
-#endif // CONTROL_BUTTONFACTORY_HPP
+#endif // !CONTROL_BUTTONFACTORY_HPP

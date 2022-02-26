@@ -954,10 +954,6 @@ int main(int argc, char** argv) {
 		return 1;
 	}
 
-#ifdef DEBUG
-	std::cout << "Number of sensors: " << SDL_NumSensors() << std::endl;
-#endif // DEBUG
-
 	// Initialize joystick(s)
 	int joystickCount = SDL_NumJoysticks();
 #ifdef DEBUG

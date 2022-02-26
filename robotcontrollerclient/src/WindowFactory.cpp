@@ -1,6 +1,16 @@
-//
-// Created by luke on 1/29/22.
-//
+/** @file
+* @brief Implementation for WindowFactory.
+*
+* @author Luke Simmons
+*
+* @date 2022-1-29
+*
+* Implements the WindowFactory class.
+*
+* @see include/BoxFactory.hpp
+* @see BoxFactory
+*
+* */
 
 #include "WindowFactory.hpp"
 WindowFactory::WindowFactory() {

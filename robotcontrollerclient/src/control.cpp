@@ -535,7 +535,7 @@ void setupGui(const Glib::RefPtr<Gtk::Application>& application) {
 	connectionStatusLabel->override_background_color(red);
 
 	// IP Address Label
-	auto ipAddressLabel = Gtk::manage(new Gtk::Label("IP Address"));
+	const auto ipAddressLabel = Gtk::manage(new Gtk::Label("IP Address"));
 
 	// IP Address Entry
 	ipAddressEntry = Gtk::manage(new Gtk::Entry());
@@ -543,7 +543,7 @@ void setupGui(const Glib::RefPtr<Gtk::Application>& application) {
 	ipAddressEntry->set_editable(true);
 
 	// Mode Label
-	Gtk::Label* modeLabel = Gtk::manage(new Gtk::Label("Control Mode: "));
+	const auto modeLabel = Gtk::manage(new Gtk::Label("Control Mode: "));
 	controlModeLabel = Gtk::manage(new Gtk::Label("Drive"));
 
 	// Silent Run Button
@@ -840,15 +840,15 @@ void robotList() {
 		bool match = false;
 		int index = 0;
 		for(auto listBoxRow = addressListBox->get_row_at_index(index); listBoxRow; listBoxRow = addressListBox->get_row_at_index(++index)) {
-			auto* label = dynamic_cast<Gtk::Label*>(listBoxRow->get_child());
+			const auto* label = dynamic_cast<Gtk::Label*>(listBoxRow->get_child());
 			Glib::ustring addressString = label->get_text();
-			if(robotId == addressString.c_str()) {
+			if(robotId == addressString) { /// TODO: Check this///////////////////////////////////////////////////////////////////////
 				match = true;
 				break;
 			}
 		}
 		if(!match) {
-			auto label = Gtk::manage(new Gtk::Label(robotId));
+			const auto label = Gtk::manage(new Gtk::Label(robotId));
 			label->set_visible(true);
 			addressListBox->append(*label);
 		}
@@ -857,12 +857,12 @@ void robotList() {
 	// Remove old element
 	int index = 0;
 	for(auto listBoxRow = addressListBox->get_row_at_index(index); listBoxRow; listBoxRow = addressListBox->get_row_at_index(++index)) {
-		auto* label = dynamic_cast<Gtk::Label*>(listBoxRow->get_child());
-		auto addressString = label->get_text();
+		const auto* label = dynamic_cast<Gtk::Label*>(listBoxRow->get_child());
+		const auto addressString = label->get_text();
 		bool match = false;
 		for(const RemoteRobot& remoteRobot : RemoteRobot::robotList) {
 			std::string robotId = remoteRobot.tag;
-			if(robotId == addressString.c_str()) {
+			if(robotId == addressString) { /// TODO: Check this //////////////////////////////////////////////////
 				match = true;
 				break;
 			}
@@ -1037,7 +1037,7 @@ int main(int argc, char** argv) {
 			switch(command) {
 				case COMMAND_POWER_DISTRIBUTION_PANEL: {
 					// Display voltage
-					auto voltage = parseType<float>((uint8_t*)&headMessage[1]);
+					const auto voltage = parseType<float>((uint8_t*)&headMessage[1]);
 					voltageLabel->set_label(std::to_string(voltage).c_str());
 
 					// Display Currents

@@ -382,7 +382,7 @@ void rowActivated(const Gtk::ListBoxRow* listBoxRow) {
 #endif // DEBUG
 
 	// Search for "@" in string
-	size_t index = connectionString.rfind('@');
+	auto index = connectionString.rfind('@');
 
 	// Check if search was successful and exit if not
 	if(index++ == -1) return;
@@ -718,10 +718,10 @@ bool contains(std::vector<RemoteRobot>& list, std::string& robotTag) {
  * @return void
  * */
 void update(std::vector<RemoteRobot>& list, std::string& robotTag) {
-	for(auto& index : list) {
+	for(auto& remoteRobot : list) {
 		time_t now;
 		time(&now);
-		index.lastSeenTime = now;
+		remoteRobot.lastSeenTime = now;
 	}
 }
 
@@ -836,7 +836,7 @@ void robotList() {
 
 	// Add new elements
 	for(const auto& remoteRobot : RemoteRobot::robotList) {
-		std::string robotId = remoteRobot.tag;
+		auto robotId = remoteRobot.tag;
 		bool match = false;
 		int index = 0;
 		for(auto listBoxRow = addressListBox->get_row_at_index(index); listBoxRow; listBoxRow = addressListBox->get_row_at_index(++index)) {
@@ -848,7 +848,7 @@ void robotList() {
 			}
 		}
 		if(!match) {
-			Gtk::Label* label = Gtk::manage(new Gtk::Label(robotId));
+			auto label = Gtk::manage(new Gtk::Label(robotId));
 			label->set_visible(true);
 			addressListBox->append(*label);
 		}
@@ -858,7 +858,7 @@ void robotList() {
 	int index = 0;
 	for(auto listBoxRow = addressListBox->get_row_at_index(index); listBoxRow; listBoxRow = addressListBox->get_row_at_index(++index)) {
 		auto* label = dynamic_cast<Gtk::Label*>(listBoxRow->get_child());
-		Glib::ustring addressString = label->get_text();
+		auto addressString = label->get_text();
 		bool match = false;
 		for(const RemoteRobot& remoteRobot : RemoteRobot::robotList) {
 			std::string robotId = remoteRobot.tag;
@@ -963,7 +963,7 @@ int main(int argc, char** argv) {
 	SDL_Joystick* joystickList[joystickCount];
 
 	if(joystickCount > 0) {
-		for(size_t joystickIndex = 0; joystickIndex < joystickCount; joystickIndex++) {
+		for(int joystickIndex = 0; joystickIndex < joystickCount; joystickIndex++) {
 			joystickList[joystickIndex] = SDL_JoystickOpen(joystickIndex);
 #ifdef DEBUG
 			if(joystickList[joystickIndex]) {
@@ -1000,7 +1000,7 @@ int main(int argc, char** argv) {
 
 		// Read from the socket
 		auto bytesRead = read(sock, buffer, sizeof(buffer) / sizeof(buffer[0]));
-		for(typeof(bytesRead) index = 0; index < bytesRead; index++) {
+		for(ssize_t index = 0; index < bytesRead; index++) {
 			messageBytesList.push_back(buffer[index]);
 		}
 
@@ -1019,7 +1019,7 @@ int main(int argc, char** argv) {
 			auto messageSize = messageBytesList.front();
 			messageBytesList.pop_front();
 			messageSize--;
-			for(typeof(messageSize) index = 0; index < messageSize; index++) {
+			for(unsigned char index = 0; index < messageSize; index++) {
 				headMessage[index] = messageBytesList.front();
 				messageBytesList.pop_front();
 			}

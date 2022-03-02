@@ -17,7 +17,6 @@
  * */
 
 #include <arpa/inet.h>
-#include <cstdio>
 #include <cstdlib>
 #include <fcntl.h>
 #include <ifaddrs.h>

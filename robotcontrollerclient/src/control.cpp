@@ -146,39 +146,65 @@ int sock = 0;
 /// Variable for storing if the robot is connected to the client or not.
 bool connected = false;
 
-/** @brief Different commands sent between the robot and client.
+/** @brief Different commands sent from the robot to the client.
  *
- * Used to specify what kind of message is sent/received between the robot
- * and the client. Used at the first byte of messages.
+ * Used to specify what kind of message is received from the robot to the client.
+ * Used at the first byte of messages.
+ *
+ * @see main
  * */
-enum Commands {
-	/// Message contains information about the Power Distribution Panel (PDP) (Voltage and Currents).
-	COMMAND_POWER_DISTRIBUTION_PANEL = 1,
-	/// Message contains information about Talon motor 1.
-	COMMAND_TALON_1,
-	/// Message contains information about Talon motor 2.
-	COMMAND_TALON_2,
-	/// Message contains information about Victor motor 1.
-	COMMAND_VICTOR_1,
-	/// Message contains information about Victor motor 2.
-	COMMAND_VICTOR_2,
-	/// Message contains information about Victor motor 3.
-	COMMAND_VICTOR_3,
-	/// Message contains information about what control mode the robot is in. \see Modes for control modes.
-	COMMAND_CONTROL,
-	/// Shutdown the robot
-	COMMAND_SHUTDOWN
+enum CommandsToClient {
+	/// Message contains information about the Power Distribution Panel (PDP) (Voltage and Currents) from the robot.
+	COMMAND_TO_CLIENT_POWER_DISTRIBUTION_PANEL = 1,
+	/// Message contains information about Talon motor 1 from the robot.
+	COMMAND_TO_CLIENT_TALON_1,
+	/// Message contains information about Talon motor 2 from the robot.
+	COMMAND_TO_CLIENT_TALON_2,
+	/// Message contains information about Victor motor 1 from the robot.
+	COMMAND_TO_CLIENT_VICTOR_1,
+	/// Message contains information about Victor motor 2 from the robot.
+	COMMAND_TO_CLIENT_VICTOR_2,
+	/// Message contains information about Victor motor 3 from the robot.
+	COMMAND_TO_CLIENT_VICTOR_3,
+	/// Message contains information about what control mode the robot is in from the robot. \see ControlModes for control modes.
+	COMMAND_TO_CLIENT_CONTROL_STATUS
+};
+
+/** @brief Different commands sent from the client to the robot.
+ *
+ * Used to specify what kind of message is sent from the client to the robot.
+ * Used at the first byte of messages.
+ *
+ * @see main
+ * @see on_key_press_event
+ * @see on_key_release_event
+ * @see silentRun
+ * @see shutdownDialog
+ * */
+enum CommandsToRobot {
+	/// Message contains information about joystick movement from the client.
+	COMMAND_TO_ROBOT_JOYSTICK_AXIS_MOTION_EVENT = 1,
+	/// Message contains information about keyboard events from the client.
+	COMMAND_TO_ROBOT_KEYBOARD_EVENT,
+	/// Message contains information about joystick button events from the client.
+	COMMAND_TO_ROBOT_JOYSTICK_BUTTON_EVENT = 5,
+	/// Message contains information about joystick hat movement from the client.
+	COMMAND_TO_ROBOT_JOYSTICK_HAT_MOTION_EVENT,
+	/// Message that tells the robot to set control status.
+	COMMAND_TO_ROBOT_SILENT_RUN,
+	/// Message that tells the robot to shutdown.
+	COMMAND_TO_ROBOT_SHUTDOWN
 };
 
 /** @brief Modes for driving the robot.
  *
  * Used to specify which part of the robot should be controlled by the client.
  * */
-enum Modes {
+enum ControlModes {
 	/// Robot in drive mode.
-	MODE_DRIVE = 1,
+	CONTROL_MODE_DRIVE = 1,
 	/// Robot in dig mode.
-	MODE_DIG
+	CONTROL_MODE_DIG
 };
 
 /** @brief Set the program's state to disconnected from robot.
@@ -339,7 +365,7 @@ void silentRun() {
 
 	// Generate message
 	constexpr uint8_t messageSize = 3;
-	constexpr uint8_t command = 7; // Silence
+	constexpr uint8_t command = COMMAND_TO_ROBOT_SILENT_RUN;
 	uint8_t message[messageSize];
 	message[0] = messageSize;
 	message[1] = command;
@@ -414,7 +440,7 @@ void shutdownDialog(Gtk::Window* parentWindow) {
 #endif // DEBUG
 
 		constexpr uint8_t messageSize = 2;
-		constexpr uint8_t command = COMMAND_SHUTDOWN; // Shutdown
+		constexpr uint8_t command = COMMAND_TO_ROBOT_SHUTDOWN;
 		uint8_t message[messageSize];
 		message[0] = messageSize;
 		message[1] = command;
@@ -438,7 +464,7 @@ bool on_key_release_event(GdkEventKey* keyEvent) {
 
 	if(sock) {
 		constexpr uint8_t messageSize = 5;
-		constexpr uint8_t command = 2; // Keyboard
+		constexpr uint8_t command = COMMAND_TO_ROBOT_KEYBOARD_EVENT;
 		uint8_t message[messageSize];
 		message[0] = messageSize;
 		message[1] = command;
@@ -470,7 +496,7 @@ bool on_key_press_event(GdkEventKey* keyEvent) {
 
 	if(sock) {
 		constexpr uint8_t messageSize = 5;
-		constexpr uint8_t command = 2; // Keyboard
+		constexpr uint8_t command = COMMAND_TO_ROBOT_KEYBOARD_EVENT;
 		uint8_t message[messageSize];
 		message[0] = messageSize;
 		message[1] = command;
@@ -1034,7 +1060,7 @@ int main(int argc, char** argv) {
 
 			// Handle command
 			switch(command) {
-				case COMMAND_POWER_DISTRIBUTION_PANEL: {
+				case COMMAND_TO_CLIENT_POWER_DISTRIBUTION_PANEL: {
 					// Display voltage
 					const auto voltage = parseType<float>((uint8_t*)&headMessage[1]);
 					voltageLabel->set_label(std::to_string(voltage).c_str());
@@ -1046,37 +1072,37 @@ int main(int argc, char** argv) {
 					}
 				} break;
 
-				case COMMAND_TALON_1:
+				case COMMAND_TO_CLIENT_TALON_1:
 					displayTalonInfo(talonInfoFrames[0], headMessage);
 					break;
 
-				case COMMAND_TALON_2:
+				case COMMAND_TO_CLIENT_TALON_2:
 					displayTalonInfo(talonInfoFrames[1], headMessage);
 					break;
 
-				case COMMAND_VICTOR_1:
+				case COMMAND_TO_CLIENT_VICTOR_1:
 					displayVictorInfo(victorInfoFrames[0], headMessage);
 					break;
 
-				case COMMAND_VICTOR_2:
+				case COMMAND_TO_CLIENT_VICTOR_2:
 					displayVictorInfo(victorInfoFrames[1], headMessage);
 					break;
 
-				case COMMAND_VICTOR_3:
+				case COMMAND_TO_CLIENT_VICTOR_3:
 					displayVictorInfo(victorInfoFrames[2], headMessage);
 					break;
 
-				case COMMAND_CONTROL: {
+				case COMMAND_TO_CLIENT_CONTROL_STATUS: {
 					const int mode = headMessage[1];
 #ifdef DEBUG
 					std::cout << "Mode: " << mode << std::endl;
 #endif // DEBUG
 
 					switch(mode) {
-						case MODE_DRIVE:
+						case CONTROL_MODE_DRIVE:
 							controlModeLabel->set_label("Drive");
 							break;
-						case MODE_DIG:
+						case CONTROL_MODE_DIG:
 							controlModeLabel->set_label("Dig");
 							break;
 					}
@@ -1123,7 +1149,7 @@ int main(int argc, char** argv) {
 					std::cout << "Value " << (uint32_t)event.jhat.value << std::endl;
 #endif // DEBUG
 
-					constexpr uint8_t command = 6;
+					constexpr uint8_t command = COMMAND_TO_ROBOT_JOYSTICK_HAT_MOTION_EVENT;
 					constexpr int length = 5;
 					uint8_t message[length];
 					message[0] = length;
@@ -1143,7 +1169,7 @@ int main(int argc, char** argv) {
 					std::cout << "State: " << (uint32_t)event.jbutton.state << std::endl;
 #endif // DEBUG
 
-					constexpr uint8_t command = 5;
+					constexpr uint8_t command = COMMAND_TO_ROBOT_JOYSTICK_BUTTON_EVENT;
 					constexpr int length = 5;
 					uint8_t message[length];
 					message[0] = length;
@@ -1163,7 +1189,7 @@ int main(int argc, char** argv) {
 					std::cout << "State: " << (uint32_t)event.jbutton.state << std::endl;
 #endif // DEBUG
 
-					constexpr uint8_t command = 5;
+					constexpr uint8_t command = COMMAND_TO_ROBOT_JOYSTICK_BUTTON_EVENT;
 					constexpr int length = 5;
 					uint8_t message[length];
 					message[0] = length;
@@ -1183,7 +1209,7 @@ int main(int argc, char** argv) {
 					std::cout << "Value: " << event.jaxis.value << std::endl;
 #endif // DEBUG
 
-					constexpr uint8_t command = 1;
+					constexpr uint8_t command = COMMAND_TO_ROBOT_JOYSTICK_AXIS_MOTION_EVENT;
 					const float value = (float)event.jaxis.value / -32768.f;
 
 					constexpr int length = 8;

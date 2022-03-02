@@ -516,7 +516,7 @@ bool on_key_press_event(GdkEventKey* keyEvent) {
 void setupGui(const Glib::RefPtr<Gtk::Application>& application) {
 	// Create List Box
 	addressListBox = Gtk::manage(new Gtk::ListBox());
-	addressListBox->signal_row_activated().connect(sigc::ptr_fun(&rowActivated));
+	addressListBox->signal_row_activated().connect(&rowActivated);
 	addressListBox->set_size_request(200, 100);
 
 	// Create Scrolled List

@@ -255,7 +255,7 @@ void connectToServer() {
 #endif // DEBUG
 
 		Gtk::MessageDialog dialog(*window, "Invalid Address", false, Gtk::MESSAGE_QUESTION, Gtk::BUTTONS_OK);
-		int result = dialog.run();
+		dialog.run();
 
 		setDisconnectedState();
 		return;
@@ -264,7 +264,7 @@ void connectToServer() {
 		std::cout << "Connection failed!" << std::endl;
 
 		Gtk::MessageDialog dialog(*window, "Connection Failed", false, Gtk::MESSAGE_QUESTION, Gtk::BUTTONS_OK);
-		int result = dialog.run();
+		dialog.run();
 
 		setDisconnectedState();
 	} else {
@@ -338,7 +338,7 @@ void silentRun() {
 	bool silentRunning = currentButtonState == "Silent Running";
 
 	// Generate message
-	constexpr int messageSize = 3;
+	constexpr uint8_t messageSize = 3;
 	constexpr uint8_t command = 7; // Silence
 	uint8_t message[messageSize];
 	message[0] = messageSize;
@@ -413,7 +413,7 @@ void shutdownDialog(Gtk::Window* parentWindow) {
 		std::cout << "Shutdown robot." << std::endl;
 #endif // DEBUG
 
-		constexpr int messageSize = 2;
+		constexpr uint8_t messageSize = 2;
 		constexpr uint8_t command = COMMAND_SHUTDOWN; // Shutdown
 		uint8_t message[messageSize];
 		message[0] = messageSize;
@@ -437,8 +437,8 @@ bool on_key_release_event(GdkEventKey* keyEvent) {
 #endif // DEBUG
 
 	if(sock) {
-		int messageSize = 5;
-		uint8_t command = 2; // Keyboard
+		constexpr uint8_t messageSize = 5;
+		constexpr uint8_t command = 2; // Keyboard
 		uint8_t message[messageSize];
 		message[0] = messageSize;
 		message[1] = command;
@@ -469,8 +469,8 @@ bool on_key_press_event(GdkEventKey* keyEvent) {
 #endif // DEBUG
 
 	if(sock) {
-		int messageSize = 5;
-		uint8_t command = 2; // Keyboard
+		constexpr uint8_t messageSize = 5;
+		constexpr uint8_t command = 2; // Keyboard
 		uint8_t message[messageSize];
 		message[0] = messageSize;
 		message[1] = command;
@@ -547,18 +547,18 @@ void setupGui(const Glib::RefPtr<Gtk::Application>& application) {
 	controlModeLabel = Gtk::manage(new Gtk::Label("Drive"));
 
 	// Silent Run Button
-	auto silentRunButton = ButtonFactory("Silent Running")
+	const auto silentRunButton = ButtonFactory("Silent Running")
 							   .addClickedCallback<std::function<typeof(silentRun)>>(silentRun)
 							   .build();
 
 	// Shutdown Robot Button
 	const auto shutdownCallback = [] { return shutdownDialog(window); };
-	auto shutdownRobotButton = ButtonFactory("Shutdown Robot")
+	const auto shutdownRobotButton = ButtonFactory("Shutdown Robot")
 								   .addClickedCallback<typeof(shutdownCallback)>(shutdownCallback)
 								   .build();
 
 	// Power Distribution Frame
-	auto powerDistributionPanelFrame = Gtk::manage(new Gtk::Frame("Power Distribution Panel"));
+	const auto powerDistributionPanelFrame = Gtk::manage(new Gtk::Frame("Power Distribution Panel"));
 
 	// Power Labels
 	voltageLabel = Gtk::manage(new Gtk::Label("0"));
@@ -568,7 +568,7 @@ void setupGui(const Glib::RefPtr<Gtk::Application>& application) {
 	}
 
 	// Power Boxes
-	auto voltageBox = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
+	const auto voltageBox = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
 						  .addFrontLabel("Voltage:")
 						  .packEnd(voltageLabel)
 						  .build();
@@ -584,10 +584,10 @@ void setupGui(const Glib::RefPtr<Gtk::Application>& application) {
 	// Power Distribution Panel Box
 	auto powerDistributionPanelBoxFactory = BoxFactory(Gtk::ORIENTATION_VERTICAL, 5)
 												.addWidget(voltageBox);
-	for(auto& box : currentBoxes) {
+	for(const auto& box : currentBoxes) {
 		powerDistributionPanelBoxFactory.addWidget(box);
 	}
-	auto powerDistributionPanelBox = powerDistributionPanelBoxFactory.build();
+	const auto powerDistributionPanelBox = powerDistributionPanelBoxFactory.build();
 
 	powerDistributionPanelFrame->add(*powerDistributionPanelBox);
 
@@ -603,18 +603,18 @@ void setupGui(const Glib::RefPtr<Gtk::Application>& application) {
 	}
 
 	// Remote Control Box
-	auto remoteControlBox = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
+	const auto remoteControlBox = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
 								.addWidget(shutdownRobotButton)
 								.build();
 
 	// State Box
-	auto stateBox = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
+	const auto stateBox = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
 						.addWidget(silentRunButton)
 						.addWidget(modeLabel)
 						.addWidget(controlModeLabel)
 						.build();
 	// Connect Box
-	auto connectBox = BoxFactory(Gtk::ORIENTATION_HORIZONTAL, 5)
+	const auto connectBox = BoxFactory(Gtk::ORIENTATION_HORIZONTAL, 5)
 						  .addWidget(ipAddressLabel)
 						  .addWidget(ipAddressEntry)
 						  .addWidget(connectButton)
@@ -623,13 +623,13 @@ void setupGui(const Glib::RefPtr<Gtk::Application>& application) {
 
 	// Victor 1 Box
 	auto victor1BoxFactory = BoxFactory(Gtk::ORIENTATION_VERTICAL);
-	for(auto& victorInfoFrame : victorInfoFrames) {
+	for(const auto& victorInfoFrame : victorInfoFrames) {
 		victor1BoxFactory.addWidget(victorInfoFrame);
 	}
-	auto victor1Box = victor1BoxFactory.build();
+	const auto victor1Box = victor1BoxFactory.build();
 
 	// Controls Right Box
-	auto controlsRightBox = BoxFactory(Gtk::ORIENTATION_VERTICAL, 5)
+	const auto controlsRightBox = BoxFactory(Gtk::ORIENTATION_VERTICAL, 5)
 								.addWidget(connectBox)
 								.addWidget(stateBox)
 								.addWidget(remoteControlBox)
@@ -637,25 +637,25 @@ void setupGui(const Glib::RefPtr<Gtk::Application>& application) {
 
 	// Talon Box
 	auto talonBoxFactory = BoxFactory(Gtk::ORIENTATION_VERTICAL);
-	for(auto& talonInfoFrame : talonInfoFrames) {
+	for(const auto& talonInfoFrame : talonInfoFrames) {
 		talonBoxFactory.addWidget(talonInfoFrame);
 	}
-	auto talonBox = talonBoxFactory.build();
+	const auto talonBox = talonBoxFactory.build();
 
 	// Controls Box
-	auto controlsBox = BoxFactory(Gtk::ORIENTATION_HORIZONTAL, 5)
+	const auto controlsBox = BoxFactory(Gtk::ORIENTATION_HORIZONTAL, 5)
 						   .addWidget(scrolledList)
 						   .addWidget(controlsRightBox)
 						   .build();
 
 	// Sensor Box
-	auto sensorBox = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
+	const auto sensorBox = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
 						 .addWidget(powerDistributionPanelFrame)
 						 .addWidget(talonBox)
 						 .addWidget(victor1Box)
 						 .build();
 
-	auto parentBox = BoxFactory(Gtk::ORIENTATION_VERTICAL, 5)
+	const auto parentBox = BoxFactory(Gtk::ORIENTATION_VERTICAL, 5)
 						 .addWidget(controlsBox)
 						 .addWidget(sensorBox)
 						 .build();
@@ -761,7 +761,7 @@ std::vector<std::string> getAddressList() {
  * @return void
  * */
 void broadcastListen() {
-	int sd = socket(AF_INET, SOCK_DGRAM, 0);
+	const auto sd = socket(AF_INET, SOCK_DGRAM, 0);
 	if(sd < 0) {
 		std::cerr << "Opening datagram socket error!" << std::endl;
 		return;
@@ -785,7 +785,7 @@ void broadcastListen() {
 		return;
 	}
 
-	const std::vector<std::string> addressList = getAddressList();
+	const auto addressList = getAddressList();
 	for(const auto& addressString : addressList) {
 #ifdef DEBUG
 		std::cout << "Client Address: " << addressString << std::endl;
@@ -836,13 +836,13 @@ void robotList() {
 
 	// Add new elements
 	for(const auto& remoteRobot : RemoteRobot::robotList) {
-		auto robotId = remoteRobot.tag;
+		const auto robotId = remoteRobot.tag;
 		bool match = false;
 		int index = 0;
 		for(auto listBoxRow = addressListBox->get_row_at_index(index); listBoxRow; listBoxRow = addressListBox->get_row_at_index(++index)) {
 			const auto* label = dynamic_cast<Gtk::Label*>(listBoxRow->get_child());
 			Glib::ustring addressString = label->get_text();
-			if(robotId == addressString) { /// TODO: Check this///////////////////////////////////////////////////////////////////////
+			if(robotId == addressString) {
 				match = true;
 				break;
 			}
@@ -862,7 +862,7 @@ void robotList() {
 		bool match = false;
 		for(const RemoteRobot& remoteRobot : RemoteRobot::robotList) {
 			std::string robotId = remoteRobot.tag;
-			if(robotId == addressString) { /// TODO: Check this //////////////////////////////////////////////////
+			if(robotId == addressString) {
 				match = true;
 				break;
 			}
@@ -981,7 +981,6 @@ int main(int argc, char** argv) {
 
 	SDL_Event event;
 	char buffer[1024] = {0};
-	/// TODO: Try making bytesRead a long or ssize_t
 
 	std::list<uint8_t> messageBytesList;
 	uint8_t headMessage[256];
@@ -1089,7 +1088,7 @@ int main(int argc, char** argv) {
 
 		// Handle SDL joystick events
 		while(SDL_PollEvent(&event)) {
-			const Uint8* state = SDL_GetKeyboardState(nullptr);
+			const auto state = SDL_GetKeyboardState(nullptr);
 
 #ifdef DEBUG
 			const size_t length = sizeof(state) / sizeof(state[0]);

@@ -574,7 +574,7 @@ void setupGui(const Glib::RefPtr<Gtk::Application>& application) {
 						  .build();
 
 	Gtk::Box* currentBoxes[numCurrents];
-	for(int i = 0; i < numCurrents; i++) {
+	for(size_t i = 0; i < numCurrents; i++) {
 		currentBoxes[i] = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
 							  .addFrontLabel("Current " + std::to_string(i) + ":")
 							  .packEnd(currentLabels[i])
@@ -593,12 +593,12 @@ void setupGui(const Glib::RefPtr<Gtk::Application>& application) {
 
 	// Info Frame
 	// Talon Info Frames
-	for(int i = 0; i < numTalonInfoFrames; i++) {
+	for(size_t i = 0; i < numTalonInfoFrames; i++) {
 		talonInfoFrames[i] = new TalonInfoFrame("Talon " + std::to_string(1 + i));
 	}
 
 	// Victor Info Frames
-	for(int i = 0; i < numVictorInfoFrames; i++) {
+	for(size_t i = 0; i < numVictorInfoFrames; i++) {
 		victorInfoFrames[i] = new VictorInfoFrame("Victor " + std::to_string(1 + i));
 	}
 
@@ -734,7 +734,7 @@ void update(std::vector<RemoteRobot>& list, std::string& robotTag) {
 std::vector<std::string> getAddressList() {
 	std::vector<std::string> addressList;
 	ifaddrs* interfaceAddresses = nullptr;
-	for(int failed = getifaddrs(&interfaceAddresses); !failed && interfaceAddresses != nullptr; interfaceAddresses = interfaceAddresses->ifa_next) {
+	for(const auto failed = getifaddrs(&interfaceAddresses); !failed && interfaceAddresses != nullptr; interfaceAddresses = interfaceAddresses->ifa_next) {
 		if(interfaceAddresses->ifa_addr != nullptr && interfaceAddresses->ifa_addr->sa_family == AF_INET) {
 			auto* socketAddress = reinterpret_cast<sockaddr_in*>(interfaceAddresses->ifa_addr);
 			std::string addressString(inet_ntoa(socketAddress->sin_addr));
@@ -786,7 +786,7 @@ void broadcastListen() {
 	}
 
 	const std::vector<std::string> addressList = getAddressList();
-	for(const std::string& addressString : addressList) {
+	for(const auto& addressString : addressList) {
 #ifdef DEBUG
 		std::cout << "Client Address: " << addressString << std::endl;
 #endif // DEBUG
@@ -826,7 +826,7 @@ void broadcastListen() {
  * */
 void robotList() {
 	// Remove robots that timeout (12 seconds)
-	for(int index = 0; index < RemoteRobot::robotList.size(); ++index) {
+	for(size_t index = 0; index < RemoteRobot::robotList.size(); ++index) {
 		time_t now;
 		time(&now);
 		if(now - RemoteRobot::robotList[index].lastSeenTime > 12) {
@@ -835,11 +835,11 @@ void robotList() {
 	}
 
 	// Add new elements
-	for(const RemoteRobot& remoteRobot : RemoteRobot::robotList) {
+	for(const auto& remoteRobot : RemoteRobot::robotList) {
 		std::string robotId = remoteRobot.tag;
 		bool match = false;
 		int index = 0;
-		for(Gtk::ListBoxRow* listBoxRow = addressListBox->get_row_at_index(index); listBoxRow; listBoxRow = addressListBox->get_row_at_index(++index)) {
+		for(auto listBoxRow = addressListBox->get_row_at_index(index); listBoxRow; listBoxRow = addressListBox->get_row_at_index(++index)) {
 			auto* label = dynamic_cast<Gtk::Label*>(listBoxRow->get_child());
 			Glib::ustring addressString = label->get_text();
 			if(robotId == addressString.c_str()) {
@@ -856,7 +856,7 @@ void robotList() {
 
 	// Remove old element
 	int index = 0;
-	for(Gtk::ListBoxRow* listBoxRow = addressListBox->get_row_at_index(index); listBoxRow; listBoxRow = addressListBox->get_row_at_index(++index)) {
+	for(auto listBoxRow = addressListBox->get_row_at_index(index); listBoxRow; listBoxRow = addressListBox->get_row_at_index(++index)) {
 		auto* label = dynamic_cast<Gtk::Label*>(listBoxRow->get_child());
 		Glib::ustring addressString = label->get_text();
 		bool match = false;
@@ -884,10 +884,10 @@ void robotList() {
  * @return void
  * */
 void displayVictorInfo(VictorInfoFrame* victorInfoFrame, uint8_t* headMessage) {
-	auto deviceId = parseType<int>((uint8_t*)&headMessage[1]);
-	auto busVoltage = parseType<float>((uint8_t*)&headMessage[5]);
-	auto outputVoltage = parseType<float>((uint8_t*)&headMessage[9]);
-	auto outputPercent = parseType<float>((uint8_t*)&headMessage[13]);
+	const auto deviceId = parseType<int>((uint8_t*)&headMessage[1]);
+	const auto busVoltage = parseType<float>((uint8_t*)&headMessage[5]);
+	const auto outputVoltage = parseType<float>((uint8_t*)&headMessage[9]);
+	const auto outputPercent = parseType<float>((uint8_t*)&headMessage[13]);
 	victorInfoFrame->setItem("Device ID", deviceId);
 	victorInfoFrame->setItem("Bus Voltage", busVoltage);
 	victorInfoFrame->setItem("Output Voltage", outputVoltage);
@@ -904,17 +904,17 @@ void displayVictorInfo(VictorInfoFrame* victorInfoFrame, uint8_t* headMessage) {
  * @return void
  * */
 void displayTalonInfo(TalonInfoFrame* talonInfoFrame, uint8_t* headMessage) {
-	auto deviceId = parseType<int>((uint8_t*)&headMessage[1]);
-	auto busVoltage = parseType<float>((uint8_t*)&headMessage[5]);
-	auto outputCurrent = parseType<float>((uint8_t*)&headMessage[9]);
-	auto outputVoltage = parseType<float>((uint8_t*)&headMessage[13]);
-	auto outputPercent = parseType<float>((uint8_t*)&headMessage[17]);
-	auto temperature = parseType<float>((uint8_t*)&headMessage[21]);
-	auto sensorPosition = parseType<int>((uint8_t*)&headMessage[25]);
-	auto sensorVelocity = parseType<int>((uint8_t*)&headMessage[29]);
-	auto closedLoopError = parseType<int>((uint8_t*)&headMessage[33]);
-	auto integralAccumulator = parseType<int>((uint8_t*)&headMessage[37]);
-	auto errorDerivative = parseType<int>((uint8_t*)&headMessage[41]);
+	const auto deviceId = parseType<int>((uint8_t*)&headMessage[1]);
+	const auto busVoltage = parseType<float>((uint8_t*)&headMessage[5]);
+	const auto outputCurrent = parseType<float>((uint8_t*)&headMessage[9]);
+	const auto outputVoltage = parseType<float>((uint8_t*)&headMessage[13]);
+	const auto outputPercent = parseType<float>((uint8_t*)&headMessage[17]);
+	const auto temperature = parseType<float>((uint8_t*)&headMessage[21]);
+	const auto sensorPosition = parseType<int>((uint8_t*)&headMessage[25]);
+	const auto sensorVelocity = parseType<int>((uint8_t*)&headMessage[29]);
+	const auto closedLoopError = parseType<int>((uint8_t*)&headMessage[33]);
+	const auto integralAccumulator = parseType<int>((uint8_t*)&headMessage[37]);
+	const auto errorDerivative = parseType<int>((uint8_t*)&headMessage[41]);
 	talonInfoFrame->setItem("Device ID", deviceId);
 	talonInfoFrame->setItem("Bus Voltage", busVoltage);
 	talonInfoFrame->setItem("Output Current", outputCurrent);
@@ -963,7 +963,7 @@ int main(int argc, char** argv) {
 	SDL_Joystick* joystickList[joystickCount];
 
 	if(joystickCount > 0) {
-		for(int joystickIndex = 0; joystickIndex < joystickCount; joystickIndex++) {
+		for(size_t joystickIndex = 0; joystickIndex < joystickCount; joystickIndex++) {
 			joystickList[joystickIndex] = SDL_JoystickOpen(joystickIndex);
 #ifdef DEBUG
 			if(joystickList[joystickIndex]) {
@@ -1000,7 +1000,7 @@ int main(int argc, char** argv) {
 
 		// Read from the socket
 		auto bytesRead = read(sock, buffer, sizeof(buffer) / sizeof(buffer[0]));
-		for(int index = 0; index < bytesRead; index++) {
+		for(typeof(bytesRead) index = 0; index < bytesRead; index++) {
 			messageBytesList.push_back(buffer[index]);
 		}
 
@@ -1016,10 +1016,10 @@ int main(int argc, char** argv) {
 		// Handle messages
 		while(!messageBytesList.empty() && messageBytesList.front() <= messageBytesList.size()) {
 			// Read message
-			int messageSize = messageBytesList.front();
+			auto messageSize = messageBytesList.front();
 			messageBytesList.pop_front();
 			messageSize--;
-			for(int index = 0; index < messageSize; index++) {
+			for(typeof(messageSize) index = 0; index < messageSize; index++) {
 				headMessage[index] = messageBytesList.front();
 				messageBytesList.pop_front();
 			}
@@ -1041,7 +1041,7 @@ int main(int argc, char** argv) {
 					voltageLabel->set_label(std::to_string(voltage).c_str());
 
 					// Display Currents
-					for(int index = 0; index < numCurrents; index++) {
+					for(size_t index = 0; index < numCurrents; index++) {
 						const auto current = parseType<float>((uint8_t*)&headMessage[5 + index * sizeof(float)]);
 						currentLabels[index]->set_label(std::to_string(current).c_str());
 					}

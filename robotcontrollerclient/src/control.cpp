@@ -764,13 +764,13 @@ std::vector<std::string> getAddressList() {
 void broadcastListen() {
 	int sd = socket(AF_INET, SOCK_DGRAM, 0);
 	if(sd < 0) {
-		perror("Opening datagram socket error!");
+		std::cerr << "Opening datagram socket error!" << std::endl;
 		return;
 	}
 
 	constexpr int reuse = 1;
 	if(setsockopt(sd, SOL_SOCKET, SO_REUSEADDR, (char*)&reuse, sizeof(reuse)) < 0) {
-		perror("Setting SO_REUSEADDR error!");
+		std::cerr << "Setting SO_REUSEADDR error!" << std::endl;
 		close(sd);
 		return;
 	}
@@ -781,7 +781,7 @@ void broadcastListen() {
 	localSock.sin_port = htons(4321);
 	localSock.sin_addr.s_addr = INADDR_ANY;
 	if(bind(sd, (struct sockaddr*)&localSock, sizeof(localSock))) {
-		perror("Binding datagram socket error!");
+		std::cerr << "Binding datagram socket error!" << std::endl;
 		close(sd);
 		return;
 	}
@@ -797,7 +797,7 @@ void broadcastListen() {
 		group.imr_multiaddr.s_addr = inet_addr("226.1.1.1");
 		group.imr_interface.s_addr = inet_addr(addressString.c_str());
 		if(setsockopt(sd, IPPROTO_IP, IP_ADD_MEMBERSHIP, (char*)&group, sizeof(group)) < 0) {
-			perror("Adding multicast group error!");
+			std::cerr << "Adding multicast group error!" << std::endl;
 		}
 	}
 

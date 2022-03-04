@@ -68,13 +68,20 @@ $(function() {
   <div class="headertitle"><div class="title">InfoFrame Class Reference</div></div>
 </div><!--header-->
 <div class="contents">
+
+<p>GTK Frame to show multiple <a class="el" href="classInfoItem.html" title="GTK Box to hold a name and value.">InfoItem</a> objects.  
+ <a href="classInfoFrame.html#details">More...</a></p>
+
+<p><code>#include &lt;<a class="el" href="InfoFrame_8hpp_source.html">InfoFrame.hpp</a>&gt;</code></p>
 <div class="dynheader">
 Inheritance diagram for InfoFrame:</div>
 <div class="dyncontent">
 <div class="center"><img src="classInfoFrame__inherit__graph.png" border="0" usemap="#aInfoFrame_inherit__map" alt="Inheritance graph"/></div>
 <map name="aInfoFrame_inherit__map" id="aInfoFrame_inherit__map">
-<area shape="rect" title=" " alt="" coords="8,80,89,107"/>
-<area shape="rect" title=" " alt="" coords="5,5,92,32"/>
+<area shape="rect" title="GTK Frame to show multiple InfoItem objects." alt="" coords="91,80,172,107"/>
+<area shape="rect" href="classTalonInfoFrame.html" title="InfoFrame to display information about Talon motors." alt="" coords="5,155,119,181"/>
+<area shape="rect" href="classVictorInfoFrame.html" title="InfoFrame to display information about Victor motors." alt="" coords="143,155,258,181"/>
+<area shape="rect" title=" " alt="" coords="88,5,175,32"/>
 </map>
 <center><span class="legend">[<a href="graph_legend.html">legend</a>]</span></center></div>
 <div class="dynheader">
@@ -82,35 +89,160 @@ Collaboration diagram for InfoFrame:</div>
 <div class="dyncontent">
 <div class="center"><img src="classInfoFrame__coll__graph.png" border="0" usemap="#aInfoFrame_coll__map" alt="Collaboration graph"/></div>
 <map name="aInfoFrame_coll__map" id="aInfoFrame_coll__map">
-<area shape="rect" title=" " alt="" coords="8,80,89,107"/>
+<area shape="rect" title="GTK Frame to show multiple InfoItem objects." alt="" coords="8,80,89,107"/>
 <area shape="rect" title=" " alt="" coords="5,5,92,32"/>
 </map>
 <center><span class="legend">[<a href="graph_legend.html">legend</a>]</span></center></div>
 <table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a id="pub-methods" name="pub-methods"></a>
 Public Member Functions</h2></td></tr>
-<tr class="memitem:aeff1b9a803b9460f14a78f4d98716417"><td class="memItemLeft" align="right" valign="top"><a id="aeff1b9a803b9460f14a78f4d98716417" name="aeff1b9a803b9460f14a78f4d98716417"></a>
-&#160;</td><td class="memItemRight" valign="bottom"><b>InfoFrame</b> (std::string frameName)</td></tr>
-<tr class="separator:aeff1b9a803b9460f14a78f4d98716417"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a0164e04e017ded2916d331a938ed7953"><td class="memItemLeft" align="right" valign="top"><a id="a0164e04e017ded2916d331a938ed7953" name="a0164e04e017ded2916d331a938ed7953"></a>
-void&#160;</td><td class="memItemRight" valign="bottom"><b>addItem</b> (std::string itemName)</td></tr>
-<tr class="separator:a0164e04e017ded2916d331a938ed7953"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:acd0ae9a9e789c13435928576b86e25fa"><td class="memItemLeft" align="right" valign="top"><a id="acd0ae9a9e789c13435928576b86e25fa" name="acd0ae9a9e789c13435928576b86e25fa"></a>
-void&#160;</td><td class="memItemRight" valign="bottom"><b>setItem</b> (std::string itemName, std::string itemValue)</td></tr>
-<tr class="separator:acd0ae9a9e789c13435928576b86e25fa"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:aac87915c0eabbee2579b653319f1ed7a"><td class="memItemLeft" align="right" valign="top"><a id="aac87915c0eabbee2579b653319f1ed7a" name="aac87915c0eabbee2579b653319f1ed7a"></a>
-void&#160;</td><td class="memItemRight" valign="bottom"><b>setItem</b> (std::string itemName, float itemValue)</td></tr>
-<tr class="separator:aac87915c0eabbee2579b653319f1ed7a"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a93b071f0c4ae81613437deec11842f29"><td class="memItemLeft" align="right" valign="top"><a id="a93b071f0c4ae81613437deec11842f29" name="a93b071f0c4ae81613437deec11842f29"></a>
-void&#160;</td><td class="memItemRight" valign="bottom"><b>setItem</b> (std::string itemName, int itemValue)</td></tr>
-<tr class="separator:a93b071f0c4ae81613437deec11842f29"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:af55b8112e09c7c7d281eb1c365d4d8e8"><td class="memItemLeft" align="right" valign="top"><a id="af55b8112e09c7c7d281eb1c365d4d8e8" name="af55b8112e09c7c7d281eb1c365d4d8e8"></a>
-void&#160;</td><td class="memItemRight" valign="bottom"><b>setItem</b> (std::string itemName, bool itemValue)</td></tr>
-<tr class="separator:af55b8112e09c7c7d281eb1c365d4d8e8"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a813e010c9387e249f1e0dddb9df0e16c"><td class="memItemLeft" align="right" valign="top">&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classInfoFrame.html#a813e010c9387e249f1e0dddb9df0e16c">InfoFrame</a> (const std::string &amp;frameName)</td></tr>
+<tr class="memdesc:a813e010c9387e249f1e0dddb9df0e16c"><td class="mdescLeft">&#160;</td><td class="mdescRight">Constructor for <a class="el" href="classInfoFrame.html" title="GTK Frame to show multiple InfoItem objects.">InfoFrame</a>.  <a href="classInfoFrame.html#a813e010c9387e249f1e0dddb9df0e16c">More...</a><br /></td></tr>
+<tr class="separator:a813e010c9387e249f1e0dddb9df0e16c"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ac30b52f021ed66ca48ad88fd492d6734"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classInfoFrame.html#ac30b52f021ed66ca48ad88fd492d6734">addItem</a> (const std::string &amp;itemName)</td></tr>
+<tr class="memdesc:ac30b52f021ed66ca48ad88fd492d6734"><td class="mdescLeft">&#160;</td><td class="mdescRight">Create a new item and add it to the info frame.  <a href="classInfoFrame.html#ac30b52f021ed66ca48ad88fd492d6734">More...</a><br /></td></tr>
+<tr class="separator:ac30b52f021ed66ca48ad88fd492d6734"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ad618d854b90d9defd0eddd964a64e4cb"><td class="memTemplParams" colspan="2">template&lt;typename T &gt; </td></tr>
+<tr class="memitem:ad618d854b90d9defd0eddd964a64e4cb"><td class="memTemplItemLeft" align="right" valign="top">void&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="classInfoFrame.html#ad618d854b90d9defd0eddd964a64e4cb">setItem</a> (const std::string &amp;itemName, T itemValue)</td></tr>
+<tr class="memdesc:ad618d854b90d9defd0eddd964a64e4cb"><td class="mdescLeft">&#160;</td><td class="mdescRight">Sets a specified item's value.  <a href="classInfoFrame.html#ad618d854b90d9defd0eddd964a64e4cb">More...</a><br /></td></tr>
+<tr class="separator:ad618d854b90d9defd0eddd964a64e4cb"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table>
+<a name="details" id="details"></a><h2 class="groupheader">Detailed Description</h2>
+<div class="textblock"><p >GTK Frame to show multiple <a class="el" href="classInfoItem.html" title="GTK Box to hold a name and value.">InfoItem</a> objects. </p>
+<p >Declares the class <a class="el" href="classInfoFrame.html" title="GTK Frame to show multiple InfoItem objects.">InfoFrame</a>, which is a child of GTK Frame, to show related <a class="el" href="classInfoItem.html" title="GTK Box to hold a name and value.">InfoItem</a> objects and give an overarching label to them all. Can create new <a class="el" href="classInfoItem.html" title="GTK Box to hold a name and value.">InfoItem</a> objects and set their values at any time.</p>
+<dl class="section see"><dt>See also</dt><dd><a class="el" href="InfoFrame_8hpp.html" title="Declares a class, InfoFrame, as a GTK Frame to show multiple InfoItem objects.">include/InfoFrame.hpp</a> </dd>
+<dd>
+<a class="el" href="InfoFrame_8cpp.html" title="Implementation for the InfoFrame class.">src/InfoFrame.cpp</a> </dd>
+<dd>
+<a class="el" href="classInfoItem.html" title="GTK Box to hold a name and value.">InfoItem</a> </dd>
+<dd>
+<a class="el" href="classTalonInfoFrame.html" title="InfoFrame to display information about Talon motors.">TalonInfoFrame</a> </dd>
+<dd>
+<a class="el" href="classVictorInfoFrame.html" title="InfoFrame to display information about Victor motors.">VictorInfoFrame</a> </dd></dl>
+</div><h2 class="groupheader">Constructor &amp; Destructor Documentation</h2>
+<a id="a813e010c9387e249f1e0dddb9df0e16c" name="a813e010c9387e249f1e0dddb9df0e16c"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a813e010c9387e249f1e0dddb9df0e16c">&#9670;&nbsp;</a></span>InfoFrame()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">InfoFrame::InfoFrame </td>
+          <td>(</td>
+          <td class="paramtype">const std::string &amp;&#160;</td>
+          <td class="paramname"><em>frameName</em></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">explicit</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Constructor for <a class="el" href="classInfoFrame.html" title="GTK Frame to show multiple InfoItem objects.">InfoFrame</a>. </p>
+<p >Constructor for <a class="el" href="classInfoFrame.html" title="GTK Frame to show multiple InfoItem objects.">InfoFrame</a>. Creates the labels to display dynamically on the heap. Labels are managed by the <a class="el" href="classInfoFrame.html" title="GTK Frame to show multiple InfoItem objects.">InfoFrame</a> frame.</p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramdir">[in]</td><td class="paramname">name</td><td>Name of the frame to display. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd><a class="el" href="classInfoFrame.html" title="GTK Frame to show multiple InfoItem objects.">InfoFrame</a> object </dd></dl>
+
+</div>
+</div>
+<h2 class="groupheader">Member Function Documentation</h2>
+<a id="ac30b52f021ed66ca48ad88fd492d6734" name="ac30b52f021ed66ca48ad88fd492d6734"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ac30b52f021ed66ca48ad88fd492d6734">&#9670;&nbsp;</a></span>addItem()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">void InfoFrame::addItem </td>
+          <td>(</td>
+          <td class="paramtype">const std::string &amp;&#160;</td>
+          <td class="paramname"><em>itemName</em></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Create a new item and add it to the info frame. </p>
+<p >Adds an item with a specified name to the info frame. Item is of type <a class="el" href="classInfoItem.html" title="GTK Box to hold a name and value.">InfoItem</a>. Sets value for item to "0".</p>
+<dl class="section see"><dt>See also</dt><dd><a class="el" href="classInfoItem.html" title="GTK Box to hold a name and value.">InfoItem</a></dd></dl>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramdir">[in]</td><td class="paramname">itemName</td><td>Name of the information/value to create and display. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>void </dd></dl>
+
+</div>
+</div>
+<a id="ad618d854b90d9defd0eddd964a64e4cb" name="ad618d854b90d9defd0eddd964a64e4cb"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ad618d854b90d9defd0eddd964a64e4cb">&#9670;&nbsp;</a></span>setItem()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename T &gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">void InfoFrame::setItem </td>
+          <td>(</td>
+          <td class="paramtype">const std::string &amp;&#160;</td>
+          <td class="paramname"><em>itemName</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">T&#160;</td>
+          <td class="paramname"><em>itemValue</em>&#160;</td>
+        </tr>
+        <tr>
+          <td></td>
+          <td>)</td>
+          <td></td><td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Sets a specified item's value. </p>
+<p >Sets the value for a specified item given its name. Searches child <a class="el" href="classInfoItem.html" title="GTK Box to hold a name and value.">InfoItem</a> objects for a matching name and sets its value. If there is no matching name, then nothing is changed.</p>
+<dl class="section see"><dt>See also</dt><dd><a class="el" href="classInfoItem.html" title="GTK Box to hold a name and value.">InfoItem</a> </dd>
+<dd>
+<a class="el" href="classInfoItem.html" title="GTK Box to hold a name and value.">InfoItem</a>:getName </dd>
+<dd>
+<a class="el" href="classInfoItem.html" title="GTK Box to hold a name and value.">InfoItem</a>:setValue</dd></dl>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramdir">[in]</td><td class="paramname">itemName</td><td>Name of the information/value to display. </td></tr>
+    <tr><td class="paramdir">[in]</td><td class="paramname">itemValue</td><td>What to set the <a class="el" href="classInfoItem.html" title="GTK Box to hold a name and value.">InfoItem</a> object's value to and display. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>void </dd></dl>
+
+</div>
+</div>
 <hr/>The documentation for this class was generated from the following files:<ul>
 <li>robotcontrollerclient/include/<a class="el" href="InfoFrame_8hpp_source.html">InfoFrame.hpp</a></li>
-<li>robotcontrollerclient/src/InfoFrame.cpp</li>
+<li>robotcontrollerclient/src/<a class="el" href="InfoFrame_8cpp.html">InfoFrame.cpp</a></li>
 </ul>
 </div><!-- contents -->
 <!-- start footer part -->

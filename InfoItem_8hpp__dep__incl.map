@@ -1,0 +1,11 @@
+<map id="robotcontrollerclient/include/InfoItem.hpp" name="robotcontrollerclient/include/InfoItem.hpp">
+<area shape="rect" id="node1" title="Declares a class, InfoItem, as a GTK Box show information." alt="" coords="379,5,522,47"/>
+<area shape="rect" id="node2" href="$InfoFrame_8hpp.html" title="Declares a class, InfoFrame, as a GTK Frame to show multiple InfoItem objects." alt="" coords="289,95,444,136"/>
+<area shape="rect" id="node9" href="$InfoItem_8cpp.html" title="Implementation for the InfoItem class." alt="" coords="469,95,603,136"/>
+<area shape="rect" id="node3" href="$TalonInfoFrame_8hpp.html" title="Declares a class, TalonInfoFrame, as an InfoFrame to information about a Talon motor." alt="" coords="61,184,248,225"/>
+<area shape="rect" id="node6" href="$VictorInfoFrame_8hpp.html" title="Declares a class, VictorInfoFrame, as an InfoFrame to information about a Victor motor." alt="" coords="273,184,461,225"/>
+<area shape="rect" id="node8" href="$InfoFrame_8cpp.html" title="Implementation for the InfoFrame class." alt="" coords="485,184,619,225"/>
+<area shape="rect" id="node4" href="$TalonInfoFrame_8cpp.html" title="Implementation for the TalonInfoFrame class." alt="" coords="5,273,168,315"/>
+<area shape="rect" id="node5" href="$control_8cpp.html" title="GUI client program to control and display info for with the robot." alt="" coords="193,273,327,315"/>
+<area shape="rect" id="node7" href="$VictorInfoFrame_8cpp.html" title="Implementation for the TalonInfoFrame class." alt="" coords="352,273,517,315"/>
+</map>

@@ -1,5 +1,5 @@
 var searchData=
 [
-  ['infoframe_0',['InfoFrame',['../classInfoFrame.html',1,'']]],
-  ['infoitem_1',['InfoItem',['../classInfoItem.html',1,'']]]
+  ['boxfactory_0',['BoxFactory',['../classBoxFactory.html',1,'']]],
+  ['buttonfactory_1',['ButtonFactory',['../classButtonFactory.html',1,'']]]
 ];

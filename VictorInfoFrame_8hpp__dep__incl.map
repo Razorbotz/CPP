@@ -1,0 +1,5 @@
+<map id="robotcontrollerclient/include/VictorInfoFrame.hpp" name="robotcontrollerclient/include/VictorInfoFrame.hpp">
+<area shape="rect" id="node1" title="Declares a class, VictorInfoFrame, as an InfoFrame to information about a Victor motor." alt="" coords="81,5,269,47"/>
+<area shape="rect" id="node2" href="$VictorInfoFrame_8cpp.html" title="Implementation for the TalonInfoFrame class." alt="" coords="5,95,171,136"/>
+<area shape="rect" id="node3" href="$control_8cpp.html" title="GUI client program to control and display info for with the robot." alt="" coords="195,95,330,136"/>
+</map>

@@ -1,0 +1,9 @@
+<map id="robotcontrollerclient/include/InfoFrame.hpp" name="robotcontrollerclient/include/InfoFrame.hpp">
+<area shape="rect" id="node1" title="Declares a class, InfoFrame, as a GTK Frame to show multiple InfoItem objects." alt="" coords="289,5,444,47"/>
+<area shape="rect" id="node2" href="$TalonInfoFrame_8hpp.html" title="Declares a class, TalonInfoFrame, as an InfoFrame to information about a Talon motor." alt="" coords="61,95,248,136"/>
+<area shape="rect" id="node5" href="$VictorInfoFrame_8hpp.html" title="Declares a class, VictorInfoFrame, as an InfoFrame to information about a Victor motor." alt="" coords="273,95,461,136"/>
+<area shape="rect" id="node7" href="$InfoFrame_8cpp.html" title="Implementation for the InfoFrame class." alt="" coords="485,95,619,136"/>
+<area shape="rect" id="node3" href="$TalonInfoFrame_8cpp.html" title="Implementation for the TalonInfoFrame class." alt="" coords="5,184,168,225"/>
+<area shape="rect" id="node4" href="$control_8cpp.html" title="GUI client program to control and display info for with the robot." alt="" coords="193,184,327,225"/>
+<area shape="rect" id="node6" href="$VictorInfoFrame_8cpp.html" title="Implementation for the TalonInfoFrame class." alt="" coords="352,184,517,225"/>
+</map>

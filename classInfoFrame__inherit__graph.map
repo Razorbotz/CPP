@@ -1,4 +1,6 @@
 <map id="InfoFrame" name="InfoFrame">
-<area shape="rect" id="node1" title=" " alt="" coords="8,80,89,107"/>
-<area shape="rect" id="node2" title=" " alt="" coords="5,5,92,32"/>
+<area shape="rect" id="node1" title="GTK Frame to show multiple InfoItem objects." alt="" coords="91,80,172,107"/>
+<area shape="rect" id="node3" href="$classTalonInfoFrame.html" title="InfoFrame to display information about Talon motors." alt="" coords="5,155,119,181"/>
+<area shape="rect" id="node4" href="$classVictorInfoFrame.html" title="InfoFrame to display information about Victor motors." alt="" coords="143,155,258,181"/>
+<area shape="rect" id="node2" title=" " alt="" coords="88,5,175,32"/>
 </map>

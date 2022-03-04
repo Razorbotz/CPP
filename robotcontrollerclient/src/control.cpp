@@ -51,16 +51,17 @@ constexpr unsigned int netPortNumber = 31337;
  * behavior on specific machines/compilers since it is not standards compliant
  * and uses bitwise/casting trickery (endianness and type size).
  *
- * @todo Add array length so that it can be size other than uint32_t (4 bytes) and not truncate.
+ * @throw   std::out_of_range   If size of array to convert is larger than the type to be converted
  *
  * @param[in]   array   The array to be converted to a type T
+ * @param[in]   size    The size of the array. Must be less than sizeof(uint64_t) (64 bits, 8 bytes)
  * @return Value of type T filled with data from input array
  * */
 template <typename T>
-T parseType(const uint8_t* array) {
-	constexpr size_t size = sizeof(uint32_t);
+T parseType(const uint8_t* array, const size_t size) {
+	if(size > sizeof(uint64_t)) throw std::out_of_range("Size of array does not fit into value!");
 
-	uint32_t result = 0;
+	uint64_t result = 0;
 	for(size_t i = 0; i < size; i++)
 		result |= uint32_t(array[i]) << ((size - 1 - i) * 8);
 
@@ -910,10 +911,10 @@ void robotList() {
  * @return void
  * */
 void displayVictorInfo(VictorInfoFrame* victorInfoFrame, uint8_t* headMessage) {
-	const auto deviceId = parseType<int>((uint8_t*)&headMessage[1]);
-	const auto busVoltage = parseType<float>((uint8_t*)&headMessage[5]);
-	const auto outputVoltage = parseType<float>((uint8_t*)&headMessage[9]);
-	const auto outputPercent = parseType<float>((uint8_t*)&headMessage[13]);
+	const auto deviceId = parseType<int>((uint8_t*)&headMessage[1], 4);
+	const auto busVoltage = parseType<float>((uint8_t*)&headMessage[5], 4);
+	const auto outputVoltage = parseType<float>((uint8_t*)&headMessage[9], 4);
+	const auto outputPercent = parseType<float>((uint8_t*)&headMessage[13], 4);
 	victorInfoFrame->setItem("Device ID", deviceId);
 	victorInfoFrame->setItem("Bus Voltage", busVoltage);
 	victorInfoFrame->setItem("Output Voltage", outputVoltage);
@@ -930,17 +931,17 @@ void displayVictorInfo(VictorInfoFrame* victorInfoFrame, uint8_t* headMessage) {
  * @return void
  * */
 void displayTalonInfo(TalonInfoFrame* talonInfoFrame, uint8_t* headMessage) {
-	const auto deviceId = parseType<int>((uint8_t*)&headMessage[1]);
-	const auto busVoltage = parseType<float>((uint8_t*)&headMessage[5]);
-	const auto outputCurrent = parseType<float>((uint8_t*)&headMessage[9]);
-	const auto outputVoltage = parseType<float>((uint8_t*)&headMessage[13]);
-	const auto outputPercent = parseType<float>((uint8_t*)&headMessage[17]);
-	const auto temperature = parseType<float>((uint8_t*)&headMessage[21]);
-	const auto sensorPosition = parseType<int>((uint8_t*)&headMessage[25]);
-	const auto sensorVelocity = parseType<int>((uint8_t*)&headMessage[29]);
-	const auto closedLoopError = parseType<int>((uint8_t*)&headMessage[33]);
-	const auto integralAccumulator = parseType<int>((uint8_t*)&headMessage[37]);
-	const auto errorDerivative = parseType<int>((uint8_t*)&headMessage[41]);
+	const auto deviceId = parseType<int>((uint8_t*)&headMessage[1], 4);
+	const auto busVoltage = parseType<float>((uint8_t*)&headMessage[5], 4);
+	const auto outputCurrent = parseType<float>((uint8_t*)&headMessage[9], 4);
+	const auto outputVoltage = parseType<float>((uint8_t*)&headMessage[13], 4);
+	const auto outputPercent = parseType<float>((uint8_t*)&headMessage[17], 4);
+	const auto temperature = parseType<float>((uint8_t*)&headMessage[21], 4);
+	const auto sensorPosition = parseType<int>((uint8_t*)&headMessage[25], 4);
+	const auto sensorVelocity = parseType<int>((uint8_t*)&headMessage[29], 4);
+	const auto closedLoopError = parseType<int>((uint8_t*)&headMessage[33], 4);
+	const auto integralAccumulator = parseType<int>((uint8_t*)&headMessage[37], 4);
+	const auto errorDerivative = parseType<int>((uint8_t*)&headMessage[41], 4);
 	talonInfoFrame->setItem("Device ID", deviceId);
 	talonInfoFrame->setItem("Bus Voltage", busVoltage);
 	talonInfoFrame->setItem("Output Current", outputCurrent);
@@ -1062,12 +1063,12 @@ int main(int argc, char** argv) {
 			switch(command) {
 				case COMMAND_TO_CLIENT_POWER_DISTRIBUTION_PANEL: {
 					// Display voltage
-					const auto voltage = parseType<float>((uint8_t*)&headMessage[1]);
+					const auto voltage = parseType<float>((uint8_t*)&headMessage[1], 4);
 					voltageLabel->set_label(std::to_string(voltage).c_str());
 
 					// Display Currents
 					for(size_t index = 0; index < numCurrents; index++) {
-						const auto current = parseType<float>((uint8_t*)&headMessage[5 + index * sizeof(float)]);
+						const auto current = parseType<float>((uint8_t*)&headMessage[5 + index * sizeof(float)], 4);
 						currentLabels[index]->set_label(std::to_string(current).c_str());
 					}
 				} break;

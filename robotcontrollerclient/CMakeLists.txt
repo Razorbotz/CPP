@@ -1,16 +1,17 @@
 cmake_minimum_required(VERSION 3.10)
-set(CMAKE_LEGACY_CYGWIN_WIN32 0) 
+set(CMAKE_LEGACY_CYGWIN_WIN32 0)
 project(control)
 
 set(CMAKE_BINARY_DIR ${CMAKE_SOURCE_DIR}/bin)
 set(EXECUTABLE_OUTPUT_PATH ${CMAKE_BINARY_DIR})
 
+set(CMAKE_CXX_STANDARD 17)
 
 include_directories(
   include
   /usr/include/glib-2.0
   /usr/lib/glib-2.0/include
-  /usr/include/glibmm-2.4 
+  /usr/include/glibmm-2.4
   /usr/include/glibmm-2.4/glibmm
   /usr/lib/glibmm-2.4/include
   /usr/include/sigc++-2.0
@@ -23,13 +24,13 @@ include_directories(
   /usr/lib/pangomm-1.4/include
   /usr/include/cairo
   /usr/include/cairomm-1.0
-  /usr/include/freetype2 
+  /usr/include/freetype2
   /usr/include/gdkmm-3.0
   /usr/lib/gdkmm-3.0/include
   /usr/include/gdk-pixbuf-2.0
   /usr/include/gtk-3.0
   /usr/include/gtkmm-3.0
-  /usr/lib/gktmm 
+  /usr/lib/gktmm
   /usr/lib/gtkmm-3.0/include
   /usr/include/atk-1.0
   /usr/include/atkmm-1.6/
@@ -62,11 +63,12 @@ include_directories(
 )
 
 
-add_executable(control 
-  src/control.cpp
+add_executable(control
+		src/control.cpp
   src/InfoFrame.cpp
   src/InfoItem.cpp
-)
+		src/WindowFactory.cpp include/WindowFactory.hpp src/BoxFactory.cpp include/BoxFactory.hpp src/TalonInfoFrame.cpp include/TalonInfoFrame.hpp src/VictorInfoFrame.cpp include/VictorInfoFrame.hpp src/ButtonFactory.cpp include/ButtonFactory.hpp
+		src/RemoteRobot.cpp)
 
 
 target_link_libraries(control
@@ -86,4 +88,3 @@ target_link_libraries(control
   atk-1.0
   atkmm-1.6
 )
-

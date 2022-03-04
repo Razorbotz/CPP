@@ -1,57 +1,29 @@
-#include <string>
-#include <iostream>
-#include <vector>
+/** @file
+ * @brief Implementation for the InfoFrame class.
+ *
+ * @author Luke Simmons
+ *
+ * @date 2022-2-5
+ *
+ * Implements the InfoFrame class.
+ *
+ * @see include/InfoFrame.hpp
+ * @see InfoFrame
+ * */
+
 #include <memory>
+#include <vector>
 
 #include "InfoFrame.hpp"
 
-
-InfoFrame::InfoFrame(std::string frameName):Gtk::Frame(frameName){
-        contentsBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL,5));
-	this->add(*contentsBox);	
+InfoFrame::InfoFrame(const std::string& frameName) : Gtk::Frame(frameName) {
+	contentsBox = std::unique_ptr<Gtk::Box>(Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5)));
+	this->add(*contentsBox);
 }
 
-
-void InfoFrame::addItem(std::string itemName){
-	std::shared_ptr<InfoItem> infoItem=std::make_shared<InfoItem>(itemName); 
-	this->itemList.push_back(infoItem);
-	this->contentsBox->add(*(infoItem));
-	this->show_all();
-}
-
-void InfoFrame::setItem(std::string itemName, std::string itemValue){
-	for(std::shared_ptr<InfoItem> infoItem:itemList){
-		if(infoItem->getName()==itemName){
-			infoItem->setValue(itemValue);
-			break;
-		}
-	}	
-}
-
-void InfoFrame::setItem(std::string itemName, float itemValue){
-	for(std::shared_ptr<InfoItem> infoItem:itemList){
-		if(infoItem->getName()==itemName){
-			infoItem->setValue(itemValue);
-			break;
-		}
-	}	
-
-}
-
-void InfoFrame::setItem(std::string itemName, int itemValue){
-	for(std::shared_ptr<InfoItem> infoItem:itemList){
-		if(infoItem->getName()==itemName){
-			infoItem->setValue(itemValue);
-			break;
-		}
-	}	
-}
-
-void InfoFrame::setItem(std::string itemName, bool itemValue){
-	for(std::shared_ptr<InfoItem> infoItem:itemList){
-		if(infoItem->getName()==itemName){
-			infoItem->setValue(itemValue);
-			break;
-		}
-	}	
+void InfoFrame::addItem(const std::string& itemName) {
+	const auto infoItem = std::make_shared<InfoItem>(itemName);
+	itemList.push_back(infoItem);
+	contentsBox->add(*(infoItem));
+	show_all();
 }

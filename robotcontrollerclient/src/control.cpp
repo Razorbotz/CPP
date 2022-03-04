@@ -1,1176 +1,1228 @@
-#include <stdio.h> 
-#include <stdlib.h>
-#include <unistd.h>
-#include <string> 
-#include <vector>
-#include <sys/types.h>
-#include <sys/socket.h> 
-#include <stdlib.h> 
-#include <netinet/in.h> 
+/** @file
+ * @brief GUI client program to control and display info for with the robot.
+ *
+ * @author Bill
+ * @author Johnston
+ * @author Luke Simmons
+ *
+ * @date 2022-2-18
+ *
+ * This program will connect to the robot via the internet in order to display
+ * information about the robot and allow the user to control the robot. The
+ * interface is written in GTK and uses the Gtkmm library. It allows the usage
+ * of controllers and joysticks on the client to control the robot by using the
+ * SDL library. In order to connect to the robot, the user must enter the IP
+ * address of the robot in the GUI. It will display information about the
+ * voltages and motors on the robot. Define "DEBUG" to print debug information.
+ * */
+
 #include <arpa/inet.h>
+#include <cstdlib>
+#include <fcntl.h>
 #include <ifaddrs.h>
 #include <iostream>
-#include <fstream>
-#include <fcntl.h>
+#include <netinet/in.h>
+#include <string>
+#include <sys/socket.h>
+#include <sys/types.h>
 #include <thread>
+#include <unistd.h>
+#include <vector>
 
-#include <glibmm/ustring.h>
 #include <SDL2/SDL.h>
-#include <gtkmm.h>
 #include <gdkmm.h>
+#include <glibmm/ustring.h>
+#include <gtkmm.h>
 
-#include "InfoFrame.hpp"
+#include "BoxFactory.hpp"
+#include "ButtonFactory.hpp"
+#include "RemoteRobot.hpp"
+#include "TalonInfoFrame.hpp"
+#include "VictorInfoFrame.hpp"
+#include "WindowFactory.hpp"
 
-#define PORT 31337 
+/// Port for communicating with the robot over the network
+constexpr unsigned int netPortNumber = 31337;
 
-float parseFloat(uint8_t* array){
-        uint32_t axisYInteger=0;
-        axisYInteger|=uint32_t(array[0])<<24;
-        axisYInteger|=uint32_t(array[1])<<16;
-        axisYInteger|=uint32_t(array[2])<<8;
-        axisYInteger|=uint32_t(array[3])<<0;
-        float value=(float)*(static_cast<float*>(static_cast<void*>(&axisYInteger)));
+/** @brief Converts a byte array to a specified type.
+ *
+ * Takes a big-endian type as a byte array and returns that type. Will truncate if
+ * array is longer than uint32_t (4 bytes). This code may produce undefined
+ * behavior on specific machines/compilers since it is not standards compliant
+ * and uses bitwise/casting trickery (endianness and type size).
+ *
+ * @todo Add array length so that it can be size other than uint32_t (4 bytes) and not truncate.
+ *
+ * @param[in]   array   The array to be converted to a type T
+ * @return Value of type T filled with data from input array
+ * */
+template <typename T>
+T parseType(const uint8_t* array) {
+	constexpr size_t size = sizeof(uint32_t);
 
-        return value;
+	uint32_t result = 0;
+	for(size_t i = 0; i < size; i++)
+		result |= uint32_t(array[i]) << ((size - 1 - i) * 8);
+
+	return (T) * (static_cast<T*>(static_cast<void*>(&result)));
 }
 
-int parseInt(uint8_t* array){
-        uint32_t axisYInteger=0;
-        axisYInteger|=uint32_t(array[0])<<24;
-        axisYInteger|=uint32_t(array[1])<<16;
-        axisYInteger|=uint32_t(array[2])<<8;
-        axisYInteger|=uint32_t(array[3])<<0;
-        int value=(int)*(static_cast<int*>(static_cast<void*>(&axisYInteger)));
+/** @brief Converts a variable of a given type to a byte array.
+ *
+ * Takes a data type and fills byte array with its data in big-endian form.
+ * This code may produce undefined behavior on specific machines/compilers
+ * since it is not standards compliant and uses bitwise/casting trickery
+ * (endianness and int size).
 
-        return value;
+ * @todo Make this standards compliant and platform independent by not using trickery.
+ *
+ * @throw   std::out_of_range   If variable doesn't fit in array
+ *
+ * @param[in]   value     Variable to fill array with
+ * @param[out]  array    The array to be converted to a type T
+ * @param[in]   arrayLen  Size of array to be filled
+ * @return void
+ * */
+template <typename T>
+void insert(T value, uint8_t* array, const size_t arrayLen) {
+	// Check if value fits into array
+	if(arrayLen < sizeof(T)) throw std::out_of_range("Type of value doesn't fit in array!");
+
+	// Convert to byte-array by looping through each byte and bit-shifting
+	constexpr size_t valueSize = sizeof(value);
+	for(size_t i = 0; i < valueSize; i++)
+		array[i] = uint8_t((uint32_t(*(static_cast<uint32_t*>(static_cast<void*>(&value)))) >> ((valueSize - 1 - i) * 8)));
 }
 
- 
-void insert(float value,uint8_t* array){
-	array[0]=uint8_t((uint32_t(*(static_cast<uint32_t*>(static_cast<void*>(&value))))>>24) & 0xff);
-	array[1]=uint8_t((uint32_t(*(static_cast<uint32_t*>(static_cast<void*>(&value))))>>16) & 0xff);
-	array[2]=uint8_t((uint32_t(*(static_cast<uint32_t*>(static_cast<void*>(&value))))>>8) & 0xff);
-	array[3]=uint8_t((uint32_t(*(static_cast<uint32_t*>(static_cast<void*>(&value))))>>0) & 0xff);
-}
-
-void insert(int value,uint8_t* array){
-	array[0]=uint8_t((uint32_t(*(static_cast<uint32_t*>(static_cast<void*>(&value))))>>24) & 0xff);
-	array[1]=uint8_t((uint32_t(*(static_cast<uint32_t*>(static_cast<void*>(&value))))>>16) & 0xff);
-	array[2]=uint8_t((uint32_t(*(static_cast<uint32_t*>(static_cast<void*>(&value))))>>8) & 0xff);
-	array[3]=uint8_t((uint32_t(*(static_cast<uint32_t*>(static_cast<void*>(&value))))>>0) & 0xff);
-}
-
-
-bool quit(GdkEventAny* event){
+/** @brief Callback function to quit the program
+ *
+ * Exits the program with status zero when called.
+ *
+ * @param[in]   event   Unused. A pointer to any GDK Event.
+ * @return Nothing (program exits)
+ * */
+bool quit(const GdkEventAny* event) {
 	exit(0);
- 	return true;
 }
 
+// GUI Element Variables
+/// Label for the voltage
 Gtk::Label* voltageLabel;
-Gtk::Label* current0Label;
-Gtk::Label* current1Label;
-Gtk::Label* current2Label;
-Gtk::Label* current3Label;
-Gtk::Label* current4Label;
-Gtk::Label* current5Label;
-Gtk::Label* current6Label;
-Gtk::Label* current7Label;
-Gtk::Label* current8Label;
-Gtk::Label* current9Label;
-Gtk::Label* current10Label;
-Gtk::Label* current11Label;
-Gtk::Label* current12Label;
-Gtk::Label* current13Label;
-Gtk::Label* current14Label;
-Gtk::Label* current15Label;
 
+/// Number of currents on the robot
+constexpr size_t numCurrents = 16;
+/// Array to store current labels. Size is number of currents.
+Gtk::Label* currentLabels[numCurrents];
+
+/// List box for IP addresses.
 Gtk::ListBox* addressListBox;
+/// Entry box to enter IP address of robot.
 Gtk::Entry* ipAddressEntry;
+/// Label to show connection status to robot.
 Gtk::Label* connectionStatusLabel;
-  
+
+/// Button to enable silent running mode.
 Gtk::Button* silentRunButton;
+/// Button to connect to robot.
 Gtk::Button* connectButton;
+/// Label to show what mode is running. \see Modes for values.
 Gtk::Label* controlModeLabel;
-  
-InfoFrame* talon1InfoFrame;
-InfoFrame* talon2InfoFrame;
-InfoFrame* victor1InfoFrame;
-InfoFrame* victor2InfoFrame;
-InfoFrame* victor3InfoFrame;
 
-bool guiReady=false;
+/// Number of Talon motors on the robot
+constexpr size_t numTalonInfoFrames = 2;
+/// Array of Talon Info Frames. Size is number of Talon motors.
+TalonInfoFrame* talonInfoFrames[numTalonInfoFrames];
+
+/// Number of Victor motors on the robot
+constexpr size_t numVictorInfoFrames = 3;
+/// Array of Victor Info Frames. Size is number of Victor motors.
+VictorInfoFrame* victorInfoFrames[numVictorInfoFrames];
+
+/// GTK Window for the GUI
 Gtk::Window* window;
-int sock = 0; 
-bool connected=false;
 
+/// Socket for network communication
+int sock = 0;
+/// Variable for storing if the robot is connected to the client or not.
+bool connected = false;
 
-void setDisconnectedState(){
-    connectButton->set_label("Connect");
-    connectionStatusLabel->set_text("Not Connected");
-    Gdk::RGBA red;
-    red.set_rgba(1.0,0,0,1.0);
-    connectionStatusLabel->override_background_color(red);
-    ipAddressEntry->set_can_focus(true);
-    ipAddressEntry->set_editable(true);
-    connected=false;
-}
+/** @brief Different commands sent from the robot to the client.
+ *
+ * Used to specify what kind of message is received from the robot to the client.
+ * Used at the first byte of messages.
+ *
+ * @see main
+ * */
+enum CommandsToClient {
+	/// Message contains information about the Power Distribution Panel (PDP) (Voltage and Currents) from the robot.
+	COMMAND_TO_CLIENT_POWER_DISTRIBUTION_PANEL = 1,
+	/// Message contains information about Talon motor 1 from the robot.
+	COMMAND_TO_CLIENT_TALON_1,
+	/// Message contains information about Talon motor 2 from the robot.
+	COMMAND_TO_CLIENT_TALON_2,
+	/// Message contains information about Victor motor 1 from the robot.
+	COMMAND_TO_CLIENT_VICTOR_1,
+	/// Message contains information about Victor motor 2 from the robot.
+	COMMAND_TO_CLIENT_VICTOR_2,
+	/// Message contains information about Victor motor 3 from the robot.
+	COMMAND_TO_CLIENT_VICTOR_3,
+	/// Message contains information about what control mode the robot is in from the robot. \see ControlModes for control modes.
+	COMMAND_TO_CLIENT_CONTROL_STATUS
+};
 
-void setConnectedState(){
-    connectButton->set_label("Disconnect");
-    connectionStatusLabel->set_text("Connected");
-    Gdk::RGBA green;
-    green.set_rgba(0,1.0,0,1.0);
-    connectionStatusLabel->override_background_color(green);
-    ipAddressEntry->set_can_focus(false);
-    ipAddressEntry->set_editable(false);
-    connected=true;
-}
+/** @brief Different commands sent from the client to the robot.
+ *
+ * Used to specify what kind of message is sent from the client to the robot.
+ * Used at the first byte of messages.
+ *
+ * @see main
+ * @see on_key_press_event
+ * @see on_key_release_event
+ * @see silentRun
+ * @see shutdownDialog
+ * */
+enum CommandsToRobot {
+	/// Message contains information about joystick movement from the client.
+	COMMAND_TO_ROBOT_JOYSTICK_AXIS_MOTION_EVENT = 1,
+	/// Message contains information about keyboard events from the client.
+	COMMAND_TO_ROBOT_KEYBOARD_EVENT,
+	/// Message contains information about joystick button events from the client.
+	COMMAND_TO_ROBOT_JOYSTICK_BUTTON_EVENT = 5,
+	/// Message contains information about joystick hat movement from the client.
+	COMMAND_TO_ROBOT_JOYSTICK_HAT_MOTION_EVENT,
+	/// Message that tells the robot to set control status.
+	COMMAND_TO_ROBOT_SILENT_RUN,
+	/// Message that tells the robot to shutdown.
+	COMMAND_TO_ROBOT_SHUTDOWN
+};
 
-void connectToServer(){
-	if(connected==true)return;
-	struct sockaddr_in address; 
-	int bytesRead; 
-	struct sockaddr_in serv_addr; 
-	std::string hello("Hello Robot"); 
+/** @brief Modes for driving the robot.
+ *
+ * Used to specify which part of the robot should be controlled by the client.
+ * */
+enum ControlModes {
+	/// Robot in drive mode.
+	CONTROL_MODE_DRIVE = 1,
+	/// Robot in dig mode.
+	CONTROL_MODE_DIG
+};
 
-	memset(&serv_addr, '0', sizeof(serv_addr)); 
+/** @brief Set the program's state to disconnected from robot.
+ *
+ * Change GUI state and internal variables to represent that the robot is disconnected from the client.
+ *
+ * @return void
+ * */
+void setDisconnectedState() {
+	connectButton->set_label("Connect");
+	connectionStatusLabel->set_text("Not Connected");
 
-	serv_addr.sin_family = AF_INET; 
-	serv_addr.sin_port = htons(PORT); 
-
-	char buffer[1024] = {0}; 
-	if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) { 
-
-		printf("\n Socket creation error \n");
-
-        setDisconnectedState();
-//		  connectionStatusLabel->set_text("Socket Creation Error");
-//		  Gdk::RGBA red;
-//		  red.set_rgba(1.0,0,0,1.0);
-//		  connectionStatusLabel->override_background_color(red);
-//        ipAddressEntry->set_can_focus(true);
-//        ipAddressEntry->set_editable(true);
-//        connected=false;
-		return; 
-	} 
-	if(inet_pton(AF_INET, ipAddressEntry->get_text().c_str(), &serv_addr.sin_addr)<=0)  { 
-
-		printf("\nInvalid address/ Address not supported \n");
-
-        Gtk::MessageDialog dialog(*window,"Invalid Address",false,Gtk::MESSAGE_QUESTION,Gtk::BUTTONS_OK);
-        int result=dialog.run();
-
-        setDisconnectedState();
-//        connectionStatusLabel->set_text("Invalid Address");
-//		  Gdk::RGBA red;
-//		  red.set_rgba(1.0,0,0,1.0);
-//		  connectionStatusLabel->override_background_color(red);
-//        ipAddressEntry->set_can_focus(true);
-//        ipAddressEntry->set_editable(true);
-//        connected=false;
-		return;
-	} 
-	if(connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
-		printf("\nConnection Failed \n");
-
-        Gtk::MessageDialog dialog(*window,"Connection Failed",false,Gtk::MESSAGE_QUESTION,Gtk::BUTTONS_OK);
-        int result=dialog.run();
-
-        setDisconnectedState();
-//        connectionStatusLabel->set_text("Connection Failed");
-//		  Gdk::RGBA red;
-//		  red.set_rgba(1.0,0,0,1.0);
-//		  connectionStatusLabel->override_background_color(red);
-//        ipAddressEntry->set_can_focus(true);
-//        ipAddressEntry->set_editable(true);
-//        connected=false;
-	}else{
-		send(sock , hello.c_str() , strlen(hello.c_str()) , 0 );
-		bytesRead = read( sock , buffer, 1024);
-		fcntl(sock,F_SETFL, O_NONBLOCK);
-
-        setConnectedState();
-//        connectButton->set_label("Disconnect");
-//		  connectionStatusLabel->set_text("Connected");
-//		  Gdk::RGBA green;
-//		  green.set_rgba(0,1.0,0,1.0);
-//		  connectionStatusLabel->override_background_color(green);
-//        ipAddressEntry->set_can_focus(false);
-//        ipAddressEntry->set_editable(false);
-//        connected=true;
-	}
-}
-
-
-void disconnectFromServer(){
-    Gtk::MessageDialog dialog(*window,"Disconnect now?",false,Gtk::MESSAGE_QUESTION,Gtk::BUTTONS_OK_CANCEL);
-    //dialog.set_secondary_text("Do you want to shutdown now?");
-    int result=dialog.run();
-
-    switch(result) {
-        case (Gtk::RESPONSE_OK):
-            if(shutdown(sock,SHUT_RDWR)==-1){
-                Gtk::MessageDialog dialog(*window,"Failed Shutdown",false,Gtk::MESSAGE_ERROR,Gtk::BUTTONS_OK);
-                int result=dialog.run();
-            }
-            if(close(sock)==0){
-                setDisconnectedState();
-//                connectionStatusLabel->set_text("Not Connected");
-//                connectButton->set_label("Connect");
-//                Gdk::RGBA red;
-//                red.set_rgba(1.0, 0, 0, 1.0);
-//                connectionStatusLabel->override_background_color(red);
-//                ipAddressEntry->set_can_focus(true);
-//                ipAddressEntry->set_editable(true);
-//                connected=false;
-            }else{
-                Gtk::MessageDialog dialog(*window,"Failed Close",false,Gtk::MESSAGE_ERROR,Gtk::BUTTONS_OK);
-                int result=dialog.run();
-            }
-
-            break;
-        case (Gtk::RESPONSE_CANCEL):
-        case (Gtk::RESPONSE_NONE):
-        default:
-            break;
-    }
-}
-
-
-void connectOrDisconnect(){
-    Glib::ustring string=connectButton->get_label();
-    //std::cout << "connect" << string << std::endl;
-    if(string=="Connect"){
-        connectToServer();
-    }else{
-        disconnectFromServer();
-    }
-}
-
-
-void silentRun(){
-	if(!connected)return;
-	std::string currentButtonState=silentRunButton->get_label();
-	if(currentButtonState=="Silent Running"){
-		int messageSize=3;
-		uint8_t command=7;// silence 
-		uint8_t message[messageSize];
-		message[0]=messageSize;
-		message[1]=command;
-		message[2]=0;
-		send(sock, message, messageSize, 0); 
-
-		silentRunButton->set_label("Not Silent Running");
-	}else{
-		int messageSize=3;
-		uint8_t command=7;// silence 
-		uint8_t message[messageSize];
-		message[0]=messageSize;
-		message[1]=command;
-		message[2]=1;
-		send(sock, message, messageSize, 0); 
-
-		silentRunButton->set_label("Silent Running");
-	}
-}
-
-
-void rowSelected(Gtk::ListBoxRow* listBoxRow){
-	std::cout << "rowSelected" << std::endl;
-}
-
-
-void rowActivated(Gtk::ListBoxRow* listBoxRow){
-	//std::cout << "rowActivated" << std::endl;
-	Gtk::Label* label=static_cast<Gtk::Label*>(listBoxRow->get_child());
-	//std::cout << label->get_text() << std::endl;
-	Glib::ustring connectionString(label->get_text());
-	//std::cout << connectionString << std::endl;
-	int index=connectionString.rfind('@');
-    if(index==-1)return;
-    ++index;
-	Glib::ustring addressString=connectionString.substr(index,connectionString.length()-index);
-	ipAddressEntry->set_text(addressString);
-}
-
-
-void shutdownRobot(){
-    //std::cout << "shutdownRobot" << std::endl;
-
-    int messageSize=2;
-    uint8_t command=8;// shutdown
-    uint8_t message[messageSize];
-    message[0]=messageSize;
-    message[1]=command;
-    send(sock, message, messageSize, 0);
-}
-
-
-void shutdownDialog(Gtk::Window* parentWindow){
-    Gtk::MessageDialog dialog(*parentWindow,"Shutdown now?",false,Gtk::MESSAGE_QUESTION,Gtk::BUTTONS_OK_CANCEL);
-    //dialog.set_secondary_text("Do you want to shutdown now?");
-    int result=dialog.run();
-
-    switch(result) {
-        case (Gtk::RESPONSE_OK):
-            shutdownRobot();
-            break;
-        case (Gtk::RESPONSE_CANCEL):
-        case (Gtk::RESPONSE_NONE):
-        default:
-            break;
-    }
-}
-
-
-bool on_key_release_event(GdkEventKey* key_event){
-    //std::cout << "key released" << std::endl;
-    //std::cout << std::hex << key_event->keyval << "  " << key_event->state << std::dec << std::endl;
-
-    int messageSize=5;
-    uint8_t command=2;// keyboard
-    uint8_t message[messageSize];
-    message[0]=messageSize;
-    message[1]=command;
-    message[2]=(uint8_t)(((key_event->keyval)>>8)& 0xff);
-    message[3]=(uint8_t)(((key_event->keyval)>>0)& 0xff);
-    message[4]=0;
-    send(sock, message, messageSize, 0);
-    //std::cout << std::hex << (uint)message[2] << "  " << (uint)message[3] << std::dec << std::endl;
-
-    return false;
-}
-
-
-bool on_key_press_event(GdkEventKey* key_event){
-    //std::cout << "key pressed" << std::endl;
-    //std::cout << std::hex << key_event->keyval << "  " << key_event->state << std::dec << std::endl;
-
-    int messageSize=5;
-    uint8_t command=2;// keyboard
-    uint8_t message[messageSize];
-    message[0]=messageSize;
-    message[1]=command;
-    message[2]=(uint8_t)(((key_event->keyval)>>8)& 0xff);
-    message[3]=(uint8_t)(((key_event->keyval)>>0)& 0xff);
-    message[4]=1;
-    send(sock, message, messageSize, 0);
-    //std::cout << std::hex << (uint)message[2] << "  " << (uint)message[3] << std::dec << std::endl;
-
-    return false;
-}
-
-
-void setupGUI(Glib::RefPtr<Gtk::Application> application){
-
-	window=new Gtk::Window();
-
-	window->add_events(Gdk::KEY_PRESS_MASK);
-    window->add_events(Gdk::KEY_RELEASE_MASK);
-
-    window->signal_key_press_event().connect(sigc::ptr_fun(&on_key_press_event));
-    window->signal_key_release_event().connect(sigc::ptr_fun(&on_key_release_event));
-
-	Gtk::Box* topLevelBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL,5));
-
-	Gtk::Box* controlsBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,5));
-
-	Gtk::ScrolledWindow* scrolledList=Gtk::manage(new Gtk::ScrolledWindow());
-	addressListBox=Gtk::manage(new Gtk::ListBox());
-//	addressListBox->signal_row_selected().connect(sigc::ptr_fun(&rowSelected));
-	addressListBox->signal_row_activated().connect(sigc::ptr_fun(&rowActivated));
-
-	Gtk::Box* controlsRightBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL,5));
-
-	Gtk::Box* connectBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,5));
-	Gtk::Label* ipAddressLabel=Gtk::manage(new Gtk::Label(" IP Address "));
-	ipAddressEntry=Gtk::manage(new Gtk::Entry());
-    ipAddressEntry->set_can_focus(true);
-    ipAddressEntry->set_editable(true);
-	//ipAddressEntry->set_text("192.168.1.2");
-	connectButton=Gtk::manage(new Gtk::Button("Connect"));
-	connectButton->signal_clicked().connect(sigc::ptr_fun(&connectOrDisconnect));
-	connectionStatusLabel=Gtk::manage(new Gtk::Label("Not Connected"));
+	// Set status label to red
 	Gdk::RGBA red;
-	red.set_rgba(1.0,0,0,1.0);
+	red.set_rgba(1.0, 0.0, 0.0, 1.0);
 	connectionStatusLabel->override_background_color(red);
-	
-	Gtk::Box* stateBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,2));
-	silentRunButton=Gtk::manage(new Gtk::Button("Silent Running"));
-	silentRunButton->signal_clicked().connect(sigc::ptr_fun(&silentRun));
-	Gtk::Label* modeLabel=Gtk::manage(new Gtk::Label("  Control Mode: "));
-	controlModeLabel=Gtk::manage(new Gtk::Label("Drive "));
+	ipAddressEntry->set_can_focus(true);
+	ipAddressEntry->set_editable(true);
+	connected = false;
 
-	Gtk::Box* remoteControlBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,2));
-	Gtk::Button* shutdownRobotButton=Gtk::manage(new Gtk::Button("Shutdown Robot"));
-    shutdownRobotButton->signal_clicked().connect(sigc::bind<Gtk::Window*>(sigc::ptr_fun(&shutdownDialog),window));
+	// Reset socket
+	sock = 0;
+}
 
+/** @brief Set the program's state to connected to robot.
+ *
+ * Change GUI state and internal variables to represent that the robot is connected to the client.
+ *
+ * @return void
+ * */
+void setConnectedState() {
+	connectButton->set_label("Disconnect");
+	connectionStatusLabel->set_text("Connected");
 
-	Gtk::Box* sensorBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,2));
-	Gtk::Box* talonBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL,2));
-	Gtk::Box* victor1Box=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL,2));
-	Gtk::Box* victor2Box=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL,2));
+	// Set status label to green
+	Gdk::RGBA green;
+	green.set_rgba(0.0, 1.0, 0.0, 1.0);
+	connectionStatusLabel->override_background_color(green);
 
+	ipAddressEntry->set_can_focus(false);
+	ipAddressEntry->set_editable(false);
+	connected = true;
+}
 
-	Gtk::Frame* powerDistributionPanelFrame=Gtk::manage(new Gtk::Frame("Power Distribution Panel"));	
-	Gtk::Box* powerDistributionPanelBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL,5));
+/** @brief Connect to the robot.
+ *
+ * Connects to the robot remotely via the internet through a POSIX socket.
+ * Connects to port specified by "netPortNumber" and the IP address in the IP
+ * entry box. Will alter the connection state based on result of connection.
+ * Saves the socket to the global variable. Will show a message on failure.
+ *
+ * @return void
+ * */
+void connectToServer() {
+	if(connected) return;
+	struct sockaddr_in serv_addr {};
+	const char* hello = "Hello Robot";
 
+	memset(&serv_addr, 0, sizeof(serv_addr));
 
-	Gtk::Box* voltageBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,2));
-	Gtk::Label* voltageTextLabel=Gtk::manage(new Gtk::Label("Voltage:"));
+	serv_addr.sin_family = AF_INET;
+	serv_addr.sin_port = htons(netPortNumber);
 
-	voltageLabel=Gtk::manage(new Gtk::Label("0"));
+	char buffer[1024] = {0};
+	if((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+		std::cout << "Socket creation error!" << std::endl;
 
-	Gtk::Box* current0Box=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,2));
-	Gtk::Label* current0TextLabel=Gtk::manage(new Gtk::Label("Current 0: "));
-	current0Label=Gtk::manage(new Gtk::Label("0"));
+		setDisconnectedState();
+		return;
+	}
+	if(inet_pton(AF_INET, ipAddressEntry->get_text().c_str(), &serv_addr.sin_addr) <= 0) {
+#ifdef DEBUG
+		std::cout << "Invalid address/address not supported!" << std::endl;
+#endif // DEBUG
 
-	Gtk::Box* current1Box=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,2));
-	Gtk::Label* current1TextLabel=Gtk::manage(new Gtk::Label("Current 1:"));
-	current1Label=Gtk::manage(new Gtk::Label("0"));
+		Gtk::MessageDialog dialog(*window, "Invalid Address", false, Gtk::MESSAGE_QUESTION, Gtk::BUTTONS_OK);
+		dialog.run();
 
-	Gtk::Box* current2Box=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,2));
-	Gtk::Label* current2TextLabel=Gtk::manage(new Gtk::Label("Current 2:"));
-	current2Label=Gtk::manage(new Gtk::Label("0"));
+		setDisconnectedState();
+		return;
+	}
+	if(connect(sock, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0) {
+		std::cout << "Connection failed!" << std::endl;
 
-	Gtk::Box* current3Box=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,2));
-	Gtk::Label* current3TextLabel=Gtk::manage(new Gtk::Label("Current 3:"));
-	current3Label=Gtk::manage(new Gtk::Label("0"));
+		Gtk::MessageDialog dialog(*window, "Connection Failed", false, Gtk::MESSAGE_QUESTION, Gtk::BUTTONS_OK);
+		dialog.run();
 
-	Gtk::Box* current4Box=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,2));
-	Gtk::Label* current4TextLabel=Gtk::manage(new Gtk::Label("Current 4:"));
-	current4Label=Gtk::manage(new Gtk::Label("0"));
+		setDisconnectedState();
+	} else {
+		send(sock, hello, strlen(hello), 0);
+		read(sock, buffer, 1024);
+		fcntl(sock, F_SETFL, O_NONBLOCK);
 
-	Gtk::Box* current5Box=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,2));
-	Gtk::Label* current5TextLabel=Gtk::manage(new Gtk::Label("Current 5:"));
-	current5Label=Gtk::manage(new Gtk::Label("0"));
+		setConnectedState();
+	}
+}
 
-	Gtk::Box* current6Box=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,2));
-	Gtk::Label* current6TextLabel=Gtk::manage(new Gtk::Label("Current 6:"));
-	current6Label=Gtk::manage(new Gtk::Label("0"));
+/** @brief Disconnect from the robot.
+ *
+ * Will display a message asking user to confirm to disconnect and will
+ * disconnect from robot if user confirms. Will set the disconnected state if
+ * the shutdown is successful.
+ *
+ * @return void
+ * */
+void disconnectFromServer() {
+	Gtk::MessageDialog dialogDisconnect(*window, "Disconnect now?", false, Gtk::MESSAGE_QUESTION, Gtk::BUTTONS_OK_CANCEL);
 
-	Gtk::Box* current7Box=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,2));
-	Gtk::Label* current7TextLabel=Gtk::manage(new Gtk::Label("Current 7:"));
-	current7Label=Gtk::manage(new Gtk::Label("0"));
+	if(dialogDisconnect.run() == Gtk::RESPONSE_OK) {
+		// Shutdown failed
+		if(shutdown(sock, SHUT_RDWR) == -1) {
+			Gtk::MessageDialog dialogShutdown(*window, "Failed Shutdown", false, Gtk::MESSAGE_ERROR, Gtk::BUTTONS_OK);
+			dialogShutdown.run();
+		}
+		// Shutdown successful
+		if(close(sock) == 0) {
+			setDisconnectedState();
+		} else {
+			Gtk::MessageDialog dialogClose(*window, "Failed Close", false, Gtk::MESSAGE_ERROR, Gtk::BUTTONS_OK);
+			dialogClose.run();
+		}
+	}
+}
 
-	Gtk::Box* current8Box=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,2));
-	Gtk::Label* current8TextLabel=Gtk::manage(new Gtk::Label("Current 8:"));
-	current8Label=Gtk::manage(new Gtk::Label("0"));
+/** @brief Toggles the connection state between the client and robot.
+ *
+ * Runs the opposite connection function of the current status.
+ *
+ * @return void
+ * */
+void connectOrDisconnect() {
+#ifdef DEBUG
+	std::cout << "Connected: " << connected << std::endl;
+#endif // DEBUG
 
-	Gtk::Box* current9Box=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,2));
-	Gtk::Label* current9TextLabel=Gtk::manage(new Gtk::Label("Current 9:"));
-	current9Label=Gtk::manage(new Gtk::Label("0"));
+	if(connected)
+		disconnectFromServer();
+	else
+		connectToServer();
+}
 
-	Gtk::Box* current10Box=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,2));
-	Gtk::Label* current10TextLabel=Gtk::manage(new Gtk::Label("Current 10:"));
-	current10Label=Gtk::manage(new Gtk::Label("0"));
+/** @brief Toggles silent run mode on the robot.
+ *
+ * Checks the state of silent running from the silent run button text.
+ * Sends a message to enable or disable silent running mode on the robot.
+ * Updates silent run button text to show if it is silent or not.
+ * Only works if connected to the robot.
+ *
+ * @return void
+ * */
+void silentRun() {
+	// Only run if connected
+	if(!connected) return;
 
-	Gtk::Box* current11Box=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,2));
-	Gtk::Label* current11TextLabel=Gtk::manage(new Gtk::Label("Current 11:"));
-	current11Label=Gtk::manage(new Gtk::Label("0"));
+	// Get silent running state
+	std::string currentButtonState = silentRunButton->get_label();
+	bool silentRunning = currentButtonState == "Silent Running";
 
-	Gtk::Box* current12Box=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,2));
-	Gtk::Label* current12TextLabel=Gtk::manage(new Gtk::Label("Current 12:"));
-	current12Label=Gtk::manage(new Gtk::Label("0"));
+	// Generate message
+	constexpr uint8_t messageSize = 3;
+	constexpr uint8_t command = COMMAND_TO_ROBOT_SILENT_RUN;
+	uint8_t message[messageSize];
+	message[0] = messageSize;
+	message[1] = command;
+	message[2] = silentRunning;
 
-	Gtk::Box* current13Box=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,2));
-	Gtk::Label* current13TextLabel=Gtk::manage(new Gtk::Label("Current 13:"));
-	current13Label=Gtk::manage(new Gtk::Label("0"));
+	// Send message
+	send(sock, message, messageSize, 0);
 
-	Gtk::Box* current14Box=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,2));
-	Gtk::Label* current14TextLabel=Gtk::manage(new Gtk::Label("Current 14:"));
-	current14Label=Gtk::manage(new Gtk::Label("0"));
+	// Set GUI
+	silentRunButton->set_label(silentRunning ? "Not Silent Running" : "Silent Running");
+}
 
-	Gtk::Box* current15Box=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,2));
-	Gtk::Label* current15TextLabel=Gtk::manage(new Gtk::Label("Current 15:"));
-	current15Label=Gtk::manage(new Gtk::Label("0"));
+/** @brief Sets IP Address Entry to selected IP address from the Address List Box
+ *
+ * Callback function for addressListBox when a row is activated.
+ * Sets the text for ipAddressEntry to the address string in the selected row
+ * passed in.
+ *
+ * @see addressListBox
+ * @see ipAddressEntry
+ *
+ * @param[in]   listBoxRow  The selected row
+ * @return void
+ * */
+void rowActivated(const Gtk::ListBoxRow* listBoxRow) {
+#ifdef DEBUG
+	std::cout << "Row activated: " << std::endl;
+#endif // DEBUG
 
+	const auto* label = dynamic_cast<const Gtk::Label*>(listBoxRow->get_child());
 
-	voltageBox->pack_start(*voltageTextLabel,false,true,10);
-	voltageBox->pack_end(*voltageLabel,false,true,10);
+#ifdef DEBUG
+	std::cout << "\t" << label->get_text() << std::endl;
+#endif // DEBUG
 
-	current0Box->pack_start(*current0TextLabel,false,true,10);
-	current0Box->pack_end(*current0Label,false,true,10);
+	const Glib::ustring connectionString(label->get_text());
 
-	current1Box->pack_start(*current1TextLabel,false,true,10);
-	current1Box->pack_end(*current1Label,false,true,10);
+#ifdef DEBUG
+	std::cout << "\t" << connectionString << std::endl;
+#endif // DEBUG
 
-	current2Box->pack_start(*current2TextLabel,false,true,10);
-	current2Box->pack_end(*current2Label,false,true,10);
+	// Search for "@" in string
+	auto index = connectionString.rfind('@');
 
-	current3Box->pack_start(*current3TextLabel,false,true,10);
-	current3Box->pack_end(*current3Label,false,true,10);
+	// Check if search was successful and exit if not
+	if(index++ == -1) return;
 
-	current4Box->pack_start(*current4TextLabel,false,true,10);
-	current4Box->pack_end(*current4Label,false,true,10);
+	// Set IP Address entry to substring
+	ipAddressEntry->set_text(connectionString.substr(index, connectionString.length() - index));
+}
 
-	current5Box->pack_start(*current5TextLabel,false,true,10);
-	current5Box->pack_end(*current5Label,false,true,10);
+/** @brief Shuts down robot after user confirms.
+ *
+ * Callback function for the Shutdown Robot Button. Only works if connected,
+ * otherwise show an error.
+ *
+ * @param[in]   parentWindow    The window that the message dialog will be spawned in.
+ * @return void
+ * */
+void shutdownDialog(Gtk::Window* parentWindow) {
+	if(!connected) {
+		Gtk::MessageDialog dialog(*parentWindow, "Not connected to robot!", false, Gtk::MESSAGE_ERROR, Gtk::BUTTONS_OK);
+		dialog.run();
+		return;
+	}
 
-	current6Box->pack_start(*current6TextLabel,false,true,10);
-	current6Box->pack_end(*current6Label,false,true,10);
+	Gtk::MessageDialog dialog(*parentWindow, "Shutdown now?", false, Gtk::MESSAGE_QUESTION, Gtk::BUTTONS_OK_CANCEL);
 
-	current7Box->pack_start(*current7TextLabel,false,true,10);
-	current7Box->pack_end(*current7Label,false,true,10);
+	if(dialog.run() == Gtk::RESPONSE_OK) {
+#ifdef DEBUG
+		std::cout << "Shutdown robot." << std::endl;
+#endif // DEBUG
 
-	current8Box->pack_start(*current8TextLabel,false,true,10);
-	current8Box->pack_end(*current8Label,false,true,10);
+		constexpr uint8_t messageSize = 2;
+		constexpr uint8_t command = COMMAND_TO_ROBOT_SHUTDOWN;
+		uint8_t message[messageSize];
+		message[0] = messageSize;
+		message[1] = command;
+		send(sock, message, messageSize, 0);
+	}
+}
 
-	current9Box->pack_start(*current9TextLabel,false,true,10);
-	current9Box->pack_end(*current9Label,false,true,10);
+/** @brief Sends when a specific key is released to the robot.
+ *
+ * Sends a message to the robot when a key is released on the keyboard.
+ * Callback for window.
+ *
+ * @return  false
+ * @retval  false   Always returns false.
+ * */
+bool on_key_release_event(GdkEventKey* keyEvent) {
+#ifdef DEBUG
+	std::cout << "Key released:" << std::endl;
+	std::cout << "\t" << std::hex << keyEvent->keyval << "  " << keyEvent->state << std::dec << std::endl;
+#endif // DEBUG
 
-	current10Box->pack_start(*current10TextLabel,false,true,10);
-	current10Box->pack_end(*current10Label,false,true,10);
+	if(sock) {
+		constexpr uint8_t messageSize = 5;
+		constexpr uint8_t command = COMMAND_TO_ROBOT_KEYBOARD_EVENT;
+		uint8_t message[messageSize];
+		message[0] = messageSize;
+		message[1] = command;
+		insert<uint16_t>(keyEvent->keyval, &message[2], sizeof(message) - (2 * sizeof(message[0])));
+		message[4] = 0;
+		send(sock, message, messageSize, 0);
+#ifdef DEBUG
+		std::cout << std::hex << (uint)message[2] << "  " << (uint)message[3] << std::dec << std::endl;
+#endif // DEBUG
+	}
+	return false;
+}
 
-	current11Box->pack_start(*current11TextLabel,false,true,10);
-	current11Box->pack_end(*current11Label,false,true,10);
+/** @brief Sends when a specific key is pressed to the robot.
+ *
+ * Sends a message to the robot when a key is pressed on the keyboard.
+ * Callback for window.
+ *
+ * @see window
+ *
+ * @return  false
+ * @retval  false   Always returns false.
+ * */
+bool on_key_press_event(GdkEventKey* keyEvent) {
+#ifdef DEBUG
+	std::cout << "Key pressed:" << std::endl;
+	std::cout << "\t" << std::hex << keyEvent->keyval << "\t" << keyEvent->state << std::dec << std::endl;
+#endif // DEBUG
 
-	current12Box->pack_start(*current12TextLabel,false,true,10);
-	current12Box->pack_end(*current12Label,false,true,10);
+	if(sock) {
+		constexpr uint8_t messageSize = 5;
+		constexpr uint8_t command = COMMAND_TO_ROBOT_KEYBOARD_EVENT;
+		uint8_t message[messageSize];
+		message[0] = messageSize;
+		message[1] = command;
+		insert<uint16_t>(keyEvent->keyval, &message[2], sizeof(message) - (2 * sizeof(message[0])));
+		message[4] = 1;
+		send(sock, message, messageSize, 0);
+#ifdef DEBUG
+		std::cout << std::hex << (uint)message[2] << "  " << (uint)message[3] << std::dec << std::endl;
+#endif // DEBUG
+	}
+	return false;
+}
 
-	current13Box->pack_start(*current13TextLabel,false,true,10);
-	current13Box->pack_end(*current13Label,false,true,10);
+/** @brief Creates, sets up, and displays the GUI window.
+ *
+ * Creates and sets up all sub-elements of the main window.
+ * Generates main window and displays it.
+ *
+ * @see window
+ * @see voltageLabel
+ * @see numCurrents
+ * @see currentLabels
+ * @see addressListBox
+ * @see ipAddressEntry
+ * @see connectionStatusLabel
+ * @see silentRunButton
+ * @see connectButton
+ * @see controlModeLabel
+ * @see numTalonInfoFrames
+ * @see talonInfoFrames
+ * @see numVictorInfoFrames
+ * @see victorInfoFrames
+ * @see BoxFactory
+ * @see ButtonFactory
+ * @see InfoFrame
+ * @see InfoItem
+ * @see TalonInfoFrame
+ * @see WindowFactory
+ *
+ * @return void
+ * */
+void setupGui(const Glib::RefPtr<Gtk::Application>& application) {
+	// Create List Box
+	addressListBox = Gtk::manage(new Gtk::ListBox());
+	addressListBox->signal_row_activated().connect(&rowActivated);
+	addressListBox->set_size_request(200, 100);
 
-	current14Box->pack_start(*current14TextLabel,false,true,10);
-	current14Box->pack_end(*current14Label,false,true,10);
+	// Create Scrolled List
+	auto scrolledList = Gtk::manage(new Gtk::ScrolledWindow());
+	scrolledList->set_size_request(200, 100);
+	scrolledList->add(*addressListBox);
 
-	current15Box->pack_start(*current15TextLabel,false,true,10);
-	current15Box->pack_end(*current15Label,false,true,10);
-	
-	powerDistributionPanelBox->add(*voltageBox);	
-	powerDistributionPanelBox->add(*current0Box);	
-	powerDistributionPanelBox->add(*current1Box);	
-	powerDistributionPanelBox->add(*current2Box);	
-	powerDistributionPanelBox->add(*current3Box);	
-	powerDistributionPanelBox->add(*current4Box);	
-	powerDistributionPanelBox->add(*current5Box);	
-	powerDistributionPanelBox->add(*current6Box);	
-	powerDistributionPanelBox->add(*current7Box);	
-	powerDistributionPanelBox->add(*current8Box);	
-	powerDistributionPanelBox->add(*current9Box);	
-	powerDistributionPanelBox->add(*current10Box);	
-	powerDistributionPanelBox->add(*current11Box);	
-	powerDistributionPanelBox->add(*current12Box);	
-	powerDistributionPanelBox->add(*current13Box);	
-	powerDistributionPanelBox->add(*current14Box);	
-	powerDistributionPanelBox->add(*current15Box);	
+	// Connect Button
+	connectButton = Gtk::manage(new Gtk::Button("Connect"));
+	connectButton->signal_clicked().connect(sigc::ptr_fun(&connectOrDisconnect));
+
+	// Connect Status Label
+	connectionStatusLabel = Gtk::manage(new Gtk::Label("Not Connected"));
+	// Set status label to red
+	Gdk::RGBA red;
+	red.set_rgba(1.0, 0.0, 0.0, 1.0);
+	connectionStatusLabel->override_background_color(red);
+
+	// IP Address Label
+	const auto ipAddressLabel = Gtk::manage(new Gtk::Label("IP Address"));
+
+	// IP Address Entry
+	ipAddressEntry = Gtk::manage(new Gtk::Entry());
+	ipAddressEntry->set_can_focus(true);
+	ipAddressEntry->set_editable(true);
+
+	// Mode Label
+	const auto modeLabel = Gtk::manage(new Gtk::Label("Control Mode: "));
+	controlModeLabel = Gtk::manage(new Gtk::Label("Drive"));
+
+	// Silent Run Button
+	const auto silentRunButton = ButtonFactory("Silent Running")
+							   .addClickedCallback<std::function<typeof(silentRun)>>(silentRun)
+							   .build();
+
+	// Shutdown Robot Button
+	const auto shutdownCallback = [] { return shutdownDialog(window); };
+	const auto shutdownRobotButton = ButtonFactory("Shutdown Robot")
+								   .addClickedCallback<typeof(shutdownCallback)>(shutdownCallback)
+								   .build();
+
+	// Power Distribution Frame
+	const auto powerDistributionPanelFrame = Gtk::manage(new Gtk::Frame("Power Distribution Panel"));
+
+	// Power Labels
+	voltageLabel = Gtk::manage(new Gtk::Label("0"));
+
+	for(auto& label : currentLabels) {
+		label = Gtk::manage(new Gtk::Label("0"));
+	}
+
+	// Power Boxes
+	const auto voltageBox = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
+						  .addFrontLabel("Voltage:")
+						  .packEnd(voltageLabel)
+						  .build();
+
+	Gtk::Box* currentBoxes[numCurrents];
+	for(size_t i = 0; i < numCurrents; i++) {
+		currentBoxes[i] = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
+							  .addFrontLabel("Current " + std::to_string(i) + ":")
+							  .packEnd(currentLabels[i])
+							  .build();
+	}
+
+	// Power Distribution Panel Box
+	auto powerDistributionPanelBoxFactory = BoxFactory(Gtk::ORIENTATION_VERTICAL, 5)
+												.addWidget(voltageBox);
+	for(const auto& box : currentBoxes) {
+		powerDistributionPanelBoxFactory.addWidget(box);
+	}
+	const auto powerDistributionPanelBox = powerDistributionPanelBoxFactory.build();
 
 	powerDistributionPanelFrame->add(*powerDistributionPanelBox);
 
-	talon1InfoFrame=Gtk::manage(new InfoFrame("Talon 1"));
-	talon1InfoFrame->addItem("Device ID");	
-	talon1InfoFrame->addItem("Bus Voltage");	
-	talon1InfoFrame->addItem("Output Current");	
-	talon1InfoFrame->addItem("Output Voltage");	
-	talon1InfoFrame->addItem("Output Percent");	
-	talon1InfoFrame->addItem("Temperature");	
-//	talon1InfoFrame->addItem("Sensor Position");	
-	talon1InfoFrame->addItem("Sensor Velocity");	
-	talon1InfoFrame->addItem("Closed Loop Error");	
-	talon1InfoFrame->addItem("Integral Accumulator");	
-	talon1InfoFrame->addItem("Error Drivative");	
-
-	talon2InfoFrame=Gtk::manage(new InfoFrame("Talon 2"));
-	talon2InfoFrame->addItem("Device ID");	
-	talon2InfoFrame->addItem("Bus Voltage");	
-	talon2InfoFrame->addItem("Output Current");	
-	talon2InfoFrame->addItem("Output Voltage");	
-	talon2InfoFrame->addItem("Output Percent");	
-	talon2InfoFrame->addItem("Temperature");	
-//	talon2InfoFrame->addItem("Sensor Position");	
-	talon2InfoFrame->addItem("Sensor Velocity");	
-	talon2InfoFrame->addItem("Closed Loop Error");	
-	talon2InfoFrame->addItem("Integral Accumulator");	
-	talon2InfoFrame->addItem("Error Drivative");	
-
-	victor1InfoFrame=Gtk::manage(new InfoFrame("Victor 1"));
-	victor1InfoFrame->addItem("Device ID");	
-	victor1InfoFrame->addItem("Bus Voltage");	
-	victor1InfoFrame->addItem("Output Voltage");	
-	victor1InfoFrame->addItem("Output Percent");	
-
-	victor2InfoFrame=Gtk::manage(new InfoFrame("Victor 2"));
-	victor2InfoFrame->addItem("Device ID");	
-	victor2InfoFrame->addItem("Bus Voltage");	
-	victor2InfoFrame->addItem("Output Voltage");	
-	victor2InfoFrame->addItem("Output Percent");	
-
-	victor3InfoFrame=Gtk::manage(new InfoFrame("Victor 3"));
-	victor3InfoFrame->addItem("Device ID");	
-	victor3InfoFrame->addItem("Bus Voltage");	
-	victor3InfoFrame->addItem("Output Voltage");	
-	victor3InfoFrame->addItem("Output Percent");	
-
-
-	addressListBox->set_size_request(200,100);
-	scrolledList->set_size_request(200,100);
-
-	connectBox->add(*ipAddressLabel);
-	connectBox->add(*ipAddressEntry);
-	connectBox->add(*connectButton);
-	connectBox->add(*connectionStatusLabel);
-
-	sensorBox->add(*powerDistributionPanelFrame);
-	talonBox->add(*talon1InfoFrame);
-	talonBox->add(*talon2InfoFrame);
-	sensorBox->add(*talonBox);
-	victor1Box->add(*victor1InfoFrame);
-	victor1Box->add(*victor2InfoFrame);
-	victor1Box->add(*victor3InfoFrame);
-	sensorBox->add(*victor1Box);
-
-	stateBox->add(*silentRunButton);
-	stateBox->add(*modeLabel);
-	stateBox->add(*controlModeLabel);
-
-    remoteControlBox->add(*shutdownRobotButton);
-
-	controlsRightBox->add(*connectBox);
-	controlsRightBox->add(*stateBox);
-    controlsRightBox->add(*remoteControlBox);
-
-
-	scrolledList->add(*addressListBox);
-
-	controlsBox->add(*scrolledList);
-	controlsBox->add(*controlsRightBox);
-
-	topLevelBox->add(*controlsBox);
-	topLevelBox->add(*sensorBox);
-	window->add(*topLevelBox);
-
-	window->signal_delete_event().connect(sigc::ptr_fun(quit));
-	window->show_all();	
-}
-
-
-struct RemoteRobot{
-	std::string tag;
-	time_t lastSeenTime;
-};
-std::vector<RemoteRobot> robotList;
-
-
-bool contains(std::vector<std::string>& list, std::string& value){
-    for(std::string storedValue: list) if(storedValue==value) return true;
-    return false;
-}
-
-
-bool contains(std::vector<RemoteRobot>& list, std::string& robotTag){
-    for(RemoteRobot storedValue: list) if(storedValue.tag==robotTag) return true;
-    return false;
-}
-
-
-void update(std::vector<RemoteRobot>& list, std::string& robotTag){
-    for(int index=0;index < list.size() ; ++index){
-	time_t now;
-	time(&now);
-        list.at(index).lastSeenTime=now;
-    }
-}
-
-
-std::vector<std::string> getAddressList(){
-    std::vector<std::string> addressList;
-    ifaddrs* interfaceAddresses = nullptr;
-    for(int failed=getifaddrs(&interfaceAddresses); !failed && interfaceAddresses != nullptr; interfaceAddresses=interfaceAddresses->ifa_next){
-        if(interfaceAddresses->ifa_addr !=nullptr && interfaceAddresses->ifa_addr->sa_family == AF_INET){
-            sockaddr_in* socketAddress=reinterpret_cast<sockaddr_in*>(interfaceAddresses->ifa_addr);
-            std::string addressString(inet_ntoa(socketAddress->sin_addr));
-	    if(addressString=="0.0.0.0") continue;
-            if(addressString=="127.0.0.1") continue;
-            if(contains(addressList,addressString)) continue;
-            addressList.push_back(addressString);
-        }
-    }
-    return addressList;
-}
-
-
-void broadcastListen(){
-    int sd = socket(AF_INET, SOCK_DGRAM, 0);
-    if(sd < 0) {
-        perror("Opening datagram socket error");
-        return; 
-    }
-
-    int reuse = 1;
-    if(setsockopt(sd, SOL_SOCKET, SO_REUSEADDR, (char *)&reuse, sizeof(reuse)) < 0) {
-        perror("Setting SO_REUSEADDR error");
-        close(sd);
-	    return;
-    }
-
-    /* Bind to the proper port number with the IP address */
-    /* specified as INADDR_ANY. */
-    struct sockaddr_in localSock;
-    localSock.sin_family = AF_INET;
-    localSock.sin_port = htons(4321);
-    localSock.sin_addr.s_addr = INADDR_ANY;
-    if(bind(sd, (struct sockaddr*)&localSock, sizeof(localSock))) {
-        perror("Binding datagram socket error");
-        close(sd);
-        return;
-    }
-
-    /* Join the multicast group 226.1.1.1 on the local 203.106.93.94 */
-    /* interface. Note that this IP_ADD_MEMBERSHIP option must be */
-    /* called for each local interface over which the multicast */
-    /* datagrams are to be received. */
-
-    std::vector<std::string> addressList=getAddressList(); 
-    for(std::string addressString:addressList){
-//        std::cout << "got " << addressString << std::endl;
-        struct ip_mreq group;
-        group.imr_multiaddr.s_addr = inet_addr("226.1.1.1");
-        group.imr_interface.s_addr = inet_addr(addressString.c_str());
-        if(setsockopt(sd, IPPROTO_IP, IP_ADD_MEMBERSHIP, (char *)&group, sizeof(group)) < 0) {
-            perror("Adding multicast group error");
-        } 
-    }
-
-    char databuf[1024];
-    int datalen = sizeof(databuf);
-    while(true){
-        if(read(sd, databuf, datalen) >= 0) {
-            std::string message(databuf);
-            if(!contains(robotList,message)) {
-                RemoteRobot remoteRobot;
-                remoteRobot.tag=message; 
-		        time(&remoteRobot.lastSeenTime);
-                robotList.push_back(remoteRobot);
-            }
-            update(robotList,message);
-        }
-    }
-}
-
-
-void adjustRobotList(){
-    for(int index=0;index < robotList.size() ; ++index){
-        time_t now;
-        time(&now);
-        if(now-robotList[index].lastSeenTime>12){
-            robotList.erase(robotList.begin()+index--);
-        }
+	// Info Frame
+	// Talon Info Frames
+	for(size_t i = 0; i < numTalonInfoFrames; i++) {
+		talonInfoFrames[i] = new TalonInfoFrame("Talon " + std::to_string(1 + i));
 	}
-	//add new elements
-	for(RemoteRobot remoteRobot:robotList){
-		std::string robotID=remoteRobot.tag;
-		bool match=false;
-		int index=0;
-		for(Gtk::ListBoxRow* listBoxRow=addressListBox->get_row_at_index(index); listBoxRow ; listBoxRow=addressListBox->get_row_at_index(++index)){
-			Gtk::Label* label=static_cast<Gtk::Label*>(listBoxRow->get_child());
-			Glib::ustring addressString=label->get_text();
-			if(robotID==addressString.c_str()){
-				match=true;
+
+	// Victor Info Frames
+	for(size_t i = 0; i < numVictorInfoFrames; i++) {
+		victorInfoFrames[i] = new VictorInfoFrame("Victor " + std::to_string(1 + i));
+	}
+
+	// Remote Control Box
+	const auto remoteControlBox = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
+								.addWidget(shutdownRobotButton)
+								.build();
+
+	// State Box
+	const auto stateBox = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
+						.addWidget(silentRunButton)
+						.addWidget(modeLabel)
+						.addWidget(controlModeLabel)
+						.build();
+	// Connect Box
+	const auto connectBox = BoxFactory(Gtk::ORIENTATION_HORIZONTAL, 5)
+						  .addWidget(ipAddressLabel)
+						  .addWidget(ipAddressEntry)
+						  .addWidget(connectButton)
+						  .addWidget(connectionStatusLabel)
+						  .build();
+
+	// Victor 1 Box
+	auto victor1BoxFactory = BoxFactory(Gtk::ORIENTATION_VERTICAL);
+	for(const auto& victorInfoFrame : victorInfoFrames) {
+		victor1BoxFactory.addWidget(victorInfoFrame);
+	}
+	const auto victor1Box = victor1BoxFactory.build();
+
+	// Controls Right Box
+	const auto controlsRightBox = BoxFactory(Gtk::ORIENTATION_VERTICAL, 5)
+								.addWidget(connectBox)
+								.addWidget(stateBox)
+								.addWidget(remoteControlBox)
+								.build();
+
+	// Talon Box
+	auto talonBoxFactory = BoxFactory(Gtk::ORIENTATION_VERTICAL);
+	for(const auto& talonInfoFrame : talonInfoFrames) {
+		talonBoxFactory.addWidget(talonInfoFrame);
+	}
+	const auto talonBox = talonBoxFactory.build();
+
+	// Controls Box
+	const auto controlsBox = BoxFactory(Gtk::ORIENTATION_HORIZONTAL, 5)
+						   .addWidget(scrolledList)
+						   .addWidget(controlsRightBox)
+						   .build();
+
+	// Sensor Box
+	const auto sensorBox = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
+						 .addWidget(powerDistributionPanelFrame)
+						 .addWidget(talonBox)
+						 .addWidget(victor1Box)
+						 .build();
+
+	const auto parentBox = BoxFactory(Gtk::ORIENTATION_VERTICAL, 5)
+						 .addWidget(controlsBox)
+						 .addWidget(sensorBox)
+						 .build();
+
+	// Create the window
+	window = WindowFactory()
+				 .setTitle("Razorbotz Robot Remote Monitor and Controller")
+				 .addEventWithCallback(Gdk::KEY_PRESS_MASK, on_key_press_event)
+				 .addEventWithCallback(Gdk::KEY_RELEASE_MASK, on_key_release_event)
+				 .addDeleteEvent(quit)
+				 .addWidget(parentBox)
+				 .build();
+
+	// Show the window
+	window->show_all();
+}
+
+/** @brief Checks if a string is contained in a vector of strings.
+ *
+ * Loops through each element in a vector of strings to find if a
+ * given string fully matches.
+ *
+ * @return If string is contained in vector
+ * @retval  true    String is in vector
+ * @retval  false   String not in vector
+ * */
+bool contains(std::vector<std::string>& list, std::string& value) {
+	return std::any_of(list.begin(), list.end(), [value](const std::string& storedValue) {
+		return storedValue == value;
+	});
+}
+
+/** @brief Checks if a robot is contained in a vector.
+ *
+ * Loops through each element in a vector of strings to find if a
+ * given string fully matches.
+ *
+ * @see RemoteRobot
+ *
+ * @param[in] list      Vector of Remote Robots
+ * @param[in] robotTag  String for the robot tag
+ * @return If tag is contained in list
+ * @retval  true    Robot tag is in list
+ * @retval  false   Robot tag not in list
+ * */
+bool contains(std::vector<RemoteRobot>& list, std::string& robotTag) {
+	return std::any_of(list.begin(), list.end(), [robotTag](const RemoteRobot& storedValue) {
+		return robotTag == storedValue.tag;
+	});
+}
+
+/** @brief Set last seen time for a robot.
+ *
+ * Sets the list seen time for s specified robot.
+ *
+ * @see RemoteRobot
+ *
+ * @param[in] list      Vector of Remote Robots
+ * @param[in] robotTag  String for the robot tag
+ * @return void
+ * */
+void update(std::vector<RemoteRobot>& list, std::string& robotTag) {
+	for(auto& remoteRobot : list) {
+		time_t now;
+		time(&now);
+		remoteRobot.lastSeenTime = now;
+	}
+}
+
+/** @brief Get IP addresses of local computer.
+ *
+ * Returns non-loopback IP addresses of computer running the client.
+ *
+ * @return Vector of IP addresses as a string
+ * */
+std::vector<std::string> getAddressList() {
+	std::vector<std::string> addressList;
+	ifaddrs* interfaceAddresses = nullptr;
+	for(const auto failed = getifaddrs(&interfaceAddresses); !failed && interfaceAddresses != nullptr; interfaceAddresses = interfaceAddresses->ifa_next) {
+		if(interfaceAddresses->ifa_addr != nullptr && interfaceAddresses->ifa_addr->sa_family == AF_INET) {
+			auto* socketAddress = reinterpret_cast<sockaddr_in*>(interfaceAddresses->ifa_addr);
+			std::string addressString(inet_ntoa(socketAddress->sin_addr));
+
+			// Ignore loopback addresses
+			if(addressString == "0.0.0.0") continue;
+			if(addressString == "127.0.0.1") continue;
+
+			// Ignore already found addresses
+			if(contains(addressList, addressString)) continue;
+
+			addressList.push_back(addressString);
+		}
+	}
+	return addressList;
+}
+
+/** @brief Listen to multicast.
+ *
+ * Function for thread to listen to network multicast.
+ * Joins the multicast group 226.1.1.1 on the local 203.106.93.94 interface.
+ * Runs infinite loop for event loop (no exit condition).
+ *
+ * @return void
+ * */
+void broadcastListen() {
+	const auto sd = socket(AF_INET, SOCK_DGRAM, 0);
+	if(sd < 0) {
+		std::cerr << "Opening datagram socket error!" << std::endl;
+		return;
+	}
+
+	constexpr int reuse = 1;
+	if(setsockopt(sd, SOL_SOCKET, SO_REUSEADDR, (char*)&reuse, sizeof(reuse)) < 0) {
+		std::cerr << "Setting SO_REUSEADDR error!" << std::endl;
+		close(sd);
+		return;
+	}
+
+	// Bind to the proper port number with the IP address specified as INADDR_ANY.
+	struct sockaddr_in localSock {};
+	localSock.sin_family = AF_INET;
+	localSock.sin_port = htons(4321);
+	localSock.sin_addr.s_addr = INADDR_ANY;
+	if(bind(sd, (struct sockaddr*)&localSock, sizeof(localSock))) {
+		std::cerr << "Binding datagram socket error!" << std::endl;
+		close(sd);
+		return;
+	}
+
+	const auto addressList = getAddressList();
+	for(const auto& addressString : addressList) {
+#ifdef DEBUG
+		std::cout << "Client Address: " << addressString << std::endl;
+#endif // DEBUG
+
+		// Join the multicast groups
+		struct ip_mreq group {};
+		group.imr_multiaddr.s_addr = inet_addr("226.1.1.1");
+		group.imr_interface.s_addr = inet_addr(addressString.c_str());
+		if(setsockopt(sd, IPPROTO_IP, IP_ADD_MEMBERSHIP, (char*)&group, sizeof(group)) < 0) {
+			std::cerr << "Adding multicast group error!" << std::endl;
+		}
+	}
+
+	char databuf[1024];
+	constexpr int datalen = sizeof(databuf);
+	while(true) {
+		if(read(sd, databuf, datalen) >= 0) {
+			std::string message(databuf);
+			if(!contains(RemoteRobot::robotList, message)) {
+				RemoteRobot remoteRobot;
+				remoteRobot.tag = message;
+				time(&remoteRobot.lastSeenTime);
+				RemoteRobot::robotList.push_back(remoteRobot);
+			}
+			update(RemoteRobot::robotList, message);
+		}
+	}
+}
+
+/** @brief Display connected robots on the GUI.
+ *
+ * Removes robots if they timeout (12 seconds).
+ * Display robots to the Address List Box.
+ * Remove old robots from the GUI.
+ *
+ * @return void
+ * */
+void robotList() {
+	// Remove robots that timeout (12 seconds)
+	for(size_t index = 0; index < RemoteRobot::robotList.size(); ++index) {
+		time_t now;
+		time(&now);
+		if(now - RemoteRobot::robotList[index].lastSeenTime > 12) {
+			RemoteRobot::robotList.erase(RemoteRobot::robotList.begin() + index--);
+		}
+	}
+
+	// Add new elements
+	for(const auto& remoteRobot : RemoteRobot::robotList) {
+		const auto robotId = remoteRobot.tag;
+		bool match = false;
+		int index = 0;
+		for(auto listBoxRow = addressListBox->get_row_at_index(index); listBoxRow; listBoxRow = addressListBox->get_row_at_index(++index)) {
+			const auto* label = dynamic_cast<Gtk::Label*>(listBoxRow->get_child());
+			Glib::ustring addressString = label->get_text();
+			if(robotId == addressString) {
+				match = true;
 				break;
 			}
 		}
-		if(match==false){
-            Gtk::Label* label=Gtk::manage(new Gtk::Label(robotID));
-            label->set_visible(true);
-            addressListBox->append(*label);
+		if(!match) {
+			const auto label = Gtk::manage(new Gtk::Label(robotId));
+			label->set_visible(true);
+			addressListBox->append(*label);
 		}
 	}
 
-	//remove old element
-	int index=0;
-	for(Gtk::ListBoxRow* listBoxRow=addressListBox->get_row_at_index(index); listBoxRow ; listBoxRow=addressListBox->get_row_at_index(++index)){
-                Gtk::Label* label=static_cast<Gtk::Label*>(listBoxRow->get_child());
-                Glib::ustring addressString=label->get_text();
-		bool match=false;
-		for(RemoteRobot remoteRobot:robotList){
-			std::string robotID=remoteRobot.tag;
-            if(robotID==addressString.c_str()){
-                match=true;
-                break;
+	// Remove old element
+	int index = 0;
+	for(auto listBoxRow = addressListBox->get_row_at_index(index); listBoxRow; listBoxRow = addressListBox->get_row_at_index(++index)) {
+		const auto* label = dynamic_cast<Gtk::Label*>(listBoxRow->get_child());
+		const auto addressString = label->get_text();
+		bool match = false;
+		for(const RemoteRobot& remoteRobot : RemoteRobot::robotList) {
+			std::string robotId = remoteRobot.tag;
+			if(robotId == addressString) {
+				match = true;
+				break;
 			}
-        }
-		if(!match){
+		}
+		if(!match) {
 			addressListBox->remove(*listBoxRow);
 			--index;
 		}
 	}
 }
 
- 
-int main(int argc, char** argv) { 
- 	Glib::RefPtr<Gtk::Application> application = Gtk::Application::create(argc, argv, "edu.uark.razorbotz");
-	setupGUI(application);
+/** @brief Display information about a Victor motor.
+ *
+ * Parses a message byte array and displays the information to the given Victor
+ * Info Frame.
+ *
+ * @param[in]   victorInfoFrame The frame to display the information on
+ * @param[in]   headMessage     The message to be parsed
+ * @return void
+ * */
+void displayVictorInfo(VictorInfoFrame* victorInfoFrame, uint8_t* headMessage) {
+	const auto deviceId = parseType<int>((uint8_t*)&headMessage[1]);
+	const auto busVoltage = parseType<float>((uint8_t*)&headMessage[5]);
+	const auto outputVoltage = parseType<float>((uint8_t*)&headMessage[9]);
+	const auto outputPercent = parseType<float>((uint8_t*)&headMessage[13]);
+	victorInfoFrame->setItem("Device ID", deviceId);
+	victorInfoFrame->setItem("Bus Voltage", busVoltage);
+	victorInfoFrame->setItem("Output Voltage", outputVoltage);
+	victorInfoFrame->setItem("Output Percent", outputPercent);
+}
 
+/** @brief Display information about a Talon motor.
+ *
+ * Parses a message byte array and displays the information to the given Talon
+ * Info Frame.
+ *
+ * @param[in]   talonInfoFrame  The frame to display the information on
+ * @param[in]   headMessage     The message to be parsed
+ * @return void
+ * */
+void displayTalonInfo(TalonInfoFrame* talonInfoFrame, uint8_t* headMessage) {
+	const auto deviceId = parseType<int>((uint8_t*)&headMessage[1]);
+	const auto busVoltage = parseType<float>((uint8_t*)&headMessage[5]);
+	const auto outputCurrent = parseType<float>((uint8_t*)&headMessage[9]);
+	const auto outputVoltage = parseType<float>((uint8_t*)&headMessage[13]);
+	const auto outputPercent = parseType<float>((uint8_t*)&headMessage[17]);
+	const auto temperature = parseType<float>((uint8_t*)&headMessage[21]);
+	const auto sensorPosition = parseType<int>((uint8_t*)&headMessage[25]);
+	const auto sensorVelocity = parseType<int>((uint8_t*)&headMessage[29]);
+	const auto closedLoopError = parseType<int>((uint8_t*)&headMessage[33]);
+	const auto integralAccumulator = parseType<int>((uint8_t*)&headMessage[37]);
+	const auto errorDerivative = parseType<int>((uint8_t*)&headMessage[41]);
+	talonInfoFrame->setItem("Device ID", deviceId);
+	talonInfoFrame->setItem("Bus Voltage", busVoltage);
+	talonInfoFrame->setItem("Output Current", outputCurrent);
+	talonInfoFrame->setItem("Output Voltage", outputVoltage);
+	talonInfoFrame->setItem("Output Percent", outputPercent);
+	talonInfoFrame->setItem("Temperature", temperature);
+	talonInfoFrame->setItem("Sensor Position", sensorPosition);
+	talonInfoFrame->setItem("Sensor Velocity", sensorVelocity);
+	talonInfoFrame->setItem("Closed Loop Error", closedLoopError);
+	talonInfoFrame->setItem("Integral Accumulator", integralAccumulator);
+	talonInfoFrame->setItem("Error Derivative", errorDerivative);
+}
+
+/** @brief Entry point.
+ *
+ * Runs the program. Event loop is an infinite loop (no exit condition).
+ * Sets up the client.
+ * Reads and parses messages.
+ *
+ * @param[in]   argc    Number of arguments
+ * @param[in]   argv    Arguments
+ * @return  Program status
+ * @retval  0    Success
+ * @retval  Non-Zero   Error
+ * */
+int main(int argc, char** argv) {
+	// Initialize GTK
+	Glib::RefPtr<Gtk::Application> application = Gtk::Application::create(argc, argv, "edu.uark.razorbotz");
+	setupGui(application);
+
+	// Create network listener
 	std::thread broadcastListenThread(broadcastListen);
 
-	if (SDL_Init(SDL_INIT_GAMECONTROLLER) != 0) {
-        SDL_Log("Unable to initialize SDL: %s", SDL_GetError());
-        return 1;
-    }
+	// Initialize SDL
+	if(SDL_Init(SDL_INIT_GAMECONTROLLER) != 0) {
+		SDL_Log("Unable to initialize SDL: %s", SDL_GetError());
+		return 1;
+	}
 
-//    int sensorCount=SDL_NumSensors();
-//    std::cout << "number of sensors " << sensorCount << std::endl;
+	// Initialize joystick(s)
+	int joystickCount = SDL_NumJoysticks();
+#ifdef DEBUG
+	std::cout << "Number of joysticks: " << joystickCount << std::endl;
+#endif // DEBUG
 
-	int joystickCount=SDL_NumJoysticks();
-	std::cout << "number of joysticks " << joystickCount << std::endl;
 	SDL_Joystick* joystickList[joystickCount];
 
-	//SDL_Joystick* joy;
-	if(joystickCount>0){
-//        joy=SDL_JoystickOpen(0);
-	    for(int joystickIndex=0;joystickIndex<joystickCount;joystickIndex++) {
-            joystickList[joystickIndex]=SDL_JoystickOpen(joystickIndex);
-
-            if (joystickList[joystickIndex]) {
-                std::cout << "Opened Joystick " << joystickIndex << std::endl;
-                std::cout << "   Name: " << SDL_JoystickName(joystickList[joystickIndex]) << std::endl;
-                std::cout << "   Number of Axes: " << SDL_JoystickNumAxes(joystickList[joystickIndex]) << std::endl;
-                std::cout << "   Number of Buttons: " << SDL_JoystickNumButtons(joystickList[joystickIndex]) << std::endl;
-                std::cout << "   Number of Balls: " << SDL_JoystickNumBalls(joystickList[joystickIndex]) << std::endl;
-            } else {
-                std::cout << "Couldn't open Joystick " << joystickIndex << std::endl;
-            }
-        }
+	if(joystickCount > 0) {
+		for(int joystickIndex = 0; joystickIndex < joystickCount; joystickIndex++) {
+			joystickList[joystickIndex] = SDL_JoystickOpen(joystickIndex);
+#ifdef DEBUG
+			if(joystickList[joystickIndex]) {
+				std::cout << "Opened Joystick " << joystickIndex << std::endl;
+				std::cout << "\tName: " << SDL_JoystickName(joystickList[joystickIndex]) << std::endl;
+				std::cout << "\tNumber of Axes: " << SDL_JoystickNumAxes(joystickList[joystickIndex]) << std::endl;
+				std::cout << "\tNumber of Buttons: " << SDL_JoystickNumButtons(joystickList[joystickIndex]) << std::endl;
+				std::cout << "\tNumber of Balls: " << SDL_JoystickNumBalls(joystickList[joystickIndex]) << std::endl;
+			} else {
+				std::cout << "Couldn't open Joystick " << joystickIndex << std::endl;
+			}
+#endif // DEBUG
+		}
 	}
 
 	SDL_Event event;
-	char buffer[1024] = {0}; 
-	int bytesRead=0;
+	char buffer[1024] = {0};
 
 	std::list<uint8_t> messageBytesList;
-	uint8_t message[256];
-	while(true){
-        adjustRobotList();
+	uint8_t headMessage[256];
 
-		while(Gtk::Main::events_pending()){
+	// Main event loop
+	while(true) {
+		robotList();
+
+		// Run GTK events
+		while(Gtk::Main::events_pending()) {
 			Gtk::Main::iteration();
 		}
-		if(!connected)continue;
 
-		bytesRead = read(sock, buffer, 1024); 
-        for(int index=0;index<bytesRead;index++){
-            messageBytesList.push_back(buffer[index]);
-        }
+		// Don't do anything if not connected
+		if(!connected) continue;
 
-		if(bytesRead==0){
-			//std::cout << "Lost Connection" << std::endl;
-            setDisconnectedState();
+		// Read from the socket
+		auto bytesRead = read(sock, buffer, sizeof(buffer) / sizeof(buffer[0]));
+		for(ssize_t index = 0; index < bytesRead; index++) {
+			messageBytesList.push_back(buffer[index]);
+		}
 
-//            connectButton->set_label("Connect");
-//		      connectionStatusLabel->set_text("Lost Connection");
-//			  Gdk::RGBA red;
-//			  red.set_rgba(1.0,0,0,1.0);
-//			  connectionStatusLabel->override_background_color(red);
-//			  connected=false;
-//            ipAddressEntry->set_can_focus(true);
-//            ipAddressEntry->set_editable(true);
-
+		// Check for message head and disconnect if no bytes
+		if(!bytesRead) {
+#ifdef DEBUG
+			std::cout << "Lost Connection." << std::endl;
+#endif // DEBUG
+			setDisconnectedState();
 			continue;
 		}
-        while(messageBytesList.size()>0 && messageBytesList.front()<=messageBytesList.size()){
-            int messageSize=messageBytesList.front();
-            messageBytesList.pop_front();
-            messageSize--;
-            for(int index=0;index<messageSize;index++){
-                message[index]=messageBytesList.front();
-                messageBytesList.pop_front();
-            }
 
-			//std::cout << "Got Message" << std::endl;
-			uint8_t command=message[0];
-			//std::cout << "command " << (int)command << std::endl;
-			if(command==1){
-				float voltage=parseFloat((uint8_t*)&message[1]);
-				float current0=parseFloat((uint8_t*)&message[5]);
-				float current1=parseFloat((uint8_t*)&message[9]);
-				float current2=parseFloat((uint8_t*)&message[13]);
-				float current3=parseFloat((uint8_t*)&message[17]);
-				float current4=parseFloat((uint8_t*)&message[21]);
-				float current5=parseFloat((uint8_t*)&message[25]);
-				float current6=parseFloat((uint8_t*)&message[29]);
-				float current7=parseFloat((uint8_t*)&message[33]);
-				float current8=parseFloat((uint8_t*)&message[37]);
-				float current9=parseFloat((uint8_t*)&message[41]);
-				float current10=parseFloat((uint8_t*)&message[45]);
-				float current11=parseFloat((uint8_t*)&message[49]);
-				float current12=parseFloat((uint8_t*)&message[53]);
-				float current13=parseFloat((uint8_t*)&message[57]);
-				float current14=parseFloat((uint8_t*)&message[61]);
-				float current15=parseFloat((uint8_t*)&message[65]);
-				voltageLabel->set_label(std::to_string(voltage).c_str());
-				current0Label->set_label(std::to_string(current0).c_str());
-				current1Label->set_label(std::to_string(current1).c_str());
-				current2Label->set_label(std::to_string(current2).c_str());
-				current3Label->set_label(std::to_string(current3).c_str());
-				current4Label->set_label(std::to_string(current4).c_str());
-				current5Label->set_label(std::to_string(current5).c_str());
-				current6Label->set_label(std::to_string(current6).c_str());
-				current7Label->set_label(std::to_string(current7).c_str());
-				current8Label->set_label(std::to_string(current8).c_str());
-				current9Label->set_label(std::to_string(current9).c_str());
-				current10Label->set_label(std::to_string(current10).c_str());
-				current11Label->set_label(std::to_string(current11).c_str());
-				current12Label->set_label(std::to_string(current12).c_str());
-				current13Label->set_label(std::to_string(current13).c_str());
-				current14Label->set_label(std::to_string(current14).c_str());
-				current15Label->set_label(std::to_string(current15).c_str());
+		// Handle messages
+		while(!messageBytesList.empty() && messageBytesList.front() <= messageBytesList.size()) {
+			// Read message
+			auto messageSize = messageBytesList.front();
+			messageBytesList.pop_front();
+			messageSize--;
+			for(unsigned char index = 0; index < messageSize; index++) {
+				headMessage[index] = messageBytesList.front();
+				messageBytesList.pop_front();
 			}
-			if(command==2){
-				float deviceID=parseInt((uint8_t*)&message[1]);
-				float busVoltage=parseFloat((uint8_t*)&message[5]);
-				float outputCurrent=parseFloat((uint8_t*)&message[9]);
-				float outputVoltage=parseFloat((uint8_t*)&message[13]);
-				float outputPercent=parseFloat((uint8_t*)&message[17]);
-				float temperature=parseFloat((uint8_t*)&message[21]);
-				float sensorPosition=parseInt((uint8_t*)&message[25]);
-				float sensorVelocity=parseInt((uint8_t*)&message[29]);
-				float closedLoopError=parseInt((uint8_t*)&message[33]);
-				float integralAccumulator=parseInt((uint8_t*)&message[37]);
-				float errorDerivative=parseInt((uint8_t*)&message[41]);
-				talon1InfoFrame->setItem("Device ID", deviceID);	
-				talon1InfoFrame->setItem("Bus Voltage", busVoltage);	
-				talon1InfoFrame->setItem("Output Current", outputCurrent);	
-				talon1InfoFrame->setItem("Output Voltage", outputVoltage);	
-				talon1InfoFrame->setItem("Output Percent", outputPercent);	
-				talon1InfoFrame->setItem("Temperature", temperature);	
-				talon1InfoFrame->setItem("Sensor Position", sensorPosition);	
-				talon1InfoFrame->setItem("Sensor Velocity", sensorVelocity);	
-				talon1InfoFrame->setItem("Closed Loop Error", closedLoopError);	
-				talon1InfoFrame->setItem("Integral Accumulator", integralAccumulator);	
-				talon1InfoFrame->setItem("Error Drivative", errorDerivative);	
-			}	
-			if(command==3){
-				float deviceID=parseInt((uint8_t*)&message[1]);
-				float busVoltage=parseFloat((uint8_t*)&message[5]);
-				float outputCurrent=parseFloat((uint8_t*)&message[9]);
-				float outputVoltage=parseFloat((uint8_t*)&message[13]);
-				float outputPercent=parseFloat((uint8_t*)&message[17]);
-				float temperature=parseFloat((uint8_t*)&message[21]);
-				float sensorPosition=parseInt((uint8_t*)&message[25]);
-				float sensorVelocity=parseInt((uint8_t*)&message[29]);
-				float closedLoopError=parseInt((uint8_t*)&message[33]);
-				float integralAccumulator=parseInt((uint8_t*)&message[37]);
-				float errorDerivative=parseInt((uint8_t*)&message[41]);
-				talon2InfoFrame->setItem("Device ID", deviceID);	
-				talon2InfoFrame->setItem("Bus Voltage", busVoltage);	
-				talon2InfoFrame->setItem("Output Current", outputCurrent);	
-				talon2InfoFrame->setItem("Output Voltage", outputVoltage);	
-				talon2InfoFrame->setItem("Output Percent", outputPercent);	
-				talon2InfoFrame->setItem("Temperature", temperature);	
-				talon2InfoFrame->setItem("Sensor Position", sensorPosition);	
-				talon2InfoFrame->setItem("Sensor Velocity", sensorVelocity);	
-				talon2InfoFrame->setItem("Closed Loop Error", closedLoopError);	
-				talon2InfoFrame->setItem("Integral Accumulator", integralAccumulator);	
-				talon2InfoFrame->setItem("Error Drivative", errorDerivative);	
-			}	
-			if(command==4){
-				float deviceID=parseInt((uint8_t*)&message[1]);
-				float busVoltage=parseFloat((uint8_t*)&message[5]);
-				float outputVoltage=parseFloat((uint8_t*)&message[9]);
-				float outputPercent=parseFloat((uint8_t*)&message[13]);
-				victor1InfoFrame->setItem("Device ID", deviceID);	
-				victor1InfoFrame->setItem("Bus Voltage", busVoltage);	
-				victor1InfoFrame->setItem("Output Voltage", outputVoltage);	
-				victor1InfoFrame->setItem("Output Percent", outputPercent);	
-			}	
-			if(command==5){
-				float deviceID=parseInt((uint8_t*)&message[1]);
-				float busVoltage=parseFloat((uint8_t*)&message[5]);
-				float outputVoltage=parseFloat((uint8_t*)&message[9]);
-				float outputPercent=parseFloat((uint8_t*)&message[13]);
-				victor2InfoFrame->setItem("Device ID", deviceID);	
-				victor2InfoFrame->setItem("Bus Voltage", busVoltage);	
-				victor2InfoFrame->setItem("Output Voltage", outputVoltage);	
-				victor2InfoFrame->setItem("Output Percent", outputPercent);	
-			}	
-			if(command==6){
-				float deviceID=parseInt((uint8_t*)&message[1]);
-				float busVoltage=parseFloat((uint8_t*)&message[5]);
-				float outputVoltage=parseFloat((uint8_t*)&message[9]);
-				float outputPercent=parseFloat((uint8_t*)&message[13]);
-				victor3InfoFrame->setItem("Device ID", deviceID);	
-				victor3InfoFrame->setItem("Bus Voltage", busVoltage);	
-				victor3InfoFrame->setItem("Output Voltage", outputVoltage);	
-				victor3InfoFrame->setItem("Output Percent", outputPercent);	
-			}	
-			if(command==7){ //control mode
-				int mode=message[1];
-				//std::cout << mode << std::endl;
-				if(mode==1){
-					controlModeLabel->set_label("Drive");
-				}
-				if(mode==0){
-					controlModeLabel->set_label("Dig");
-				}
+
+#ifdef DEBUG
+			std::cout << "Got Message" << std::endl;
+#endif // DEBUG
+	   // Get command
+			uint8_t command = headMessage[0];
+#ifdef DEBUG
+			std::cout << "Command: " << command << std::endl;
+#endif // DEBUG
+
+			// Handle command
+			switch(command) {
+				case COMMAND_TO_CLIENT_POWER_DISTRIBUTION_PANEL: {
+					// Display voltage
+					const auto voltage = parseType<float>((uint8_t*)&headMessage[1]);
+					voltageLabel->set_label(std::to_string(voltage).c_str());
+
+					// Display Currents
+					for(size_t index = 0; index < numCurrents; index++) {
+						const auto current = parseType<float>((uint8_t*)&headMessage[5 + index * sizeof(float)]);
+						currentLabels[index]->set_label(std::to_string(current).c_str());
+					}
+				} break;
+
+				case COMMAND_TO_CLIENT_TALON_1:
+					displayTalonInfo(talonInfoFrames[0], headMessage);
+					break;
+
+				case COMMAND_TO_CLIENT_TALON_2:
+					displayTalonInfo(talonInfoFrames[1], headMessage);
+					break;
+
+				case COMMAND_TO_CLIENT_VICTOR_1:
+					displayVictorInfo(victorInfoFrames[0], headMessage);
+					break;
+
+				case COMMAND_TO_CLIENT_VICTOR_2:
+					displayVictorInfo(victorInfoFrames[1], headMessage);
+					break;
+
+				case COMMAND_TO_CLIENT_VICTOR_3:
+					displayVictorInfo(victorInfoFrames[2], headMessage);
+					break;
+
+				case COMMAND_TO_CLIENT_CONTROL_STATUS: {
+					const int mode = headMessage[1];
+#ifdef DEBUG
+					std::cout << "Mode: " << mode << std::endl;
+#endif // DEBUG
+
+					switch(mode) {
+						case CONTROL_MODE_DRIVE:
+							controlModeLabel->set_label("Drive");
+							break;
+						case CONTROL_MODE_DIG:
+							controlModeLabel->set_label("Dig");
+							break;
+					}
+				} break;
+				default:
+					break;
 			}
 		}
 
-		while(SDL_PollEvent(&event)){
-            //std::cout << "here" << std::endl;
-            const Uint8 *state = SDL_GetKeyboardState(NULL);
+		// Handle SDL joystick events
+		while(SDL_PollEvent(&event)) {
+			const auto state = SDL_GetKeyboardState(nullptr);
 
-            //const Uint8 *length = SDL_GetKeyboardState(state);
-            //std::cout << "length " << *length << std::endl;
-            //std::cout << "scan code A " << (int)state[SDL_SCANCODE_A] << std::endl;
+#ifdef DEBUG
+			const size_t length = sizeof(state) / sizeof(state[0]);
+			std::cout << "Length: " << length << std::endl;
+			std::cout << "Scan code A: " << (int)state[SDL_SCANCODE_A] << std::endl;
+#endif // DEBUG
 
-			switch(event.type){
+			switch(event.type) {
+				case SDL_MOUSEMOTION:
+#ifdef DEBUG
+					std::cout << "X: " << event.motion.x << ", Y: " << event.motion.y << std::endl;
+#endif // DEBUG
+					break;
 
-            case SDL_MOUSEMOTION:{
-                int mouseX = event.motion.x;
-                int mouseY = event.motion.y;
+				case SDL_KEYDOWN:
+#ifdef DEBUG
+					std::cout << event.key.keysym.sym << " Key Down" << std::endl;
+#endif // DEBUG
+					break;
 
-                std::cout << "X: " << mouseX << " Y: " << mouseY << std::endl;
+				case SDL_KEYUP:
+#ifdef DEBUG
+					std::cout << event.key.keysym.sym << " Key Up" << std::endl;
+#endif // DEBUG
+					break;
 
-                break;
-            }
+				case SDL_JOYHATMOTION: {
+#ifdef DEBUG
+					std::cout << "Joystick " << event.jhat.which << " ";
+					std::cout << "Timestamp " << event.jhat.timestamp << " ";
+					std::cout << "Hat " << (uint32_t)event.jhat.hat << " ";
+					std::cout << "Value " << (uint32_t)event.jhat.value << std::endl;
+#endif // DEBUG
 
-            case SDL_KEYDOWN:{
-                std::cout << event.key.keysym.sym << std::endl;
-                std::cout << "key down" << std::endl;
-                break;
-            }
+					constexpr uint8_t command = COMMAND_TO_ROBOT_JOYSTICK_HAT_MOTION_EVENT;
+					constexpr int length = 5;
+					uint8_t message[length];
+					message[0] = length;
+					message[1] = command;
+					message[2] = event.jhat.which;
+					message[3] = event.jhat.hat;
+					message[4] = event.jhat.value;
 
-            case SDL_KEYUP:{
-                std::cout << "key up" << std::endl;
-                break;
-            }
+					send(sock, message, length, 0);
+				} break;
 
-			case SDL_JOYHATMOTION:{
-//				std::cout << "joystick " << event.jhat.which << " ";
-//				std::cout << "timestamp " << event.jhat.timestamp << " ";
-//              std::cout << "hat " << (uint32_t)event.jhat.hat << " ";
-//				std::cout << "value " << (uint32_t)event.jhat.value << std::endl;
+				case SDL_JOYBUTTONDOWN: {
+#ifdef DEBUG
+					std::cout << "Joystick: " << event.jbutton.which << " ";
+					std::cout << "Timestamp: " << event.jbutton.timestamp << " ";
+					std::cout << "Button: " << (uint32_t)event.jbutton.button << " ";
+					std::cout << "State: " << (uint32_t)event.jbutton.state << std::endl;
+#endif // DEBUG
 
-                uint8_t command=6;
-                int length=5;
-				uint8_t message[length];
-				message[0]=length;
-				message[1]=command;
-				message[2]=event.jhat.which;
-				message[3]=event.jhat.hat;
-				message[4]=event.jhat.value;
+					constexpr uint8_t command = COMMAND_TO_ROBOT_JOYSTICK_BUTTON_EVENT;
+					constexpr int length = 5;
+					uint8_t message[length];
+					message[0] = length;
+					message[1] = command;
+					message[2] = event.jbutton.which;
+					message[3] = event.jbutton.button;
+					message[4] = event.jbutton.state;
 
-				send(sock, message, length, 0);
-				
-				break;
-			}
-			case SDL_JOYBUTTONDOWN:{
-//				std::cout << "joystick " << event.jbutton.which << " ";
-//				std::cout << "timestamp " << event.jbutton.timestamp << " ";
-//				std::cout << "button " << (uint32_t)event.jbutton.button << " ";
-//				std::cout << "state " << (uint32_t)event.jbutton.state << std::endl;
+					send(sock, message, length, 0);
+				} break;
 
-                uint8_t command=5;
-                int length=5;
-				uint8_t message[length];
-				message[0]=length;
-				message[1]=command;
-                message[2]=event.jbutton.which;
-				message[3]=event.jbutton.button;
-				message[4]=event.jbutton.state;
+				case SDL_JOYBUTTONUP: {
+#ifdef DEBUG
+					std::cout << "Joystick: " << event.jbutton.which << " ";
+					std::cout << "Timestamp: " << event.jbutton.timestamp << " ";
+					std::cout << "Button: " << (uint32_t)event.jbutton.button << " ";
+					std::cout << "State: " << (uint32_t)event.jbutton.state << std::endl;
+#endif // DEBUG
 
-				send(sock, message, length, 0);
+					constexpr uint8_t command = COMMAND_TO_ROBOT_JOYSTICK_BUTTON_EVENT;
+					constexpr int length = 5;
+					uint8_t message[length];
+					message[0] = length;
+					message[1] = command;
+					message[2] = event.jbutton.which;
+					message[3] = event.jbutton.button;
+					message[4] = event.jbutton.state;
 
-				break;
-			}
-			case SDL_JOYBUTTONUP:{
-//				std::cout << "joystick " << event.jbutton.which << " ";
-//				std::cout << "timestamp " << event.jbutton.timestamp << " ";
-//				std::cout << "button " << (uint32_t)event.jbutton.button << " ";
-//				std::cout << "state " << (uint32_t)event.jbutton.state << std::endl;
+					send(sock, message, length, 0);
+				} break;
 
-                uint8_t command=5;
-                int length=5;
-				uint8_t message[length];
-				message[0]=length;
-				message[1]=command;
-                message[2]=event.jbutton.which;
-				message[3]=event.jbutton.button;
-				message[4]=event.jbutton.state;
+				case SDL_JOYAXISMOTION: {
+#ifdef DEBUG
+					std::cout << "Joystick: " << event.jaxis.which << " ";
+					std::cout << "Timestamp: " << event.jaxis.timestamp << " ";
+					std::cout << "Axis: " << (int)event.jaxis.axis << " ";
+					std::cout << "Value: " << event.jaxis.value << std::endl;
+#endif // DEBUG
 
-				send(sock, message, length, 0);
+					constexpr uint8_t command = COMMAND_TO_ROBOT_JOYSTICK_AXIS_MOTION_EVENT;
+					const float value = (float)event.jaxis.value / -32768.f;
 
-				break;
-			}
-			case SDL_JOYAXISMOTION: {
-//                std::cout << "joystick " << event.jaxis.which << " ";
-//                std::cout << "timestamp " << event.jaxis.timestamp << " ";
-//                std::cout << "axis " << (int) event.jaxis.axis << " ";
-//                std::cout << "value " << event.jaxis.value << std::endl;
+					constexpr int length = 8;
+					uint8_t message[length];
+					message[0] = length;
+					message[1] = command;
+					message[2] = event.jaxis.which;
+					message[3] = event.jaxis.axis; // 0-roll 1-pitch 2-throttle 3-yaw
+					insert(value, &message[4], sizeof(message) - (4 * sizeof(message[0])));
 
-                uint8_t command = 1;
-                float value = (float) event.jaxis.value / -32768.0;
-
-                int length = 8;
-                uint8_t message[length];
-                message[0] = length;
-                message[1] = command;
-                message[2] = event.jaxis.which;
-                message[3] = event.jaxis.axis;//0-roll 1-pitch 2-throttle 3-yaw
-                insert(value, &message[4]);
-
-                send(sock, message, length, 0);
-            }
-
-//				if(event.jaxis.axis == 0){
-//					uint8_t command=1;
-//					float value=(float) event.jaxis.value/-32768.0;
-//
-//					int length=8;
-//					uint8_t message[length];
-//					message[0]=length;
-//                    message[1]=command;
-//                    message[2]=event.jaxis.axis;//0-roll 1-pitch 2-throttle 3-yaw
-//                    message[3]=event.jaxis.which;
-//					insert(value,&message[4]);
-//
-//					send(sock, message, length, 0);
-//				}
-//				if(event.jaxis.axis == 1){
-//					uint8_t command=2;// pitch
-//					float value=(float) event.jaxis.value/-32768.0;
-//
-//                  int length=7;
-//					uint8_t message[length];
-//					message[0]=length;
-//					message[1]=command;
-//                  message[2]=event.jhat.which;
-//					insert(value,&message[3]);
-//
-//					send(sock, message, length, 0);
-//				}
-//				if(event.jaxis.axis == 2){
-//					uint8_t command=3;// throttle
-//					float value=(float) event.jaxis.value/-32768.0;
-//
-//                    int length=7;
-//					uint8_t message[length];
-//					message[0]=length;
-//					message[1]=command;
-//                    message[2]=event.jhat.which;
-//					insert(value,&message[3]);
-//
-//					send(sock, message, length, 0);
-//				}
-//				if(event.jaxis.axis == 3){
-//					uint8_t command=4;// yaw
-//					float value=(float) event.jaxis.value/-32768.0;
-//
-//                    int length=7;
-//					uint8_t message[length];
-//					message[0]=length;
-//					message[1]=command;
-//                    message[2]=event.jhat.which;
-//					insert(value,&message[3]);
-//
-//					send(sock, message, length, 0);
-//				}
-				break;
-			default:
-				break;
+					send(sock, message, length, 0);
+				} break;
 			}
 		}
 	}
-	return 0; 
 }
-

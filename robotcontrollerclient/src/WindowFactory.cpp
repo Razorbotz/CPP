@@ -18,16 +18,12 @@ WindowFactory::WindowFactory() {
 }
 
 WindowFactory& WindowFactory::addWidget(Gtk::Widget* widget) {
-	widgets.insert(widgets.end(), widget);
+	window->add(*widget);
+
 	return *this;
 }
 
-Gtk::Window* WindowFactory::build() {
-	// Add widgets
-	for(auto widget : widgets) {
-		window->add(*widget);
-	}
-
+Gtk::Window* WindowFactory::build() const {
 	return window;
 }
 WindowFactory& WindowFactory::setTitle(const Glib::ustring& title) {

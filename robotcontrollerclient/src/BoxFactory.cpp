@@ -24,15 +24,12 @@ BoxFactory& BoxFactory::manage() {
 }
 
 BoxFactory& BoxFactory::addWidget(Gtk::Widget* widget) {
-	widgets.insert(widgets.end(), widget);
+	box->add(*widget);
+
 	return *this;
 }
 
-Gtk::Box* BoxFactory::build() {
-	// Add widgets
-	for(auto widget : widgets)
-		box->add(*widget);
-
+Gtk::Box* BoxFactory::build() const {
 	return box;
 }
 

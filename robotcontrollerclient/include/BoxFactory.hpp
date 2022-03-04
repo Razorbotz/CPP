@@ -34,8 +34,6 @@ class BoxFactory {
   private:
 	/// The box that is created
 	Gtk::Box* box;
-	/// Vector to store widgets to be child widgets of the box
-	std::vector<Gtk::Widget*> widgets;
 
   public:
 	/** @brief Constructor for BoxFactory.
@@ -117,7 +115,7 @@ class BoxFactory {
 	 *
 	 * @return Pointer to the created box.
 	 * */
-	Gtk::Box* build();
+	Gtk::Box* build() const;
 };
 
 #endif // !CONTROL_BOXFACTORY_HPP

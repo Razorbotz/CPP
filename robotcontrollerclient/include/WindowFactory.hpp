@@ -34,8 +34,6 @@ class WindowFactory {
   private:
 	/// The window that is created
 	Gtk::Window* window;
-	/// Vector to store widgets to be child widgets of the window
-	std::vector<Gtk::Widget*> widgets;
 
   public:
 	/** @brief Constructor for WindowFactory.
@@ -114,7 +112,7 @@ class WindowFactory {
 	 *
 	 * @return Pointer to the created window.
 	 * */
-	Gtk::Window* build();
+	Gtk::Window* build() const;
 };
 
 #endif // !CONTROL_WINDOWFACTORY_HPP

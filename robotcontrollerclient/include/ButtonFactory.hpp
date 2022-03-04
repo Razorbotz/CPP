@@ -80,7 +80,7 @@ class ButtonFactory {
 	 *
 	 * @return Pointer to the created button.
 	 * */
-	Gtk::Button* build();
+	Gtk::Button* build() const;
 };
 
 #endif // !CONTROL_BUTTONFACTORY_HPP

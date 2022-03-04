@@ -24,6 +24,6 @@ ButtonFactory& ButtonFactory::manage() {
 	return *this;
 }
 
-Gtk::Button* ButtonFactory::build() {
+Gtk::Button* ButtonFactory::build() const {
 	return button;
 }

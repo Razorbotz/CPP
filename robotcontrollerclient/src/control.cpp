@@ -44,55 +44,102 @@
 /// Port for communicating with the robot over the network
 constexpr unsigned int netPortNumber = 31337;
 
+/** @brief Checks if the machine is little endian.
+ *
+ * Determines if the machine running the code is big or little endian.
+ * Checks if the first byte of a short is the least significant byte.
+ *
+ * @return  Endianness of the machine
+ * @retval  true    Machine is Little-Endian (LE)
+ * @retval  false   Machine is Big-Endian (BE)
+ * */
+bool isLittleEndian() {
+	// Needs to be volatile to test at runtime
+	volatile const unsigned short n = 0x1;
+	return *((char*)&n);
+}
+
 /** @brief Converts a byte array to a specified type.
  *
- * Takes a big-endian type as a byte array and returns that type. Will truncate if
- * array is longer than uint32_t (4 bytes). This code may produce undefined
- * behavior on specific machines/compilers since it is not standards compliant
- * and uses bitwise/casting trickery (endianness and type size).
+ * Takes a little-endian byte array of a serialized type and returns an object of that type.
+ *
+ * The conversion itself is big-endian, but since the data is in little-endian
+ * form, it gives a little-endian result. For example a byte array with a value
+ * of {1, 0, 0, 0} will return an integer with a value of 1.
+ *
+ * If the array's size is smaller than type, the higher-order (MSBs of type) bytes will be filled with zero.
  *
  * @throw   std::out_of_range   If size of array to convert is larger than the type to be converted
  *
  * @param[in]   array   The array to be converted to a type T
- * @param[in]   size    The size of the array. Must be less than sizeof(uint64_t) (64 bits, 8 bytes)
+ * @param[in]   size    The size of the array. Must be less than the size of the type
  * @return Value of type T filled with data from input array
  * */
 template <typename T>
-T parseType(const uint8_t* array, const size_t size) {
-	if(size > sizeof(uint64_t)) throw std::out_of_range("Size of array does not fit into value!");
+T deserialize(const uint8_t* array, const size_t size) {
+	if(size > sizeof(T)) throw std::out_of_range("Size of array does not fit into value!");
 
-	uint64_t result = 0;
-	for(size_t i = 0; i < size; i++)
-		result |= uint32_t(array[i]) << ((size - 1 - i) * 8);
+	union {
+		T value;
+		uint8_t rawBytes[sizeof(T)];
+	} dest{};
 
-	return (T) * (static_cast<T*>(static_cast<void*>(&result)));
+	// Computer is Little-Endian: Already in that form
+	if(isLittleEndian()) {
+		for(size_t i = 0; i < size; i++)
+			dest.rawBytes[i] = array[i];
+	}
+	// Computer is Big-Endian: Need to reverse array
+	else {
+		for(size_t i = 0; i < size; i++)
+			dest.rawBytes[i] = array[size - i];
+	}
+
+	return dest.value;
 }
 
 /** @brief Converts a variable of a given type to a byte array.
  *
- * Takes a data type and fills byte array with its data in big-endian form.
- * This code may produce undefined behavior on specific machines/compilers
- * since it is not standards compliant and uses bitwise/casting trickery
- * (endianness and int size).
-
- * @todo Make this standards compliant and platform independent by not using trickery.
+ * Takes a data type and fills byte array with its data in little-endian form.
  *
- * @throw   std::out_of_range   If variable doesn't fit in array
+ * The conversion itself is big-endian, but since the data expected is in
+ * little-endian form, it gives a little-endian result. For example an integer
+ * with a value of 1 will return a byte array with a value of {1, 0, 0, 0}.
  *
- * @param[in]   value     Variable to fill array with
- * @param[out]  array    The array to be converted to a type T
- * @param[in]   arrayLen  Size of array to be filled
+ * If the array's size is smaller than type, it will be filled with the most/least? significant bytes.
+ * If the array's size is larger than the type, then the higher bytes of the array will remain untouched.
+ *
+ * @param[in]   value       Variable to fill array with
+ * @param[out]  array       The array to be converted to a type T
+ * @param[in]   arrayLen    Size of array to be filled
  * @return void
  * */
 template <typename T>
-void insert(T value, uint8_t* array, const size_t arrayLen) {
-	// Check if value fits into array
-	if(arrayLen < sizeof(T)) throw std::out_of_range("Type of value doesn't fit in array!");
+void serialize(const T value, uint8_t* array, const size_t arrayLen) {
+	// Only use smallest of the two given sizes
+	const size_t smallestSize = arrayLen > sizeof(T) ? sizeof(T) : arrayLen;
 
-	// Convert to byte-array by looping through each byte and bit-shifting
-	constexpr size_t valueSize = sizeof(value);
-	for(size_t i = 0; i < valueSize; i++)
-		array[i] = uint8_t((uint32_t(*(static_cast<uint32_t*>(static_cast<void*>(&value)))) >> ((valueSize - 1 - i) * 8)));
+	// Union for converting the type to raw bytes
+	union {
+		T value;
+		uint8_t rawBytes[sizeof(T)];
+	} source{};
+
+	// Copy the given value to the union
+	source.value = value;
+
+	// Changes endianness if it is not LE (is BE instead). Since it expects that the computer is LE.
+	if(!isLittleEndian()) {
+		uint8_t copy[sizeof(source.rawBytes)/sizeof(source.rawBytes[0])];
+		memcpy(copy, source.rawBytes, sizeof(source.rawBytes)/sizeof(source.rawBytes[0]));
+
+		for(size_t k = 0; k < sizeof(T); k++)
+			source.rawBytes[k] = copy[sizeof(T) - k - 1];
+	}
+
+	// Save the value
+	for(size_t i = 0; i < smallestSize; i++)
+		array[i] = source.rawBytes[i];
 }
 
 /** @brief Callback function to quit the program
@@ -469,7 +516,7 @@ bool on_key_release_event(GdkEventKey* keyEvent) {
 		uint8_t message[messageSize];
 		message[0] = messageSize;
 		message[1] = command;
-		insert<uint16_t>(keyEvent->keyval, &message[2], sizeof(message) - (2 * sizeof(message[0])));
+		serialize<uint16_t>(keyEvent->keyval, &message[2], sizeof(message) - (2 * sizeof(message[0])));
 		message[4] = 0;
 		send(sock, message, messageSize, 0);
 #ifdef DEBUG
@@ -501,7 +548,7 @@ bool on_key_press_event(GdkEventKey* keyEvent) {
 		uint8_t message[messageSize];
 		message[0] = messageSize;
 		message[1] = command;
-		insert<uint16_t>(keyEvent->keyval, &message[2], sizeof(message) - (2 * sizeof(message[0])));
+		serialize<uint16_t>(keyEvent->keyval, &message[2], sizeof(message) - (2 * sizeof(message[0])));
 		message[4] = 1;
 		send(sock, message, messageSize, 0);
 #ifdef DEBUG
@@ -911,10 +958,10 @@ void robotList() {
  * @return void
  * */
 void displayVictorInfo(VictorInfoFrame* victorInfoFrame, uint8_t* headMessage) {
-	const auto deviceId = parseType<int32_t>(&headMessage[1], 4);
-	const auto busVoltage = parseType<float>(&headMessage[5], 4);
-	const auto outputVoltage = parseType<float>(&headMessage[9], 4);
-	const auto outputPercent = parseType<float>(&headMessage[13], 4);
+	const auto deviceId = deserialize<int32_t>(&headMessage[1], 4);
+	const auto busVoltage = deserialize<float>(&headMessage[5], 4);
+	const auto outputVoltage = deserialize<float>(&headMessage[9], 4);
+	const auto outputPercent = deserialize<float>(&headMessage[13], 4);
 	victorInfoFrame->setItem("Device ID", deviceId);
 	victorInfoFrame->setItem("Bus Voltage", busVoltage);
 	victorInfoFrame->setItem("Output Voltage", outputVoltage);
@@ -931,17 +978,17 @@ void displayVictorInfo(VictorInfoFrame* victorInfoFrame, uint8_t* headMessage) {
  * @return void
  * */
 void displayTalonInfo(TalonInfoFrame* talonInfoFrame, uint8_t* headMessage) {
-	const auto deviceId = parseType<int32_t>(&headMessage[1], 4);
-	const auto busVoltage = parseType<float>(&headMessage[5], 4);
-	const auto outputCurrent = parseType<float>(&headMessage[9], 4);
-	const auto outputVoltage = parseType<float>(&headMessage[13], 4);
-	const auto outputPercent = parseType<float>(&headMessage[17], 4);
-	const auto temperature = parseType<float>(&headMessage[21], 4);
-	const auto sensorPosition = parseType<int32_t>(&headMessage[25], 4);
-	const auto sensorVelocity = parseType<int32_t>(&headMessage[29], 4);
-	const auto closedLoopError = parseType<int32_t>(&headMessage[33], 4);
-	const auto integralAccumulator = parseType<int32_t>(&headMessage[37], 4);
-	const auto errorDerivative = parseType<int32_t>(&headMessage[41], 4);
+	const auto deviceId = deserialize<int32_t>(&headMessage[1], 4);
+	const auto busVoltage = deserialize<float>(&headMessage[5], 4);
+	const auto outputCurrent = deserialize<float>(&headMessage[9], 4);
+	const auto outputVoltage = deserialize<float>(&headMessage[13], 4);
+	const auto outputPercent = deserialize<float>(&headMessage[17], 4);
+	const auto temperature = deserialize<float>(&headMessage[21], 4);
+	const auto sensorPosition = deserialize<int32_t>(&headMessage[25], 4);
+	const auto sensorVelocity = deserialize<int32_t>(&headMessage[29], 4);
+	const auto closedLoopError = deserialize<int32_t>(&headMessage[33], 4);
+	const auto integralAccumulator = deserialize<int32_t>(&headMessage[37], 4);
+	const auto errorDerivative = deserialize<int32_t>(&headMessage[41], 4);
 	talonInfoFrame->setItem("Device ID", deviceId);
 	talonInfoFrame->setItem("Bus Voltage", busVoltage);
 	talonInfoFrame->setItem("Output Current", outputCurrent);
@@ -1063,12 +1110,12 @@ int main(int argc, char** argv) {
 			switch(command) {
 				case COMMAND_TO_CLIENT_POWER_DISTRIBUTION_PANEL: {
 					// Display voltage
-					const auto voltage = parseType<float>(&headMessage[1], 4);
+					const auto voltage = deserialize<float>(&headMessage[1], 4);
 					voltageLabel->set_label(std::to_string(voltage).c_str());
 
 					// Display Currents
 					for(size_t index = 0; index < numCurrents; index++) {
-						const auto current = parseType<float>(&headMessage[5 + index * sizeof(float)], 4);
+						const auto current = deserialize<float>(&headMessage[5 + index * sizeof(float)], 4);
 						currentLabels[index]->set_label(std::to_string(current).c_str());
 					}
 				} break;
@@ -1219,7 +1266,7 @@ int main(int argc, char** argv) {
 					message[1] = command;
 					message[2] = event.jaxis.which;
 					message[3] = event.jaxis.axis; // 0-roll 1-pitch 2-throttle 3-yaw
-					insert(value, &message[4], sizeof(message) - (4 * sizeof(message[0])));
+					serialize(value, &message[4], sizeof(message) - (4 * sizeof(message[0])));
 
 					send(sock, message, length, 0);
 				} break;

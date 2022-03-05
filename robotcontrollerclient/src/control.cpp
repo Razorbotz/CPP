@@ -575,14 +575,14 @@ void setupGui(const Glib::RefPtr<Gtk::Application>& application) {
 
 	// Silent Run Button
 	const auto silentRunButton = ButtonFactory("Silent Running")
-							   .addClickedCallback<std::function<typeof(silentRun)>>(silentRun)
-							   .build();
+									 .addClickedCallback<std::function<typeof(silentRun)>>(silentRun)
+									 .build();
 
 	// Shutdown Robot Button
 	const auto shutdownCallback = [] { return shutdownDialog(window); };
 	const auto shutdownRobotButton = ButtonFactory("Shutdown Robot")
-								   .addClickedCallback<typeof(shutdownCallback)>(shutdownCallback)
-								   .build();
+										 .addClickedCallback<typeof(shutdownCallback)>(shutdownCallback)
+										 .build();
 
 	// Power Distribution Frame
 	const auto powerDistributionPanelFrame = Gtk::manage(new Gtk::Frame("Power Distribution Panel"));
@@ -596,9 +596,9 @@ void setupGui(const Glib::RefPtr<Gtk::Application>& application) {
 
 	// Power Boxes
 	const auto voltageBox = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
-						  .addFrontLabel("Voltage:")
-						  .packEnd(voltageLabel)
-						  .build();
+								.addFrontLabel("Voltage:")
+								.packEnd(voltageLabel)
+								.build();
 
 	Gtk::Box* currentBoxes[numCurrents];
 	for(size_t i = 0; i < numCurrents; i++) {
@@ -631,22 +631,22 @@ void setupGui(const Glib::RefPtr<Gtk::Application>& application) {
 
 	// Remote Control Box
 	const auto remoteControlBox = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
-								.addWidget(shutdownRobotButton)
-								.build();
+									  .addWidget(shutdownRobotButton)
+									  .build();
 
 	// State Box
 	const auto stateBox = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
-						.addWidget(silentRunButton)
-						.addWidget(modeLabel)
-						.addWidget(controlModeLabel)
-						.build();
+							  .addWidget(silentRunButton)
+							  .addWidget(modeLabel)
+							  .addWidget(controlModeLabel)
+							  .build();
 	// Connect Box
 	const auto connectBox = BoxFactory(Gtk::ORIENTATION_HORIZONTAL, 5)
-						  .addWidget(ipAddressLabel)
-						  .addWidget(ipAddressEntry)
-						  .addWidget(connectButton)
-						  .addWidget(connectionStatusLabel)
-						  .build();
+								.addWidget(ipAddressLabel)
+								.addWidget(ipAddressEntry)
+								.addWidget(connectButton)
+								.addWidget(connectionStatusLabel)
+								.build();
 
 	// Victor 1 Box
 	auto victor1BoxFactory = BoxFactory(Gtk::ORIENTATION_VERTICAL);
@@ -657,10 +657,10 @@ void setupGui(const Glib::RefPtr<Gtk::Application>& application) {
 
 	// Controls Right Box
 	const auto controlsRightBox = BoxFactory(Gtk::ORIENTATION_VERTICAL, 5)
-								.addWidget(connectBox)
-								.addWidget(stateBox)
-								.addWidget(remoteControlBox)
-								.build();
+									  .addWidget(connectBox)
+									  .addWidget(stateBox)
+									  .addWidget(remoteControlBox)
+									  .build();
 
 	// Talon Box
 	auto talonBoxFactory = BoxFactory(Gtk::ORIENTATION_VERTICAL);
@@ -671,21 +671,21 @@ void setupGui(const Glib::RefPtr<Gtk::Application>& application) {
 
 	// Controls Box
 	const auto controlsBox = BoxFactory(Gtk::ORIENTATION_HORIZONTAL, 5)
-						   .addWidget(scrolledList)
-						   .addWidget(controlsRightBox)
-						   .build();
+								 .addWidget(scrolledList)
+								 .addWidget(controlsRightBox)
+								 .build();
 
 	// Sensor Box
 	const auto sensorBox = BoxFactory(Gtk::ORIENTATION_HORIZONTAL)
-						 .addWidget(powerDistributionPanelFrame)
-						 .addWidget(talonBox)
-						 .addWidget(victor1Box)
-						 .build();
+							   .addWidget(powerDistributionPanelFrame)
+							   .addWidget(talonBox)
+							   .addWidget(victor1Box)
+							   .build();
 
 	const auto parentBox = BoxFactory(Gtk::ORIENTATION_VERTICAL, 5)
-						 .addWidget(controlsBox)
-						 .addWidget(sensorBox)
-						 .build();
+							   .addWidget(controlsBox)
+							   .addWidget(sensorBox)
+							   .build();
 
 	// Create the window
 	window = WindowFactory()

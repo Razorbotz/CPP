@@ -911,10 +911,10 @@ void robotList() {
  * @return void
  * */
 void displayVictorInfo(VictorInfoFrame* victorInfoFrame, uint8_t* headMessage) {
-	const auto deviceId = parseType<int>((uint8_t*)&headMessage[1], 4);
-	const auto busVoltage = parseType<float>((uint8_t*)&headMessage[5], 4);
-	const auto outputVoltage = parseType<float>((uint8_t*)&headMessage[9], 4);
-	const auto outputPercent = parseType<float>((uint8_t*)&headMessage[13], 4);
+	const auto deviceId = parseType<int32_t>(&headMessage[1], 4);
+	const auto busVoltage = parseType<float>(&headMessage[5], 4);
+	const auto outputVoltage = parseType<float>(&headMessage[9], 4);
+	const auto outputPercent = parseType<float>(&headMessage[13], 4);
 	victorInfoFrame->setItem("Device ID", deviceId);
 	victorInfoFrame->setItem("Bus Voltage", busVoltage);
 	victorInfoFrame->setItem("Output Voltage", outputVoltage);
@@ -931,17 +931,17 @@ void displayVictorInfo(VictorInfoFrame* victorInfoFrame, uint8_t* headMessage) {
  * @return void
  * */
 void displayTalonInfo(TalonInfoFrame* talonInfoFrame, uint8_t* headMessage) {
-	const auto deviceId = parseType<int>((uint8_t*)&headMessage[1], 4);
-	const auto busVoltage = parseType<float>((uint8_t*)&headMessage[5], 4);
-	const auto outputCurrent = parseType<float>((uint8_t*)&headMessage[9], 4);
-	const auto outputVoltage = parseType<float>((uint8_t*)&headMessage[13], 4);
-	const auto outputPercent = parseType<float>((uint8_t*)&headMessage[17], 4);
-	const auto temperature = parseType<float>((uint8_t*)&headMessage[21], 4);
-	const auto sensorPosition = parseType<int>((uint8_t*)&headMessage[25], 4);
-	const auto sensorVelocity = parseType<int>((uint8_t*)&headMessage[29], 4);
-	const auto closedLoopError = parseType<int>((uint8_t*)&headMessage[33], 4);
-	const auto integralAccumulator = parseType<int>((uint8_t*)&headMessage[37], 4);
-	const auto errorDerivative = parseType<int>((uint8_t*)&headMessage[41], 4);
+	const auto deviceId = parseType<int32_t>(&headMessage[1], 4);
+	const auto busVoltage = parseType<float>(&headMessage[5], 4);
+	const auto outputCurrent = parseType<float>(&headMessage[9], 4);
+	const auto outputVoltage = parseType<float>(&headMessage[13], 4);
+	const auto outputPercent = parseType<float>(&headMessage[17], 4);
+	const auto temperature = parseType<float>(&headMessage[21], 4);
+	const auto sensorPosition = parseType<int32_t>(&headMessage[25], 4);
+	const auto sensorVelocity = parseType<int32_t>(&headMessage[29], 4);
+	const auto closedLoopError = parseType<int32_t>(&headMessage[33], 4);
+	const auto integralAccumulator = parseType<int32_t>(&headMessage[37], 4);
+	const auto errorDerivative = parseType<int32_t>(&headMessage[41], 4);
 	talonInfoFrame->setItem("Device ID", deviceId);
 	talonInfoFrame->setItem("Bus Voltage", busVoltage);
 	talonInfoFrame->setItem("Output Current", outputCurrent);
@@ -1063,12 +1063,12 @@ int main(int argc, char** argv) {
 			switch(command) {
 				case COMMAND_TO_CLIENT_POWER_DISTRIBUTION_PANEL: {
 					// Display voltage
-					const auto voltage = parseType<float>((uint8_t*)&headMessage[1], 4);
+					const auto voltage = parseType<float>(&headMessage[1], 4);
 					voltageLabel->set_label(std::to_string(voltage).c_str());
 
 					// Display Currents
 					for(size_t index = 0; index < numCurrents; index++) {
-						const auto current = parseType<float>((uint8_t*)&headMessage[5 + index * sizeof(float)], 4);
+						const auto current = parseType<float>(&headMessage[5 + index * sizeof(float)], 4);
 						currentLabels[index]->set_label(std::to_string(current).c_str());
 					}
 				} break;

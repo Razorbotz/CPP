@@ -167,14 +167,17 @@ Enumerations</h2></td></tr>
 </table><table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a id="func-members" name="func-members"></a>
 Functions</h2></td></tr>
-<tr class="memitem:a09f1dc363acfd5fc92b7cb5864682ed7"><td class="memTemplParams" colspan="2">template&lt;typename T &gt; </td></tr>
-<tr class="memitem:a09f1dc363acfd5fc92b7cb5864682ed7"><td class="memTemplItemLeft" align="right" valign="top">T&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="control_8cpp.html#a09f1dc363acfd5fc92b7cb5864682ed7">parseType</a> (const uint8_t *array)</td></tr>
-<tr class="memdesc:a09f1dc363acfd5fc92b7cb5864682ed7"><td class="mdescLeft">&#160;</td><td class="mdescRight">Converts a byte array to a specified type.  <a href="control_8cpp.html#a09f1dc363acfd5fc92b7cb5864682ed7">More...</a><br /></td></tr>
-<tr class="separator:a09f1dc363acfd5fc92b7cb5864682ed7"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:ae843ec88032d0c12b3da0e058d79c597"><td class="memTemplParams" colspan="2">template&lt;typename T &gt; </td></tr>
-<tr class="memitem:ae843ec88032d0c12b3da0e058d79c597"><td class="memTemplItemLeft" align="right" valign="top">void&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="control_8cpp.html#ae843ec88032d0c12b3da0e058d79c597">insert</a> (T value, uint8_t *array, const size_t arrayLen)</td></tr>
-<tr class="memdesc:ae843ec88032d0c12b3da0e058d79c597"><td class="mdescLeft">&#160;</td><td class="mdescRight">Converts a variable of a given type to a byte array.  <a href="control_8cpp.html#ae843ec88032d0c12b3da0e058d79c597">More...</a><br /></td></tr>
-<tr class="separator:ae843ec88032d0c12b3da0e058d79c597"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a80481a1d1a192de35c3bdd6e8cd0480b"><td class="memItemLeft" align="right" valign="top">bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="control_8cpp.html#a80481a1d1a192de35c3bdd6e8cd0480b">isLittleEndian</a> ()</td></tr>
+<tr class="memdesc:a80481a1d1a192de35c3bdd6e8cd0480b"><td class="mdescLeft">&#160;</td><td class="mdescRight">Checks if the machine is little endian.  <a href="control_8cpp.html#a80481a1d1a192de35c3bdd6e8cd0480b">More...</a><br /></td></tr>
+<tr class="separator:a80481a1d1a192de35c3bdd6e8cd0480b"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ab75dbf7cb89e6312915df18b36e31c11"><td class="memTemplParams" colspan="2">template&lt;typename T &gt; </td></tr>
+<tr class="memitem:ab75dbf7cb89e6312915df18b36e31c11"><td class="memTemplItemLeft" align="right" valign="top">T&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="control_8cpp.html#ab75dbf7cb89e6312915df18b36e31c11">deserialize</a> (const uint8_t *array, const size_t size)</td></tr>
+<tr class="memdesc:ab75dbf7cb89e6312915df18b36e31c11"><td class="mdescLeft">&#160;</td><td class="mdescRight">Converts a byte array to a specified type.  <a href="control_8cpp.html#ab75dbf7cb89e6312915df18b36e31c11">More...</a><br /></td></tr>
+<tr class="separator:ab75dbf7cb89e6312915df18b36e31c11"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a934119fa24ff5d8de58220493539682f"><td class="memTemplParams" colspan="2">template&lt;typename T &gt; </td></tr>
+<tr class="memitem:a934119fa24ff5d8de58220493539682f"><td class="memTemplItemLeft" align="right" valign="top">void&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="control_8cpp.html#a934119fa24ff5d8de58220493539682f">serialize</a> (const T value, uint8_t *array, const size_t arrayLen)</td></tr>
+<tr class="memdesc:a934119fa24ff5d8de58220493539682f"><td class="mdescLeft">&#160;</td><td class="mdescRight">Converts a variable of a given type to a byte array.  <a href="control_8cpp.html#a934119fa24ff5d8de58220493539682f">More...</a><br /></td></tr>
+<tr class="separator:a934119fa24ff5d8de58220493539682f"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:adf84d53cc01a0696f7572926a431f978"><td class="memItemLeft" align="right" valign="top">bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="control_8cpp.html#adf84d53cc01a0696f7572926a431f978">quit</a> (const GdkEventAny *event)</td></tr>
 <tr class="memdesc:adf84d53cc01a0696f7572926a431f978"><td class="mdescLeft">&#160;</td><td class="mdescRight">Callback function to quit the program.  <a href="control_8cpp.html#adf84d53cc01a0696f7572926a431f978">More...</a><br /></td></tr>
 <tr class="separator:adf84d53cc01a0696f7572926a431f978"><td class="memSeparator" colspan="2">&#160;</td></tr>
@@ -567,6 +570,55 @@ Luke Simmons</dd></dl>
 
 </div>
 </div>
+<a id="ab75dbf7cb89e6312915df18b36e31c11" name="ab75dbf7cb89e6312915df18b36e31c11"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ab75dbf7cb89e6312915df18b36e31c11">&#9670;&nbsp;</a></span>deserialize()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename T &gt; </div>
+      <table class="memname">
+        <tr>
+          <td class="memname">T deserialize </td>
+          <td>(</td>
+          <td class="paramtype">const uint8_t *&#160;</td>
+          <td class="paramname"><em>array</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">const size_t&#160;</td>
+          <td class="paramname"><em>size</em>&#160;</td>
+        </tr>
+        <tr>
+          <td></td>
+          <td>)</td>
+          <td></td><td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Converts a byte array to a specified type. </p>
+<p >Takes a little-endian byte array of a serialized type and returns an object of that type.</p>
+<p >The conversion itself is big-endian, but since the data is in little-endian form, it gives a little-endian result. For example a byte array with a value of {1, 0, 0, 0} will return an integer with a value of 1.</p>
+<p >If the array's size is smaller than type, the higher-order (MSBs of type) bytes will be filled with zero.</p>
+<dl class="exception"><dt>Exceptions</dt><dd>
+  <table class="exception">
+    <tr><td class="paramname">std::out_of_range</td><td>If size of array to convert is larger than the type to be converted</td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramdir">[in]</td><td class="paramname">array</td><td>The array to be converted to a type T </td></tr>
+    <tr><td class="paramdir">[in]</td><td class="paramname">size</td><td>The size of the array. Must be less than the size of the type </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Value of type T filled with data from input array </dd></dl>
+
+</div>
+</div>
 <a id="a9d85dd49176a427fc2cdb68cae9ebc10" name="a9d85dd49176a427fc2cdb68cae9ebc10"></a>
 <h2 class="memtitle"><span class="permalink"><a href="#a9d85dd49176a427fc2cdb68cae9ebc10">&#9670;&nbsp;</a></span>disconnectFromServer()</h2>
 
@@ -687,58 +739,31 @@ Luke Simmons</dd></dl>
 
 </div>
 </div>
-<a id="ae843ec88032d0c12b3da0e058d79c597" name="ae843ec88032d0c12b3da0e058d79c597"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#ae843ec88032d0c12b3da0e058d79c597">&#9670;&nbsp;</a></span>insert()</h2>
+<a id="a80481a1d1a192de35c3bdd6e8cd0480b" name="a80481a1d1a192de35c3bdd6e8cd0480b"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a80481a1d1a192de35c3bdd6e8cd0480b">&#9670;&nbsp;</a></span>isLittleEndian()</h2>
 
 <div class="memitem">
 <div class="memproto">
-<div class="memtemplate">
-template&lt;typename T &gt; </div>
       <table class="memname">
         <tr>
-          <td class="memname">void insert </td>
+          <td class="memname">bool isLittleEndian </td>
           <td>(</td>
-          <td class="paramtype">T&#160;</td>
-          <td class="paramname"><em>value</em>, </td>
-        </tr>
-        <tr>
-          <td class="paramkey"></td>
+          <td class="paramname"></td><td>)</td>
           <td></td>
-          <td class="paramtype">uint8_t *&#160;</td>
-          <td class="paramname"><em>array</em>, </td>
-        </tr>
-        <tr>
-          <td class="paramkey"></td>
-          <td></td>
-          <td class="paramtype">const size_t&#160;</td>
-          <td class="paramname"><em>arrayLen</em>&#160;</td>
-        </tr>
-        <tr>
-          <td></td>
-          <td>)</td>
-          <td></td><td></td>
         </tr>
       </table>
 </div><div class="memdoc">
 
-<p>Converts a variable of a given type to a byte array. </p>
-<p >Takes a data type and fills byte array with its data in big-endian form. This code may produce undefined behavior on specific machines/compilers since it is not standards compliant and uses bitwise/casting trickery (endianness and int size).</p>
-<dl class="todo"><dt><b><a class="el" href="todo.html#_todo000002">Todo:</a></b></dt><dd>Make this standards compliant and platform independent by not using trickery.</dd></dl>
-<dl class="exception"><dt>Exceptions</dt><dd>
-  <table class="exception">
-    <tr><td class="paramname">std::out_of_range</td><td>If variable doesn't fit in array</td></tr>
+<p>Checks if the machine is little endian. </p>
+<p >Determines if the machine running the code is big or little endian. Checks if the first byte of a short is the least significant byte.</p>
+<dl class="section return"><dt>Returns</dt><dd>Endianness of the machine </dd></dl>
+<dl class="retval"><dt>Return values</dt><dd>
+  <table class="retval">
+    <tr><td class="paramname">true</td><td>Machine is Little-Endian (LE) </td></tr>
+    <tr><td class="paramname">false</td><td>Machine is Big-Endian (BE) </td></tr>
   </table>
   </dd>
 </dl>
-<dl class="params"><dt>Parameters</dt><dd>
-  <table class="params">
-    <tr><td class="paramdir">[in]</td><td class="paramname">value</td><td>Variable to fill array with </td></tr>
-    <tr><td class="paramdir">[out]</td><td class="paramname">array</td><td>The array to be converted to a type T </td></tr>
-    <tr><td class="paramdir">[in]</td><td class="paramname">arrayLen</td><td>Size of array to be filled </td></tr>
-  </table>
-  </dd>
-</dl>
-<dl class="section return"><dt>Returns</dt><dd>void </dd></dl>
 
 </div>
 </div>
@@ -845,37 +870,6 @@ template&lt;typename T &gt; </div>
 
 </div>
 </div>
-<a id="a09f1dc363acfd5fc92b7cb5864682ed7" name="a09f1dc363acfd5fc92b7cb5864682ed7"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a09f1dc363acfd5fc92b7cb5864682ed7">&#9670;&nbsp;</a></span>parseType()</h2>
-
-<div class="memitem">
-<div class="memproto">
-<div class="memtemplate">
-template&lt;typename T &gt; </div>
-      <table class="memname">
-        <tr>
-          <td class="memname">T parseType </td>
-          <td>(</td>
-          <td class="paramtype">const uint8_t *&#160;</td>
-          <td class="paramname"><em>array</em></td><td>)</td>
-          <td></td>
-        </tr>
-      </table>
-</div><div class="memdoc">
-
-<p>Converts a byte array to a specified type. </p>
-<p >Takes a big-endian type as a byte array and returns that type. Will truncate if array is longer than uint32_t (4 bytes). This code may produce undefined behavior on specific machines/compilers since it is not standards compliant and uses bitwise/casting trickery (endianness and type size).</p>
-<dl class="todo"><dt><b><a class="el" href="todo.html#_todo000001">Todo:</a></b></dt><dd>Add array length so that it can be size other than uint32_t (4 bytes) and not truncate.</dd></dl>
-<dl class="params"><dt>Parameters</dt><dd>
-  <table class="params">
-    <tr><td class="paramdir">[in]</td><td class="paramname">array</td><td>The array to be converted to a type T </td></tr>
-  </table>
-  </dd>
-</dl>
-<dl class="section return"><dt>Returns</dt><dd>Value of type T filled with data from input array </dd></dl>
-
-</div>
-</div>
 <a id="adf84d53cc01a0696f7572926a431f978" name="adf84d53cc01a0696f7572926a431f978"></a>
 <h2 class="memtitle"><span class="permalink"><a href="#adf84d53cc01a0696f7572926a431f978">&#9670;&nbsp;</a></span>quit()</h2>
 
@@ -949,6 +943,56 @@ template&lt;typename T &gt; </div>
 <dl class="params"><dt>Parameters</dt><dd>
   <table class="params">
     <tr><td class="paramdir">[in]</td><td class="paramname">listBoxRow</td><td>The selected row </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>void </dd></dl>
+
+</div>
+</div>
+<a id="a934119fa24ff5d8de58220493539682f" name="a934119fa24ff5d8de58220493539682f"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a934119fa24ff5d8de58220493539682f">&#9670;&nbsp;</a></span>serialize()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename T &gt; </div>
+      <table class="memname">
+        <tr>
+          <td class="memname">void serialize </td>
+          <td>(</td>
+          <td class="paramtype">const T&#160;</td>
+          <td class="paramname"><em>value</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">uint8_t *&#160;</td>
+          <td class="paramname"><em>array</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">const size_t&#160;</td>
+          <td class="paramname"><em>arrayLen</em>&#160;</td>
+        </tr>
+        <tr>
+          <td></td>
+          <td>)</td>
+          <td></td><td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Converts a variable of a given type to a byte array. </p>
+<p >Takes a data type and fills byte array with its data in little-endian form.</p>
+<p >The conversion itself is big-endian, but since the data expected is in little-endian form, it gives a little-endian result. For example an integer with a value of 1 will return a byte array with a value of {1, 0, 0, 0}.</p>
+<p >If the array's size is smaller than type, it will be filled with the most/least? significant bytes. If the array's size is larger than the type, then the higher bytes of the array will remain untouched.</p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramdir">[in]</td><td class="paramname">value</td><td>Variable to fill array with </td></tr>
+    <tr><td class="paramdir">[out]</td><td class="paramname">array</td><td>The array to be converted to a type T </td></tr>
+    <tr><td class="paramdir">[in]</td><td class="paramname">arrayLen</td><td>Size of array to be filled </td></tr>
   </table>
   </dd>
 </dl>

@@ -24,7 +24,6 @@
 */
 var menudata={children:[
 {text:"Main Page",url:"index.html"},
-{text:"Related Pages",url:"pages.html"},
 {text:"Classes",url:"annotated.html",children:[
 {text:"Class List",url:"annotated.html"},
 {text:"Class Index",url:"classes.html"},
@@ -46,7 +45,6 @@ var menudata={children:[
 {text:"m",url:"globals.html#index_m"},
 {text:"n",url:"globals.html#index_n"},
 {text:"o",url:"globals.html#index_o"},
-{text:"p",url:"globals.html#index_p"},
 {text:"q",url:"globals.html#index_q"},
 {text:"r",url:"globals.html#index_r"},
 {text:"s",url:"globals.html#index_s"},

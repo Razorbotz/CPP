@@ -1,12 +1,12 @@
 <map id="robotcontrollerclient/src/TalonInfoFrame.cpp" name="robotcontrollerclient/src/TalonInfoFrame.cpp">
-<area shape="rect" id="node1" title="Implementation for the TalonInfoFrame class." alt="" coords="193,5,356,47"/>
-<area shape="rect" id="node2" href="$TalonInfoFrame_8hpp.html" title="Declares a class, TalonInfoFrame, as an InfoFrame to information about a Talon motor." alt="" coords="206,95,343,121"/>
-<area shape="rect" id="node3" href="$InfoFrame_8hpp.html" title="Declares a class, InfoFrame, as a GTK Frame to show multiple InfoItem objects." alt="" coords="222,169,327,196"/>
-<area shape="rect" id="node4" title=" " alt="" coords="5,319,77,345"/>
-<area shape="rect" id="node5" title=" " alt="" coords="102,319,170,345"/>
-<area shape="rect" id="node6" title=" " alt="" coords="363,244,418,271"/>
-<area shape="rect" id="node7" title=" " alt="" coords="443,244,501,271"/>
-<area shape="rect" id="node8" title=" " alt="" coords="195,319,269,345"/>
-<area shape="rect" id="node9" title=" " alt="" coords="293,319,365,345"/>
-<area shape="rect" id="node10" href="$InfoItem_8hpp.html" title="Declares a class, InfoItem, as a GTK Box show information." alt="" coords="142,244,237,271"/>
+<area shape="rect" id="node1" title="Implementation for the TalonInfoFrame class." alt="" coords="193,5,356,45"/>
+<area shape="rect" id="node2" href="$TalonInfoFrame_8hpp.html" title="Declares a class, TalonInfoFrame, as an InfoFrame to information about a Talon motor." alt="" coords="206,93,343,119"/>
+<area shape="rect" id="node3" href="$InfoFrame_8hpp.html" title="Declares a class, InfoFrame, as a GTK Frame to show multiple InfoItem objects." alt="" coords="222,167,327,192"/>
+<area shape="rect" id="node4" title=" " alt="" coords="5,313,77,339"/>
+<area shape="rect" id="node5" title=" " alt="" coords="102,313,170,339"/>
+<area shape="rect" id="node6" title=" " alt="" coords="363,240,418,265"/>
+<area shape="rect" id="node7" title=" " alt="" coords="443,240,501,265"/>
+<area shape="rect" id="node8" title=" " alt="" coords="195,313,269,339"/>
+<area shape="rect" id="node9" title=" " alt="" coords="293,313,365,339"/>
+<area shape="rect" id="node10" href="$InfoItem_8hpp.html" title="Declares a class, InfoItem, as a GTK Box show information." alt="" coords="142,240,237,265"/>
 </map>

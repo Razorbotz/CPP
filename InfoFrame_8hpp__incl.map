@@ -1,10 +1,10 @@
 <map id="robotcontrollerclient/include/InfoFrame.hpp" name="robotcontrollerclient/include/InfoFrame.hpp">
-<area shape="rect" id="node1" title="Declares a class, InfoFrame, as a GTK Frame to show multiple InfoItem objects." alt="" coords="197,5,352,47"/>
-<area shape="rect" id="node2" title=" " alt="" coords="5,169,77,196"/>
-<area shape="rect" id="node3" title=" " alt="" coords="102,169,170,196"/>
-<area shape="rect" id="node4" title=" " alt="" coords="363,95,418,121"/>
-<area shape="rect" id="node5" title=" " alt="" coords="443,95,501,121"/>
-<area shape="rect" id="node6" title=" " alt="" coords="195,169,269,196"/>
-<area shape="rect" id="node7" title=" " alt="" coords="293,169,365,196"/>
-<area shape="rect" id="node8" href="$InfoItem_8hpp.html" title="Declares a class, InfoItem, as a GTK Box show information." alt="" coords="142,95,237,121"/>
+<area shape="rect" id="node1" title="Declares a class, InfoFrame, as a GTK Frame to show multiple InfoItem objects." alt="" coords="197,5,352,45"/>
+<area shape="rect" id="node2" title=" " alt="" coords="5,167,77,192"/>
+<area shape="rect" id="node3" title=" " alt="" coords="102,167,170,192"/>
+<area shape="rect" id="node4" title=" " alt="" coords="363,93,418,119"/>
+<area shape="rect" id="node5" title=" " alt="" coords="443,93,501,119"/>
+<area shape="rect" id="node6" title=" " alt="" coords="195,167,269,192"/>
+<area shape="rect" id="node7" title=" " alt="" coords="293,167,365,192"/>
+<area shape="rect" id="node8" href="$InfoItem_8hpp.html" title="Declares a class, InfoItem, as a GTK Box show information." alt="" coords="142,93,237,119"/>
 </map>

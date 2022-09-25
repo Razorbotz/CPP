@@ -1,5 +1,5 @@
 <map id="robotcontrollerclient/include/ButtonFactory.hpp" name="robotcontrollerclient/include/ButtonFactory.hpp">
-<area shape="rect" id="node1" title="Declares a class, ButtonFactory, to streamline creating GTK Buttons." alt="" coords="78,5,254,47"/>
-<area shape="rect" id="node2" href="$ButtonFactory_8cpp.html" title="Implementation for ButtonFactory." alt="" coords="5,95,159,136"/>
-<area shape="rect" id="node3" href="$control_8cpp.html" title="GUI client program to control and display info for with the robot." alt="" coords="183,95,317,136"/>
+<area shape="rect" id="node1" title="Declares a class, ButtonFactory, to streamline creating GTK Buttons." alt="" coords="78,5,254,45"/>
+<area shape="rect" id="node2" href="$ButtonFactory_8cpp.html" title="Implementation for ButtonFactory." alt="" coords="5,93,159,133"/>
+<area shape="rect" id="node3" href="$control_8cpp.html" title="GUI client program to control and display info for with the robot." alt="" coords="183,93,317,133"/>
 </map>

@@ -1,5 +1,5 @@
 <map id="robotcontrollerclient/include/WindowFactory.hpp" name="robotcontrollerclient/include/WindowFactory.hpp">
-<area shape="rect" id="node1" title="Declares a class, WindowFactory, to streamline creating GTK Windows." alt="" coords="79,5,263,47"/>
-<area shape="rect" id="node2" href="$WindowFactory_8cpp.html" title="Implementation for WindowFactory." alt="" coords="5,95,167,136"/>
-<area shape="rect" id="node3" href="$control_8cpp.html" title="GUI client program to control and display info for with the robot." alt="" coords="191,95,325,136"/>
+<area shape="rect" id="node1" title="Declares a class, WindowFactory, to streamline creating GTK Windows." alt="" coords="79,5,263,45"/>
+<area shape="rect" id="node2" href="$WindowFactory_8cpp.html" title="Implementation for WindowFactory." alt="" coords="5,93,167,133"/>
+<area shape="rect" id="node3" href="$control_8cpp.html" title="GUI client program to control and display info for with the robot." alt="" coords="191,93,325,133"/>
 </map>

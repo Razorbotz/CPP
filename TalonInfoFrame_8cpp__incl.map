@@ -1,12 +1,25 @@
 <map id="robotcontrollerclient/src/TalonInfoFrame.cpp" name="robotcontrollerclient/src/TalonInfoFrame.cpp">
-<area shape="rect" id="node1" title="Implementation for the TalonInfoFrame class." alt="" coords="193,5,356,45"/>
-<area shape="rect" id="node2" href="$TalonInfoFrame_8hpp.html" title="Declares a class, TalonInfoFrame, as an InfoFrame to information about a Talon motor." alt="" coords="206,93,343,119"/>
-<area shape="rect" id="node3" href="$InfoFrame_8hpp.html" title="Declares a class, InfoFrame, as a GTK Frame to show multiple InfoItem objects." alt="" coords="222,167,327,192"/>
-<area shape="rect" id="node4" title=" " alt="" coords="5,313,77,339"/>
-<area shape="rect" id="node5" title=" " alt="" coords="102,313,170,339"/>
-<area shape="rect" id="node6" title=" " alt="" coords="363,240,418,265"/>
-<area shape="rect" id="node7" title=" " alt="" coords="443,240,501,265"/>
-<area shape="rect" id="node8" title=" " alt="" coords="195,313,269,339"/>
-<area shape="rect" id="node9" title=" " alt="" coords="293,313,365,339"/>
-<area shape="rect" id="node10" href="$InfoItem_8hpp.html" title="Declares a class, InfoItem, as a GTK Box show information." alt="" coords="142,240,237,265"/>
+<area shape="rect" id="Node000001" title="Implementation for the TalonInfoFrame class." alt="" coords="191,5,353,46"/>
+<area shape="rect" id="Node000002" href="$TalonInfoFrame_8hpp.html" title="Declares a class, TalonInfoFrame, as an InfoFrame to information about a Talon motor." alt="" coords="204,94,340,120"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="274,46,274,79,269,79,269,46"/>
+<area shape="rect" id="Node000003" href="$InfoFrame_8hpp.html" title="Declares a class, InfoFrame, as a GTK Frame to show multiple InfoItem objects." alt="" coords="220,168,324,193"/>
+<area shape="poly" id="edge2_Node000002_Node000003" title=" " alt="" coords="274,120,274,153,269,153,269,120"/>
+<area shape="rect" id="Node000004" title=" " alt="" coords="5,315,77,341"/>
+<area shape="poly" id="edge3_Node000003_Node000004" title=" " alt="" coords="224,196,171,215,119,244,85,273,59,304,55,301,81,269,115,239,169,210,223,191"/>
+<area shape="rect" id="Node000005" title=" " alt="" coords="101,315,168,341"/>
+<area shape="poly" id="edge4_Node000003_Node000005" title=" " alt="" coords="220,192,171,209,149,224,131,243,125,256,124,271,128,301,123,302,118,271,120,255,127,240,145,220,168,204,218,187"/>
+<area shape="rect" id="Node000006" title=" " alt="" coords="360,241,413,267"/>
+<area shape="poly" id="edge5_Node000003_Node000006" title=" " alt="" coords="293,192,356,231,353,235,290,196"/>
+<area shape="rect" id="Node000007" title=" " alt="" coords="438,241,495,267"/>
+<area shape="poly" id="edge6_Node000003_Node000007" title=" " alt="" coords="306,191,425,235,423,240,304,196"/>
+<area shape="rect" id="Node000008" title=" " alt="" coords="192,315,266,341"/>
+<area shape="poly" id="edge7_Node000003_Node000008" title=" " alt="" coords="271,194,239,301,234,300,266,193"/>
+<area shape="rect" id="Node000009" title=" " alt="" coords="291,315,362,341"/>
+<area shape="poly" id="edge8_Node000003_Node000009" title=" " alt="" coords="279,193,319,300,314,302,274,195"/>
+<area shape="rect" id="Node000010" href="$InfoItem_8hpp.html" title="Declares a class, InfoItem, as a GTK Box show information." alt="" coords="141,241,234,267"/>
+<area shape="poly" id="edge9_Node000003_Node000010" title=" " alt="" coords="259,196,214,234,211,230,256,192"/>
+<area shape="poly" id="edge10_Node000010_Node000004" title=" " alt="" coords="164,270,80,311,78,306,162,265"/>
+<area shape="poly" id="edge11_Node000010_Node000005" title=" " alt="" coords="181,269,154,305,150,301,177,266"/>
+<area shape="poly" id="edge12_Node000010_Node000008" title=" " alt="" coords="197,266,217,301,212,303,192,269"/>
+<area shape="poly" id="edge13_Node000010_Node000009" title=" " alt="" coords="212,265,291,305,289,310,210,270"/>
 </map>

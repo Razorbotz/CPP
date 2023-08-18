@@ -1,9 +1,15 @@
 <map id="robotcontrollerclient/src/InfoItem.cpp" name="robotcontrollerclient/src/InfoItem.cpp">
-<area shape="rect" id="node1" title="Implementation for the InfoItem class." alt="" coords="67,5,202,45"/>
-<area shape="rect" id="node2" title=" " alt="" coords="58,93,113,119"/>
-<area shape="rect" id="node3" href="$InfoItem_8hpp.html" title="Declares a class, InfoItem, as a GTK Box show information." alt="" coords="137,93,231,119"/>
-<area shape="rect" id="node4" title=" " alt="" coords="5,167,77,192"/>
-<area shape="rect" id="node5" title=" " alt="" coords="102,167,170,192"/>
-<area shape="rect" id="node6" title=" " alt="" coords="195,167,269,192"/>
-<area shape="rect" id="node7" title=" " alt="" coords="293,167,365,192"/>
+<area shape="rect" id="Node000001" title="Implementation for the InfoItem class." alt="" coords="65,5,199,46"/>
+<area shape="rect" id="Node000002" title=" " alt="" coords="57,94,110,120"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="122,48,101,82,96,80,118,45"/>
+<area shape="rect" id="Node000003" href="$InfoItem_8hpp.html" title="Declares a class, InfoItem, as a GTK Box show information." alt="" coords="134,94,228,120"/>
+<area shape="poly" id="edge2_Node000001_Node000003" title=" " alt="" coords="146,45,168,80,163,82,142,48"/>
+<area shape="rect" id="Node000004" title=" " alt="" coords="5,168,77,193"/>
+<area shape="poly" id="edge3_Node000003_Node000004" title=" " alt="" coords="158,123,79,163,77,158,156,118"/>
+<area shape="rect" id="Node000005" title=" " alt="" coords="101,168,168,193"/>
+<area shape="poly" id="edge4_Node000003_Node000005" title=" " alt="" coords="176,121,152,156,148,153,171,118"/>
+<area shape="rect" id="Node000006" title=" " alt="" coords="192,168,266,193"/>
+<area shape="poly" id="edge5_Node000003_Node000006" title=" " alt="" coords="191,118,215,154,211,157,187,121"/>
+<area shape="rect" id="Node000007" title=" " alt="" coords="291,168,362,193"/>
+<area shape="poly" id="edge6_Node000003_Node000007" title=" " alt="" coords="207,118,290,158,288,163,204,123"/>
 </map>

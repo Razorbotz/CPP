@@ -1,5 +1,7 @@
 <map id="robotcontrollerclient/include/TalonInfoFrame.hpp" name="robotcontrollerclient/include/TalonInfoFrame.hpp">
-<area shape="rect" id="node1" title="Declares a class, TalonInfoFrame, as an InfoFrame to information about a Talon motor." alt="" coords="80,5,267,45"/>
-<area shape="rect" id="node2" href="$TalonInfoFrame_8cpp.html" title="Implementation for the TalonInfoFrame class." alt="" coords="5,93,168,133"/>
-<area shape="rect" id="node3" href="$control_8cpp.html" title="GUI client program to control and display info for with the robot." alt="" coords="193,93,327,133"/>
+<area shape="rect" id="Node000001" title="Declares a class, TalonInfoFrame, as an InfoFrame to information about a Talon motor." alt="" coords="79,5,265,46"/>
+<area shape="rect" id="Node000002" href="$TalonInfoFrame_8cpp.html" title="Implementation for the TalonInfoFrame class." alt="" coords="5,94,168,135"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="144,59,108,95,104,92,140,55"/>
+<area shape="rect" id="Node000003" href="$control_8cpp.html" title="GUI client program to control and display info for with the robot." alt="" coords="191,94,326,135"/>
+<area shape="poly" id="edge2_Node000001_Node000003" title=" " alt="" coords="204,55,241,92,237,95,200,59"/>
 </map>

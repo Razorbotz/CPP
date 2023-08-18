@@ -1,6 +1,9 @@
 <map id="robotcontrollerclient/include/RemoteRobot.hpp" name="robotcontrollerclient/include/RemoteRobot.hpp">
-<area shape="rect" id="node1" title="Declares a struct, RemoteRobot, to hold robot information." alt="" coords="27,5,201,45"/>
-<area shape="rect" id="node2" title=" " alt="" coords="5,93,60,119"/>
-<area shape="rect" id="node3" title=" " alt="" coords="85,93,143,119"/>
-<area shape="rect" id="node4" title=" " alt="" coords="167,93,226,119"/>
+<area shape="rect" id="Node000001" title="Declares a struct, RemoteRobot, to hold robot information." alt="" coords="25,5,199,46"/>
+<area shape="rect" id="Node000002" title=" " alt="" coords="5,94,59,120"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="94,48,57,85,53,81,90,45"/>
+<area shape="rect" id="Node000003" title=" " alt="" coords="83,94,141,120"/>
+<area shape="poly" id="edge2_Node000001_Node000003" title=" " alt="" coords="115,46,115,79,109,79,109,46"/>
+<area shape="rect" id="Node000004" title=" " alt="" coords="165,94,222,120"/>
+<area shape="poly" id="edge3_Node000001_Node000004" title=" " alt="" coords="134,44,172,82,169,85,130,48"/>
 </map>

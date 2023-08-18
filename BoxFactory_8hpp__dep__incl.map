@@ -1,5 +1,7 @@
 <map id="robotcontrollerclient/include/BoxFactory.hpp" name="robotcontrollerclient/include/BoxFactory.hpp">
-<area shape="rect" id="node1" title="Declares a class, BoxFactory, to streamline creating GTK Boxes." alt="" coords="74,5,234,45"/>
-<area shape="rect" id="node2" href="$BoxFactory_8cpp.html" title="Implementation for BoxFactory." alt="" coords="5,93,143,133"/>
-<area shape="rect" id="node3" href="$control_8cpp.html" title="GUI client program to control and display info for with the robot." alt="" coords="167,93,301,133"/>
+<area shape="rect" id="Node000001" title="Declares a class, BoxFactory, to streamline creating GTK Boxes." alt="" coords="74,5,233,46"/>
+<area shape="rect" id="Node000002" href="$BoxFactory_8cpp.html" title="Implementation for BoxFactory." alt="" coords="5,94,142,135"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="127,59,94,95,90,92,124,55"/>
+<area shape="rect" id="Node000003" href="$control_8cpp.html" title="GUI client program to control and display info for with the robot." alt="" coords="166,94,301,135"/>
+<area shape="poly" id="edge2_Node000001_Node000003" title=" " alt="" coords="183,55,217,92,213,95,180,59"/>
 </map>

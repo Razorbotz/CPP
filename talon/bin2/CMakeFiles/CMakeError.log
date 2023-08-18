@@ -1,0 +1,216 @@
+Determining if the pthread_create exist failed with the following output:
+Change Dir: /home/team/SoftwareDevelopment/C++/talon/bin/CMakeFiles/CMakeTmp
+
+Run Build Command:"/usr/bin/make" "cmTC_aa683/fast"
+/usr/bin/make -f CMakeFiles/cmTC_aa683.dir/build.make CMakeFiles/cmTC_aa683.dir/build
+make[1]: Entering directory '/home/team/SoftwareDevelopment/C++/talon/bin/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_aa683.dir/CheckSymbolExists.c.o
+/usr/bin/cc    -o CMakeFiles/cmTC_aa683.dir/CheckSymbolExists.c.o   -c /home/team/SoftwareDevelopment/C++/talon/bin/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+Linking C executable cmTC_aa683
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_aa683.dir/link.txt --verbose=1
+/usr/bin/cc      -rdynamic CMakeFiles/cmTC_aa683.dir/CheckSymbolExists.c.o  -o cmTC_aa683 
+CMakeFiles/cmTC_aa683.dir/CheckSymbolExists.c.o: In function `main':
+CheckSymbolExists.c:(.text+0x14): undefined reference to `pthread_create'
+CheckSymbolExists.c:(.text+0x18): undefined reference to `pthread_create'
+collect2: error: ld returned 1 exit status
+CMakeFiles/cmTC_aa683.dir/build.make:97: recipe for target 'cmTC_aa683' failed
+make[1]: *** [cmTC_aa683] Error 1
+make[1]: Leaving directory '/home/team/SoftwareDevelopment/C++/talon/bin/CMakeFiles/CMakeTmp'
+Makefile:126: recipe for target 'cmTC_aa683/fast' failed
+make: *** [cmTC_aa683/fast] Error 2
+
+File /home/team/SoftwareDevelopment/C++/talon/bin/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+/* */
+#include <pthread.h>
+
+int main(int argc, char** argv)
+{
+  (void)argv;
+#ifndef pthread_create
+  return ((int*)(&pthread_create))[argc];
+#else
+  (void)argc;
+  return 0;
+#endif
+}
+
+Determining if the pthread_create exist failed with the following output:
+Change Dir: /home/team/SoftwareDevelopment/C++/talon/bin/CMakeFiles/CMakeTmp
+
+Run Build Command:"/usr/bin/make" "cmTC_95b1e/fast"
+/usr/bin/make -f CMakeFiles/cmTC_95b1e.dir/build.make CMakeFiles/cmTC_95b1e.dir/build
+make[1]: Entering directory '/home/team/SoftwareDevelopment/C++/talon/bin/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_95b1e.dir/CheckSymbolExists.c.o
+/usr/bin/cc    -o CMakeFiles/cmTC_95b1e.dir/CheckSymbolExists.c.o   -c /home/team/SoftwareDevelopment/C++/talon/bin/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+Linking C executable cmTC_95b1e
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_95b1e.dir/link.txt --verbose=1
+/usr/bin/cc      -rdynamic CMakeFiles/cmTC_95b1e.dir/CheckSymbolExists.c.o  -o cmTC_95b1e 
+CMakeFiles/cmTC_95b1e.dir/CheckSymbolExists.c.o: In function `main':
+CheckSymbolExists.c:(.text+0x14): undefined reference to `pthread_create'
+CheckSymbolExists.c:(.text+0x18): undefined reference to `pthread_create'
+collect2: error: ld returned 1 exit status
+CMakeFiles/cmTC_95b1e.dir/build.make:97: recipe for target 'cmTC_95b1e' failed
+make[1]: *** [cmTC_95b1e] Error 1
+make[1]: Leaving directory '/home/team/SoftwareDevelopment/C++/talon/bin/CMakeFiles/CMakeTmp'
+Makefile:126: recipe for target 'cmTC_95b1e/fast' failed
+make: *** [cmTC_95b1e/fast] Error 2
+
+File /home/team/SoftwareDevelopment/C++/talon/bin/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+/* */
+#include <pthread.h>
+
+int main(int argc, char** argv)
+{
+  (void)argv;
+#ifndef pthread_create
+  return ((int*)(&pthread_create))[argc];
+#else
+  (void)argc;
+  return 0;
+#endif
+}
+
+Determining if the pthread_create exist failed with the following output:
+Change Dir: /home/team/SoftwareDevelopment/C++/talon/bin/CMakeFiles/CMakeTmp
+
+Run Build Command:"/usr/bin/make" "cmTC_f5b80/fast"
+/usr/bin/make -f CMakeFiles/cmTC_f5b80.dir/build.make CMakeFiles/cmTC_f5b80.dir/build
+make[1]: Entering directory '/home/team/SoftwareDevelopment/C++/talon/bin/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_f5b80.dir/CheckSymbolExists.c.o
+/usr/bin/cc    -o CMakeFiles/cmTC_f5b80.dir/CheckSymbolExists.c.o   -c /home/team/SoftwareDevelopment/C++/talon/bin/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+Linking C executable cmTC_f5b80
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_f5b80.dir/link.txt --verbose=1
+/usr/bin/cc      -rdynamic CMakeFiles/cmTC_f5b80.dir/CheckSymbolExists.c.o  -o cmTC_f5b80 
+CMakeFiles/cmTC_f5b80.dir/CheckSymbolExists.c.o: In function `main':
+CheckSymbolExists.c:(.text+0x14): undefined reference to `pthread_create'
+CheckSymbolExists.c:(.text+0x18): undefined reference to `pthread_create'
+collect2: error: ld returned 1 exit status
+CMakeFiles/cmTC_f5b80.dir/build.make:97: recipe for target 'cmTC_f5b80' failed
+make[1]: *** [cmTC_f5b80] Error 1
+make[1]: Leaving directory '/home/team/SoftwareDevelopment/C++/talon/bin/CMakeFiles/CMakeTmp'
+Makefile:126: recipe for target 'cmTC_f5b80/fast' failed
+make: *** [cmTC_f5b80/fast] Error 2
+
+File /home/team/SoftwareDevelopment/C++/talon/bin/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+/* */
+#include <pthread.h>
+
+int main(int argc, char** argv)
+{
+  (void)argv;
+#ifndef pthread_create
+  return ((int*)(&pthread_create))[argc];
+#else
+  (void)argc;
+  return 0;
+#endif
+}
+
+Determining if the pthread_create exist failed with the following output:
+Change Dir: /home/team/SoftwareDevelopment/C++/talon/bin/CMakeFiles/CMakeTmp
+
+Run Build Command:"/usr/bin/make" "cmTC_f3912/fast"
+/usr/bin/make -f CMakeFiles/cmTC_f3912.dir/build.make CMakeFiles/cmTC_f3912.dir/build
+make[1]: Entering directory '/home/team/SoftwareDevelopment/C++/talon/bin/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_f3912.dir/CheckSymbolExists.c.o
+/usr/bin/cc    -o CMakeFiles/cmTC_f3912.dir/CheckSymbolExists.c.o   -c /home/team/SoftwareDevelopment/C++/talon/bin/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+Linking C executable cmTC_f3912
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_f3912.dir/link.txt --verbose=1
+/usr/bin/cc      -rdynamic CMakeFiles/cmTC_f3912.dir/CheckSymbolExists.c.o  -o cmTC_f3912 
+CMakeFiles/cmTC_f3912.dir/CheckSymbolExists.c.o: In function `main':
+CheckSymbolExists.c:(.text+0x14): undefined reference to `pthread_create'
+CheckSymbolExists.c:(.text+0x18): undefined reference to `pthread_create'
+collect2: error: ld returned 1 exit status
+CMakeFiles/cmTC_f3912.dir/build.make:97: recipe for target 'cmTC_f3912' failed
+make[1]: *** [cmTC_f3912] Error 1
+make[1]: Leaving directory '/home/team/SoftwareDevelopment/C++/talon/bin/CMakeFiles/CMakeTmp'
+Makefile:126: recipe for target 'cmTC_f3912/fast' failed
+make: *** [cmTC_f3912/fast] Error 2
+
+File /home/team/SoftwareDevelopment/C++/talon/bin/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+/* */
+#include <pthread.h>
+
+int main(int argc, char** argv)
+{
+  (void)argv;
+#ifndef pthread_create
+  return ((int*)(&pthread_create))[argc];
+#else
+  (void)argc;
+  return 0;
+#endif
+}
+
+Determining if the pthread_create exist failed with the following output:
+Change Dir: /home/team/SoftwareDevelopment/C++/talon/bin/CMakeFiles/CMakeTmp
+
+Run Build Command:"/usr/bin/make" "cmTC_bd210/fast"
+/usr/bin/make -f CMakeFiles/cmTC_bd210.dir/build.make CMakeFiles/cmTC_bd210.dir/build
+make[1]: Entering directory '/home/team/SoftwareDevelopment/C++/talon/bin/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_bd210.dir/CheckSymbolExists.c.o
+/usr/bin/cc    -o CMakeFiles/cmTC_bd210.dir/CheckSymbolExists.c.o   -c /home/team/SoftwareDevelopment/C++/talon/bin/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+Linking C executable cmTC_bd210
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_bd210.dir/link.txt --verbose=1
+/usr/bin/cc      -rdynamic CMakeFiles/cmTC_bd210.dir/CheckSymbolExists.c.o  -o cmTC_bd210 
+CMakeFiles/cmTC_bd210.dir/CheckSymbolExists.c.o: In function `main':
+CheckSymbolExists.c:(.text+0x14): undefined reference to `pthread_create'
+CheckSymbolExists.c:(.text+0x18): undefined reference to `pthread_create'
+collect2: error: ld returned 1 exit status
+CMakeFiles/cmTC_bd210.dir/build.make:97: recipe for target 'cmTC_bd210' failed
+make[1]: *** [cmTC_bd210] Error 1
+make[1]: Leaving directory '/home/team/SoftwareDevelopment/C++/talon/bin/CMakeFiles/CMakeTmp'
+Makefile:126: recipe for target 'cmTC_bd210/fast' failed
+make: *** [cmTC_bd210/fast] Error 2
+
+File /home/team/SoftwareDevelopment/C++/talon/bin/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+/* */
+#include <pthread.h>
+
+int main(int argc, char** argv)
+{
+  (void)argv;
+#ifndef pthread_create
+  return ((int*)(&pthread_create))[argc];
+#else
+  (void)argc;
+  return 0;
+#endif
+}
+
+Determining if the pthread_create exist failed with the following output:
+Change Dir: /home/team/SoftwareDevelopment/C++/talon/bin/CMakeFiles/CMakeTmp
+
+Run Build Command:"/usr/bin/make" "cmTC_3abb5/fast"
+/usr/bin/make -f CMakeFiles/cmTC_3abb5.dir/build.make CMakeFiles/cmTC_3abb5.dir/build
+make[1]: Entering directory '/home/team/SoftwareDevelopment/C++/talon/bin/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_3abb5.dir/CheckSymbolExists.c.o
+/usr/bin/cc    -o CMakeFiles/cmTC_3abb5.dir/CheckSymbolExists.c.o   -c /home/team/SoftwareDevelopment/C++/talon/bin/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+Linking C executable cmTC_3abb5
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_3abb5.dir/link.txt --verbose=1
+/usr/bin/cc      -rdynamic CMakeFiles/cmTC_3abb5.dir/CheckSymbolExists.c.o  -o cmTC_3abb5 
+CMakeFiles/cmTC_3abb5.dir/CheckSymbolExists.c.o: In function `main':
+CheckSymbolExists.c:(.text+0x14): undefined reference to `pthread_create'
+CheckSymbolExists.c:(.text+0x18): undefined reference to `pthread_create'
+collect2: error: ld returned 1 exit status
+CMakeFiles/cmTC_3abb5.dir/build.make:97: recipe for target 'cmTC_3abb5' failed
+make[1]: *** [cmTC_3abb5] Error 1
+make[1]: Leaving directory '/home/team/SoftwareDevelopment/C++/talon/bin/CMakeFiles/CMakeTmp'
+Makefile:126: recipe for target 'cmTC_3abb5/fast' failed
+make: *** [cmTC_3abb5/fast] Error 2
+
+File /home/team/SoftwareDevelopment/C++/talon/bin/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+/* */
+#include <pthread.h>
+
+int main(int argc, char** argv)
+{
+  (void)argv;
+#ifndef pthread_create
+  return ((int*)(&pthread_create))[argc];
+#else
+  (void)argc;
+  return 0;
+#endif
+}
+

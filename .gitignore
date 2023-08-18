@@ -1,0 +1,11 @@
+robotcontrollerclient/bin
+robotcontrollerclient/build
+.vscode/
+robotcontrollerclient/.idea/
+robotcontrollerclient/cmake-build-debug/
+html/
+
+latex/
+
+robotcontrollerclient/obj/
+update/

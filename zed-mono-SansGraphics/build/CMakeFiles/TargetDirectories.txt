@@ -1,0 +1,3 @@
+/home/team/SoftwareDevelopment/C++/zed-mono-SansGraphics/build/CMakeFiles/rebuild_cache.dir
+/home/team/SoftwareDevelopment/C++/zed-mono-SansGraphics/build/CMakeFiles/ZED_Reloc_Aruco.dir
+/home/team/SoftwareDevelopment/C++/zed-mono-SansGraphics/build/CMakeFiles/edit_cache.dir

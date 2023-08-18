@@ -1,0 +1,14 @@
+#IncludeRegexLine: ^[ 	]*[#%][ 	]*(include|import)[ 	]*[<"]([^">]+)([">])
+
+#IncludeRegexScan: ^.*$
+
+#IncludeRegexComplain: ^$
+
+#IncludeRegexTransform: 
+
+/home/team/SoftwareDevelopment/C++/talon/talon.cpp
+ctre/Phoenix.h
+/home/team/SoftwareDevelopment/C++/talon/ctre/Phoenix.h
+ctre/phoenix/platform/Platform.h
+/home/team/SoftwareDevelopment/C++/talon/ctre/phoenix/platform/Platform.h
+

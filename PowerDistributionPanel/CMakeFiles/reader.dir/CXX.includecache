@@ -1,0 +1,46 @@
+#IncludeRegexLine: ^[ 	]*#[ 	]*(include|import)[ 	]*[<"]([^">]+)([">])
+
+#IncludeRegexScan: ^.*$
+
+#IncludeRegexComplain: ^$
+
+#IncludeRegexTransform: 
+
+/home/nvidia/SoftwareDevelopment/C++/PowerDistributionPanel/src/PowerDistributionPanel.cpp
+PowerDistributionPanel.hpp
+/home/nvidia/SoftwareDevelopment/C++/PowerDistributionPanel/src/PowerDistributionPanel.hpp
+ncurses.h
+-
+
+/home/nvidia/SoftwareDevelopment/C++/PowerDistributionPanel/src/reader.cpp
+stdio.h
+-
+stdlib.h
+-
+unistd.h
+-
+string.h
+-
+net/if.h
+-
+sys/types.h
+-
+sys/socket.h
+-
+sys/ioctl.h
+-
+linux/can.h
+-
+linux/can/raw.h
+-
+ncurses.h
+-
+PowerDistributionPanel.hpp
+/home/nvidia/SoftwareDevelopment/C++/PowerDistributionPanel/src/PowerDistributionPanel.hpp
+
+include/PowerDistributionPanel.hpp
+linux/can.h
+-
+linux/can/raw.h
+-
+

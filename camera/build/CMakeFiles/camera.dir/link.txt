@@ -1,0 +1,1 @@
+/usr/bin/c++    -rdynamic CMakeFiles/camera.dir/source/camera.cpp.o  -o camera -lgstreamer-1.0 -lgobject-2.0 -lglib-2.0 

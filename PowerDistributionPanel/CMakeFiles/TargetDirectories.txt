@@ -1,0 +1,3 @@
+/home/nvidia/SoftwareDevelopment/C++/PowerDistributionPanel/CMakeFiles/rebuild_cache.dir
+/home/nvidia/SoftwareDevelopment/C++/PowerDistributionPanel/CMakeFiles/edit_cache.dir
+/home/nvidia/SoftwareDevelopment/C++/PowerDistributionPanel/CMakeFiles/reader.dir

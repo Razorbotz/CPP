@@ -1,9 +1,9 @@
 <map id="robotcontrollerclient/include/BoxFactory.hpp" name="robotcontrollerclient/include/BoxFactory.hpp">
 <area shape="rect" id="Node000001" title="Declares a class, BoxFactory, to streamline creating GTK Boxes." alt="" coords="44,5,203,46"/>
 <area shape="rect" id="Node000002" title=" " alt="" coords="5,94,63,120"/>
-<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="103,48,60,86,57,82,99,44"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="103,48,61,86,57,82,99,44"/>
 <area shape="rect" id="Node000003" title=" " alt="" coords="86,94,161,120"/>
-<area shape="poly" id="edge2_Node000001_Node000003" title=" " alt="" coords="126,46,126,79,121,79,121,46"/>
+<area shape="poly" id="edge2_Node000001_Node000003" title=" " alt="" coords="126,46,126,78,121,78,121,46"/>
 <area shape="rect" id="Node000004" title=" " alt="" coords="185,94,256,120"/>
-<area shape="poly" id="edge3_Node000001_Node000004" title=" " alt="" coords="149,44,196,82,193,86,146,48"/>
+<area shape="poly" id="edge3_Node000001_Node000004" title=" " alt="" coords="149,44,196,82,192,86,146,48"/>
 </map>

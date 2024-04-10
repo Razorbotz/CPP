@@ -1,16 +1,16 @@
 <map id="robotcontrollerclient/include/InfoFrame.hpp" name="robotcontrollerclient/include/InfoFrame.hpp">
 <area shape="rect" id="Node000001" title="Declares a class, InfoFrame, as a GTK Frame to show multiple InfoItem objects." alt="" coords="287,5,441,46"/>
 <area shape="rect" id="Node000002" href="$TalonInfoFrame_8hpp.html" title="Declares a class, TalonInfoFrame, as an InfoFrame to information about a Talon motor." alt="" coords="61,94,246,135"/>
-<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="304,54,202,96,200,91,302,50"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="303,55,202,96,200,91,301,50"/>
 <area shape="rect" id="Node000005" href="$VictorInfoFrame_8hpp.html" title="Declares a class, VictorInfoFrame, as an InfoFrame to information about a Victor motor." alt="" coords="270,94,458,135"/>
-<area shape="poly" id="edge4_Node000001_Node000005" title=" " alt="" coords="367,61,367,94,361,94,361,61"/>
+<area shape="poly" id="edge4_Node000001_Node000005" title=" " alt="" coords="367,62,367,94,361,94,361,62"/>
 <area shape="rect" id="Node000007" href="$InfoFrame_8cpp.html" title="Implementation for the InfoFrame class." alt="" coords="482,94,616,135"/>
-<area shape="poly" id="edge7_Node000001_Node000007" title=" " alt="" coords="420,50,508,91,506,96,418,55"/>
+<area shape="poly" id="edge7_Node000001_Node000007" title=" " alt="" coords="421,50,508,91,506,96,419,55"/>
 <area shape="rect" id="Node000003" href="$TalonInfoFrame_8cpp.html" title="Implementation for the TalonInfoFrame class." alt="" coords="5,183,168,223"/>
-<area shape="poly" id="edge2_Node000002_Node000003" title=" " alt="" coords="131,148,104,184,99,181,127,145"/>
+<area shape="poly" id="edge2_Node000002_Node000003" title=" " alt="" coords="131,149,104,184,99,181,127,146"/>
 <area shape="rect" id="Node000004" href="$control_8cpp.html" title="GUI client program to control and display info for with the robot." alt="" coords="191,183,326,223"/>
-<area shape="poly" id="edge3_Node000002_Node000004" title=" " alt="" coords="190,142,236,180,233,184,187,146"/>
-<area shape="poly" id="edge6_Node000005_Node000004" title=" " alt="" coords="330,146,284,184,281,180,327,142"/>
+<area shape="poly" id="edge3_Node000002_Node000004" title=" " alt="" coords="190,143,236,180,233,184,187,147"/>
+<area shape="poly" id="edge6_Node000005_Node000004" title=" " alt="" coords="330,147,284,184,281,180,327,143"/>
 <area shape="rect" id="Node000006" href="$VictorInfoFrame_8cpp.html" title="Implementation for the TalonInfoFrame class." alt="" coords="350,183,514,223"/>
-<area shape="poly" id="edge5_Node000005_Node000006" title=" " alt="" coords="390,145,419,181,414,184,386,148"/>
+<area shape="poly" id="edge5_Node000005_Node000006" title=" " alt="" coords="391,145,419,181,414,184,386,149"/>
 </map>

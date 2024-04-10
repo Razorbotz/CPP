@@ -1,11 +1,11 @@
 <map id="robotcontrollerclient/src/BoxFactory.cpp" name="robotcontrollerclient/src/BoxFactory.cpp">
 <area shape="rect" id="Node000001" title="Implementation for BoxFactory." alt="" coords="55,5,192,46"/>
 <area shape="rect" id="Node000002" href="$BoxFactory_8hpp.html" title="Declares a class, BoxFactory, to streamline creating GTK Boxes." alt="" coords="68,94,179,120"/>
-<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="126,46,126,79,121,79,121,46"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="126,46,126,78,121,78,121,46"/>
 <area shape="rect" id="Node000003" title=" " alt="" coords="5,168,63,193"/>
-<area shape="poly" id="edge2_Node000002_Node000003" title=" " alt="" coords="110,122,62,161,58,156,107,118"/>
+<area shape="poly" id="edge2_Node000002_Node000003" title=" " alt="" coords="110,122,63,160,59,156,107,118"/>
 <area shape="rect" id="Node000004" title=" " alt="" coords="86,168,161,193"/>
-<area shape="poly" id="edge3_Node000002_Node000004" title=" " alt="" coords="126,120,126,153,121,153,121,120"/>
+<area shape="poly" id="edge3_Node000002_Node000004" title=" " alt="" coords="126,120,126,152,121,152,121,120"/>
 <area shape="rect" id="Node000005" title=" " alt="" coords="185,168,256,193"/>
-<area shape="poly" id="edge4_Node000002_Node000005" title=" " alt="" coords="141,118,194,157,191,161,138,122"/>
+<area shape="poly" id="edge4_Node000002_Node000005" title=" " alt="" coords="141,118,194,156,191,161,138,122"/>
 </map>

@@ -1,9 +1,9 @@
 <map id="Graphical Class Hierarchy" name="Graphical Class Hierarchy">
 <area shape="rect" id="Node000000" title=" " alt="" coords="5,31,91,56"/>
 <area shape="rect" id="Node000001" href="$classInfoFrame.html" title="GTK Frame to show multiple InfoItem objects." alt="" coords="139,31,219,56"/>
-<area shape="poly" id="edge2_Node000000_Node000001" title=" " alt="" coords="106,41,138,41,138,46,106,46"/>
+<area shape="poly" id="edge2_Node000000_Node000001" title=" " alt="" coords="107,41,138,41,138,46,107,46"/>
 <area shape="rect" id="Node000002" href="$classTalonInfoFrame.html" title="InfoFrame to display information about Talon motors." alt="" coords="268,5,380,31"/>
-<area shape="poly" id="edge3_Node000001_Node000002" title=" " alt="" coords="233,31,267,25,268,31,234,37"/>
+<area shape="poly" id="edge3_Node000001_Node000002" title=" " alt="" coords="234,31,267,25,268,31,235,36"/>
 <area shape="rect" id="Node000003" href="$classVictorInfoFrame.html" title="InfoFrame to display information about Victor motors." alt="" coords="267,55,381,80"/>
-<area shape="poly" id="edge4_Node000001_Node000003" title=" " alt="" coords="234,50,267,55,266,61,233,55"/>
+<area shape="poly" id="edge4_Node000001_Node000003" title=" " alt="" coords="235,50,267,55,266,61,234,55"/>
 </map>

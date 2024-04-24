@@ -374,6 +374,16 @@ Object BinaryMessage::decodeObject(std::list<uint8_t>::iterator& currentByte){
     if(object.type!=TYPE::OBJECT){
         std::cout << "data not in sync OBJECT" << std::endl;
         std::cout << "Data of type : " << object.type << std::endl;
+        uint64_t elementCount = decodeSizeBytes(currentByte);
+        for(int index=0; index < elementCount ; index++){
+            Element element = decodeElement(currentByte);
+            object.elementList.push_back(element);
+        }
+        uint64_t objectCount = decodeSizeBytes(currentByte);
+        for(int index=0; index < objectCount ; index++){
+            Object object = decodeObject(currentByte);
+            object.children.push_back(object);
+        }
     }
     else{
         uint64_t elementCount = decodeSizeBytes(currentByte);
@@ -397,6 +407,12 @@ std::string BinaryMessage::decodeLabel(std::list<uint8_t>::iterator& currentByte
     if(dataType != TYPE::STRING){
         std::cout << "data not in sync LABEL" << std::endl;
         std::cout << "Label of type: " << dataType << std::endl;
+        uint64_t size=decodeSizeBytes(currentByte);
+        std::string label="";
+        for(int index=0; index < size ; index++){
+            label += *(currentByte);
+            currentByte++;
+        }
     }
     else{
         uint64_t size=decodeSizeBytes(currentByte);

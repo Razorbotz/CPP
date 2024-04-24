@@ -25,6 +25,7 @@
 #include "BinaryMessage.hpp"
 
 #define PORT 31337 
+#define VIDEO_PORT 31338
 
 float parseFloat(const uint8_t* array){
     uint32_t axisYInteger=0;
@@ -81,6 +82,7 @@ Gtk::FlowBox* sensorBox;
 
 Gtk::Window* window;
 int sock = 0; 
+int video_sock = 0;
 bool connected=false;
 
 std::vector<InfoFrame*> infoFrameList;
@@ -269,10 +271,26 @@ void connectToServer(){
     memset(&serv_addr, '0', sizeof(serv_addr)); 
 
     serv_addr.sin_family = AF_INET; 
-    serv_addr.sin_port = htons(PORT); 
+    serv_addr.sin_port = htons(PORT);
+
+    struct sockaddr_in videoAddress; 
+    int videoBytesRead; 
+    struct sockaddr_in video_addr; 
+
+    memset(&video_addr, '0', sizeof(video_addr)); 
+
+    video_addr.sin_family = AF_INET; 
+    video_addr.sin_port = htons(VIDEO_PORT);
 
     char buffer[1024] = {0}; 
     if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) { 
+
+        printf("\n Socket creation error \n");
+
+        setDisconnectedState();
+        return; 
+    } 
+    if ((video_sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) { 
 
         printf("\n Socket creation error \n");
 
@@ -290,6 +308,14 @@ void connectToServer(){
         return;
     } 
     if(connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
+        printf("\nConnection Failed \n");
+
+        Gtk::MessageDialog dialog(*window,"Connection Failed",false,Gtk::MESSAGE_QUESTION,Gtk::BUTTONS_OK);
+        int result=dialog.run();
+
+        setDisconnectedState();
+    }
+    else if(connect(video_sock, (struct sockaddr *)&video_addr, sizeof(video_addr)) < 0){
         printf("\nConnection Failed \n");
 
         Gtk::MessageDialog dialog(*window,"Connection Failed",false,Gtk::MESSAGE_QUESTION,Gtk::BUTTONS_OK);
@@ -418,7 +444,7 @@ void rowActivated(Gtk::ListBoxRow* listBoxRow){
 
 void shutdownRobot(){
     int messageSize=2;
-    uint8_t command=9;// shutdown
+    uint8_t command=10;// shutdown
     uint8_t message[messageSize];
     message[0]=messageSize;
     message[1]=command;
@@ -703,7 +729,7 @@ void adjustRobotList(){
 
  
 int main(int argc, char** argv) { 
-     Glib::RefPtr<Gtk::Application> application = Gtk::Application::create(argc, argv, "edu.uark.razorbotz");
+    Glib::RefPtr<Gtk::Application> application = Gtk::Application::create(argc, argv, "edu.uark.razorbotz");
     setupGUI(application);
 
     std::thread broadcastListenThread(broadcastListen);

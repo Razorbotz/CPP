@@ -273,24 +273,8 @@ void connectToServer(){
     serv_addr.sin_family = AF_INET; 
     serv_addr.sin_port = htons(PORT);
 
-    struct sockaddr_in videoAddress; 
-    int videoBytesRead; 
-    struct sockaddr_in video_addr; 
-
-    memset(&video_addr, '0', sizeof(video_addr)); 
-
-    video_addr.sin_family = AF_INET; 
-    video_addr.sin_port = htons(VIDEO_PORT);
-
     char buffer[1024] = {0}; 
     if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) { 
-
-        printf("\n Socket creation error \n");
-
-        setDisconnectedState();
-        return; 
-    } 
-    if ((video_sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) { 
 
         printf("\n Socket creation error \n");
 
@@ -308,14 +292,6 @@ void connectToServer(){
         return;
     } 
     if(connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
-        printf("\nConnection Failed \n");
-
-        Gtk::MessageDialog dialog(*window,"Connection Failed",false,Gtk::MESSAGE_QUESTION,Gtk::BUTTONS_OK);
-        int result=dialog.run();
-
-        setDisconnectedState();
-    }
-    else if(connect(video_sock, (struct sockaddr *)&video_addr, sizeof(video_addr)) < 0){
         printf("\nConnection Failed \n");
 
         Gtk::MessageDialog dialog(*window,"Connection Failed",false,Gtk::MESSAGE_QUESTION,Gtk::BUTTONS_OK);

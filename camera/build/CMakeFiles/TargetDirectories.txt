@@ -1,3 +1,0 @@
-/home/team/SoftwareDevelopment/C++/camera/build/CMakeFiles/rebuild_cache.dir
-/home/team/SoftwareDevelopment/C++/camera/build/CMakeFiles/camera.dir
-/home/team/SoftwareDevelopment/C++/camera/build/CMakeFiles/edit_cache.dir

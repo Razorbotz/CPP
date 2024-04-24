@@ -325,9 +325,6 @@ void disconnectFromServer(){
                 Gtk::MessageDialog dialog(*window,"Failed Close",false,Gtk::MESSAGE_ERROR,Gtk::BUTTONS_OK);
                 int result=dialog.run();
             }
-
-
-
             break;
         case (Gtk::RESPONSE_CANCEL):
         case (Gtk::RESPONSE_NONE):
@@ -382,7 +379,7 @@ void videoStream(){
     std::string currentButtonState = videoStreamingButton->get_label();
     if(currentButtonState == "Not Video Streaming"){
         int messageSize=3;
-        uint8_t command = 8;
+        uint8_t command = 9;
         uint8_t message[messageSize];
         message[0] = messageSize;
         message[1] = command;
@@ -393,7 +390,7 @@ void videoStream(){
     }
     else{
         int messageSize=3;
-        uint8_t command = 8;
+        uint8_t command = 9;
         uint8_t message[messageSize];
         message[0] = messageSize;
         message[1] = command;

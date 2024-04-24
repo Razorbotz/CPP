@@ -1,3 +1,0 @@
-/home/team/SoftwareDevelopment/C++/talon/build/CMakeFiles/rebuild_cache.dir
-/home/team/SoftwareDevelopment/C++/talon/build/CMakeFiles/talon.dir
-/home/team/SoftwareDevelopment/C++/talon/build/CMakeFiles/edit_cache.dir

@@ -1,3 +1,0 @@
-/home/team/SoftwareDevelopment/C++/positionTrackingSansGraphics/build/CMakeFiles/rebuild_cache.dir
-/home/team/SoftwareDevelopment/C++/positionTrackingSansGraphics/build/CMakeFiles/ZED_Positional_Tracking.dir
-/home/team/SoftwareDevelopment/C++/positionTrackingSansGraphics/build/CMakeFiles/edit_cache.dir

@@ -1,4 +1,4 @@
 var searchData=
 [
-  ['remoterobot_0',['RemoteRobot',['../structRemoteRobot.html',1,'']]]
+  ['data_0',['Data',['../unionData.html',1,'']]]
 ];

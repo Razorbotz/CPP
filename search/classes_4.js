@@ -1,4 +1,5 @@
 var searchData=
 [
-  ['victorinfoframe_0',['VictorInfoFrame',['../classVictorInfoFrame.html',1,'']]]
+  ['infoframe_0',['InfoFrame',['../classInfoFrame.html',1,'']]],
+  ['infoitem_1',['InfoItem',['../classInfoItem.html',1,'']]]
 ];

@@ -1,5 +1,4 @@
 var searchData=
 [
-  ['infoframe_0',['InfoFrame',['../classInfoFrame.html',1,'']]],
-  ['infoitem_1',['InfoItem',['../classInfoItem.html',1,'']]]
+  ['binarymessage_0',['BinaryMessage',['../classBinaryMessage.html',1,'']]]
 ];

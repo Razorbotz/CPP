@@ -73,50 +73,22 @@ $(function() {
 <div class="header">
   <div class="summary">
 <a href="#pub-attribs">Public Attributes</a> &#124;
-<a href="#pub-static-attribs">Static Public Attributes</a> &#124;
 <a href="structRemoteRobot-members.html">List of all members</a>  </div>
   <div class="headertitle"><div class="title">RemoteRobot Struct Reference</div></div>
 </div><!--header-->
 <div class="contents">
-
-<p>Struct to hold information about connected robots.  
- <a href="#details">More...</a></p>
-
-<p><code>#include &lt;<a class="el" href="RemoteRobot_8hpp_source.html">RemoteRobot.hpp</a>&gt;</code></p>
 <table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a id="pub-attribs" name="pub-attribs"></a>
 Public Attributes</h2></td></tr>
 <tr class="memitem:a8561927bd614b7dd4aef170f8a0f5703" id="r_a8561927bd614b7dd4aef170f8a0f5703"><td class="memItemLeft" align="right" valign="top"><a id="a8561927bd614b7dd4aef170f8a0f5703" name="a8561927bd614b7dd4aef170f8a0f5703"></a>
 std::string&#160;</td><td class="memItemRight" valign="bottom"><b>tag</b></td></tr>
-<tr class="memdesc:a8561927bd614b7dd4aef170f8a0f5703"><td class="mdescLeft">&#160;</td><td class="mdescRight">Identifier for the robot. <br /></td></tr>
 <tr class="separator:a8561927bd614b7dd4aef170f8a0f5703"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:ace31c93016ef721b2301e2268d63dbe7" id="r_ace31c93016ef721b2301e2268d63dbe7"><td class="memItemLeft" align="right" valign="top"><a id="ace31c93016ef721b2301e2268d63dbe7" name="ace31c93016ef721b2301e2268d63dbe7"></a>
-time_t&#160;</td><td class="memItemRight" valign="bottom"><b>lastSeenTime</b> {}</td></tr>
-<tr class="memdesc:ace31c93016ef721b2301e2268d63dbe7"><td class="mdescLeft">&#160;</td><td class="mdescRight">Last time the robot communicated with the client. <br /></td></tr>
+time_t&#160;</td><td class="memItemRight" valign="bottom"><b>lastSeenTime</b></td></tr>
 <tr class="separator:ace31c93016ef721b2301e2268d63dbe7"><td class="memSeparator" colspan="2">&#160;</td></tr>
-</table><table class="memberdecls">
-<tr class="heading"><td colspan="2"><h2 class="groupheader"><a id="pub-static-attribs" name="pub-static-attribs"></a>
-Static Public Attributes</h2></td></tr>
-<tr class="memitem:affd8e5c1839e4345f581d8eb6e810740" id="r_affd8e5c1839e4345f581d8eb6e810740"><td class="memItemLeft" align="right" valign="top"><a id="affd8e5c1839e4345f581d8eb6e810740" name="affd8e5c1839e4345f581d8eb6e810740"></a>
-static std::vector&lt; <a class="el" href="structRemoteRobot.html">RemoteRobot</a> &gt;&#160;</td><td class="memItemRight" valign="bottom"><b>robotList</b></td></tr>
-<tr class="memdesc:affd8e5c1839e4345f581d8eb6e810740"><td class="mdescLeft">&#160;</td><td class="mdescRight">List to hold robots in. <br /></td></tr>
-<tr class="separator:affd8e5c1839e4345f581d8eb6e810740"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table>
-<a name="details" id="details"></a><h2 class="groupheader">Detailed Description</h2>
-<div class="textblock"><p>Struct to hold information about connected robots. </p>
-<p>Holds information about connected robots and has a static member to hold list of robots. Contains information including identifier of robot and the last time the robot communicated with the client, which is used to disconnect from it after a specified timeout.</p>
-<dl class="section see"><dt>See also</dt><dd><a class="el" href="RemoteRobot_8cpp.html" title="Implementation for RemoteRobot.">src/RemoteRobot.cpp</a> </dd>
-<dd>
-<a class="el" href="control_8cpp.html" title="GUI client program to control and display info for with the robot.">src/control.cpp</a>:<a class="el" href="control_8cpp.html#a4a5dac0359bc7d86560668d597a75cdc" title="Listen to multicast.">broadcastListen</a> </dd>
-<dd>
-<a class="el" href="control_8cpp.html" title="GUI client program to control and display info for with the robot.">src/control.cpp</a>:<a class="el" href="#affd8e5c1839e4345f581d8eb6e810740" title="List to hold robots in.">robotList</a> </dd>
-<dd>
-<a class="el" href="control_8cpp.html" title="GUI client program to control and display info for with the robot.">src/control.cpp</a>:<a class="el" href="control_8cpp.html#aa2b5228d0feeeb0afb44694920ff9a7d" title="Checks if a string is contained in a vector of strings.">contains</a> </dd>
-<dd>
-<a class="el" href="control_8cpp.html" title="GUI client program to control and display info for with the robot.">src/control.cpp</a>:<a class="el" href="control_8cpp.html#aefcc4db533c5ad048952d88ee08587c5" title="Set last seen time for a robot.">update</a> </dd></dl>
-</div><hr/>The documentation for this struct was generated from the following files:<ul>
-<li>robotcontrollerclient/include/<a class="el" href="RemoteRobot_8hpp_source.html">RemoteRobot.hpp</a></li>
-<li>robotcontrollerclient/src/<a class="el" href="RemoteRobot_8cpp.html">RemoteRobot.cpp</a></li>
+<hr/>The documentation for this struct was generated from the following file:<ul>
+<li>robotcontrollerclient/src/<b>control.cpp</b></li>
 </ul>
 </div><!-- contents -->
 <!-- start footer part -->

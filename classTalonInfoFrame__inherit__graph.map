@@ -1,7 +1,0 @@
-<map id="TalonInfoFrame" name="TalonInfoFrame">
-<area shape="rect" id="Node000001" title="InfoFrame to display information about Talon motors." alt="" coords="5,153,118,178"/>
-<area shape="rect" id="Node000002" href="$classInfoFrame.html" title="GTK Frame to show multiple InfoItem objects." alt="" coords="21,79,102,105"/>
-<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="64,120,64,152,59,152,59,120"/>
-<area shape="rect" id="Node000003" title=" " alt="" coords="19,5,104,31"/>
-<area shape="poly" id="edge2_Node000002_Node000003" title=" " alt="" coords="64,46,64,79,59,79,59,46"/>
-</map>

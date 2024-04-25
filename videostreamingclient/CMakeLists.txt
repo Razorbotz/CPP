@@ -9,6 +9,7 @@ set(CMAKE_CXX_STANDARD 17)
 
 #find_package(
 #)
+find_package(OpenCV REQUIRED)
 
 
 include_directories(
@@ -65,6 +66,7 @@ include_directories(
   /usr/lib/x86_64-linux-gnu/pangomm-1.4/include
   /usr/lib/x86_64-linux-gnu/gdkmm-3.0/include
   /usr/lib/x86_64-linux-gnu/gtkmm-3.0/include
+  ${OpenCV_INCLUDE_DIRS}
 
 )
 
@@ -94,5 +96,6 @@ target_link_libraries(control
   gdkmm-3.0
   atk-1.0
   atkmm-1.6
+  ${OpenCV_LIBS}
 )
 

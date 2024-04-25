@@ -20,25 +20,11 @@
 #include <SDL2/SDL.h>
 #include <gtkmm.h>
 #include <gdkmm.h>
+#include <opencv2/opencv.hpp>
 
 
-#define PORT 313378
+#define PORT 31338
 
-bool quit(GdkEventAny* event){
-    exit(0);
-}
-
-Gtk::ListBox* addressListBox;
-Gtk::Entry* ipAddressEntry;
-Gtk::Label* connectionStatusLabel;
-  
-Gtk::Button* silentRunButton;
-Gtk::Button* connectButton;
-Gtk::Button* videoStreamingButton;
-  
-Gtk::FlowBox* sensorBox;
-
-Gtk::Window* window;
 int sock = 0; 
 bool connected=false;
 
@@ -49,8 +35,6 @@ int main(int argc, char** argv) {
     std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
     std::list<uint8_t> messageBytesList;
     uint8_t message[256];
-    struct sockaddr_in address; 
-    int bytesRead; 
     struct sockaddr_in serv_addr; 
     std::string hello("Hello Robot"); 
 
@@ -60,12 +44,9 @@ int main(int argc, char** argv) {
     serv_addr.sin_port = htons(PORT);
     serv_addr.sin_addr.s_addr = INADDR_ANY; 
 
-    char buffer[1024] = {0}; 
     if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) { 
 
         printf("\n Socket creation error \n");
-
-        return; 
     } 
     if(connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
         printf("\nConnection Failed \n");
@@ -78,13 +59,14 @@ int main(int argc, char** argv) {
     }
     int height = 720;
     int width = 640;
-    cv::Mat  img = Mat::zeros( height,width, cv::CV_8UC3);
+    cv::Mat img = cv::Mat::zeros(height,width, CV_8UC3);
     int  imgSize = img.total()*img.elemSize();
-    uchar sockData[imgSize];
+    uint8_t sockData[imgSize];
+    int bytes = 0;
     while(true){
         for (int i = 0; i < imgSize; i += bytes) {
-            if(bytesRead = read(sock, sockData+i, imageSize-1,0)==-1)
-                quit("recv failed", 1);
+            if((bytes = recv(sock, sockData+i, imgSize-1, 0))==-1)
+                std::cout << "ERROR" << std::endl;
         }
 
         // Assign pixel value to img

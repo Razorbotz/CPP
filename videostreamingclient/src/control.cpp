@@ -48,12 +48,14 @@ int main(int argc, char** argv) {
 
         printf("\n Socket creation error \n");
     } 
-    if(connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
-        printf("\nConnection Failed \n");
-    }
     else{
-        send(sock , hello.c_str() , strlen(hello.c_str()) , 0 );
-        bytesRead = read( sock , buffer, 1024);
+        bind(sock, (struct sockaddr*)&serv_addr, sizeof(serv_addr)); 
+  
+        // listening to the assigned socket 
+        listen(sock, 5); 
+    
+        // accepting connection request 
+        int clientSocket  = accept(sock, nullptr, nullptr); 
         fcntl(sock,F_SETFL, O_NONBLOCK);
 
     }

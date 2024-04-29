@@ -73,9 +73,6 @@ include_directories(
 
 add_executable(control 
   src/control.cpp
-  src/InfoFrame.cpp
-  src/InfoItem.cpp
-  src/BinaryMessage.cpp
 )
 
 

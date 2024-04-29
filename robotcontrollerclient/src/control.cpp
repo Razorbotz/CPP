@@ -25,7 +25,6 @@
 #include "BinaryMessage.hpp"
 
 #define PORT 31337 
-#define VIDEO_PORT 31338
 
 float parseFloat(const uint8_t* array){
     uint32_t axisYInteger=0;
@@ -76,13 +75,11 @@ Gtk::Label* connectionStatusLabel;
   
 Gtk::Button* silentRunButton;
 Gtk::Button* connectButton;
-Gtk::Button* videoStreamingButton;
   
 Gtk::FlowBox* sensorBox;
 
 Gtk::Window* window;
 int sock = 0; 
-int video_sock = 0;
 bool connected=false;
 
 std::vector<InfoFrame*> infoFrameList;
@@ -230,7 +227,6 @@ void setDisconnectedState(){
     connectButton->set_label("Connect");
     connectionStatusLabel->set_text("Not Connected");
     silentRunButton->set_label("Silent Running");
-    videoStreamingButton->set_label("Not Video Streaming");
     Gdk::RGBA red;
     red.set_rgba(1.0,0,0,1.0);
     connectionStatusLabel->override_background_color(red);
@@ -273,7 +269,7 @@ void connectToServer(){
     serv_addr.sin_family = AF_INET; 
     serv_addr.sin_port = htons(PORT);
 
-    char buffer[1024] = {0}; 
+    char buffer[2048] = {0}; 
     if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) { 
 
         printf("\n Socket creation error \n");
@@ -301,7 +297,7 @@ void connectToServer(){
     }
     else{
         send(sock , hello.c_str() , strlen(hello.c_str()) , 0 );
-        bytesRead = read( sock , buffer, 1024);
+        bytesRead = read( sock , buffer, 2048);
         fcntl(sock,F_SETFL, O_NONBLOCK);
 
         setConnectedState();
@@ -379,34 +375,6 @@ void silentRun(){
 }
 
 
-void videoStream(){
-    if(!connected)return;
-    std::string currentButtonState = videoStreamingButton->get_label();
-    if(currentButtonState == "Not Video Streaming"){
-        int messageSize=3;
-        uint8_t command = 8;
-        uint8_t message[messageSize];
-        message[0] = messageSize;
-        message[1] = command;
-        message[2] = 1;
-        send(sock, message, messageSize, 0);
-
-        videoStreamingButton->set_label("Video Streaming");
-    }
-    else{
-        int messageSize=3;
-        uint8_t command = 8;
-        uint8_t message[messageSize];
-        message[0] = messageSize;
-        message[1] = command;
-        message[2] = 0;
-        send(sock, message, messageSize, 0);
-
-        videoStreamingButton->set_label("Not Video Streaming");
-    }
-}
-
-
 void rowActivated(Gtk::ListBoxRow* listBoxRow){
     Gtk::Label* label=static_cast<Gtk::Label*>(listBoxRow->get_child());
     Glib::ustring connectionString(label->get_text());
@@ -420,7 +388,7 @@ void rowActivated(Gtk::ListBoxRow* listBoxRow){
 
 void shutdownRobot(){
     int messageSize=2;
-    uint8_t command=10;// shutdown
+    uint8_t command=8;// shutdown
     uint8_t message[messageSize];
     message[0]=messageSize;
     message[1]=command;
@@ -638,7 +606,7 @@ void broadcastListen(){
         } 
     }
 
-    char databuf[1024];
+    char databuf[2048];
     int datalen = sizeof(databuf);
     while(true){
         if(read(sd, databuf, datalen) >= 0) {
@@ -744,7 +712,7 @@ int main(int argc, char** argv) {
     }
 
     SDL_Event event;
-    char buffer[1024] = {0}; 
+    char buffer[2048] = {0}; 
     int bytesRead=0;
 
     std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
@@ -761,7 +729,7 @@ int main(int argc, char** argv) {
 
         if(!connected)continue;
 
-        bytesRead = read(sock, buffer, 1024);
+        bytesRead = read(sock, buffer, 2048);
         if(bytesRead==0){
             //std::cout << "Lost Connection" << std::endl;
             setDisconnectedState();

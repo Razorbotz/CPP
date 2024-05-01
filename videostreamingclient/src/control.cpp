@@ -20,6 +20,7 @@
 #include <SDL2/SDL.h>
 #include <gtkmm.h>
 #include <gdkmm.h>
+#include <opencv2/opencv.hpp>
 
 #define PORT 31338
 
@@ -428,11 +429,11 @@ int main(int argc, char** argv) {
 
     std::thread broadcastListenThread(broadcastListen);
 
-    char buffer[1024] = {0}; 
-    int bytesRead=0;
+    cv::Mat img = cv::Mat::zeros(376, 672, CV_8UC1);
+    int imgSize = img.total() * img.elemSize();
+    uchar sockData[imgSize];
+    int bytesRead=0, total = 0;
 
-    std::list<uint8_t> messageBytesList;
-    uint8_t message[256];
     bool running=true;
     while(running){
         adjustRobotList();
@@ -442,17 +443,25 @@ int main(int argc, char** argv) {
         }
 
         if(!connected)continue;
-
-        bytesRead = read(sock, buffer, 1024);
-        if(bytesRead==0){
-            //std::cout << "Lost Connection" << std::endl;
-            setDisconnectedState();
-            continue;
+        if(!videoStream)continue;
+        total = 0;
+        while(total < imgSize){
+            bytesRead = recv(sock, &sockData[total], imgSize-total, 0);
+            if(bytesRead==0){
+                //std::cout << "Lost Connection" << std::endl;
+                setDisconnectedState();
+                continue;
+            }
+            if(bytesRead != -1){
+                total += bytesRead;
+            }
         }
+        
+        cv::Mat img(376, 672, CV_8UC1, sockData);
+        cv::resize(img, img, cv::Size(1400, 800), cv::INTER_LINEAR);
+        cv::imshow("Video", img);
+        cv::waitKey(10);
 
-        for(int index=0;index<bytesRead;index++){
-            messageBytesList.push_back(buffer[index]);
-        }
 
     }
     return 0; 

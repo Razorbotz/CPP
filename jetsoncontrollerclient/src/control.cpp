@@ -676,37 +676,42 @@ void adjustRobotList(){
     }
 }
 
-void keySwitch1(const std::string& channel){
-    std::cout << channel << std::endl;
-    /*
+void keySwitch1(const std::string& channel){    
     int messageSize=5;
-    uint8_t command=2;// keyboard
     uint8_t message[messageSize];
     message[0]=messageSize;
-    message[1]=command;
-    message[2]=(uint8_t)(((key_event->keyval)>>8)& 0xff);
-    message[3]=(uint8_t)(((key_event->keyval)>>0)& 0xff);
-    message[4]=1;
+    if(channel == "40"){
+        uint8_t command=2;// keyboard
+        message[1]=command;
+        message[2]=(uint8_t)(((115)>>8)& 0xff);
+        message[3]=(uint8_t)(((115)>>0)& 0xff);
+        message[4]= GPIO::input(channel);
+    }
+    if(channel == "38"){
+        uint8_t command=2;// keyboard
+        message[1]=command;
+        message[2]=(uint8_t)(((100)>>8)& 0xff);
+        message[3]=(uint8_t)(((100)>>0)& 0xff);
+        message[4]= GPIO::input(channel);
+    }
+    if(channel == "26"){
+        uint8_t command=2;// keyboard
+        message[1]=command;
+        message[2]=(uint8_t)(((97)>>8)& 0xff);
+        message[3]=(uint8_t)(((97)>>0)& 0xff);
+        message[4]= GPIO::input(channel);
+    }
+    if(channel == "24"){
+        uint8_t command=5;
+        message[1] = command;
+        message[2] = 0;
+        message[3] = 0;
+        message[4] = GPIO::input(channel);
+    }
+    
     send(sock, message, messageSize, 0);
-    */
 }
 
-void keySwitch1(const std::string& channel){
-    std::cout << channel << std::endl;
-    /*
-    int messageSize=5;
-    uint8_t command=2;// keyboard
-    uint8_t message[messageSize];
-    message[0]=messageSize;
-    message[1]=command;
-    message[2]=(uint8_t)(((key_event->keyval)>>8)& 0xff);
-    message[3]=(uint8_t)(((key_event->keyval)>>0)& 0xff);
-    message[4]=0;
-    send(sock, message, messageSize, 0);
-    */
-}
-
- 
 int main(int argc, char** argv) { 
     Glib::RefPtr<Gtk::Application> application = Gtk::Application::create(argc, argv, "edu.uark.razorbotz");
     setupGUI(application);
@@ -714,23 +719,14 @@ int main(int argc, char** argv) {
     GPIO::setmode(GPIO::BOARD);
     GPIO::setup(40, GPIO::IN);
     GPIO::setup(38, GPIO::IN);
-
     GPIO::setup(26, GPIO::IN);
     GPIO::setup(24, GPIO::IN);
-    GPIO::setup(22, GPIO::IN);
 
-    GPIO::add_event_detect(40, GPIO::Edge::RISING, keySwitch, 10);
-    GPIO::add_event_detect(38, GPIO::Edge::RISING, keySwitch, 10);
-    GPIO::add_event_detect(26, GPIO::Edge::RISING, keySwitch, 10);
-    GPIO::add_event_detect(24, GPIO::Edge::RISING, keySwitch, 10);
-    GPIO::add_event_detect(22, GPIO::Edge::RISING, keySwitch, 10);
+    GPIO::add_event_detect(40, GPIO::Edge::BOTH, keySwitch, 10);
+    GPIO::add_event_detect(38, GPIO::Edge::BOTH, keySwitch, 10);
+    GPIO::add_event_detect(26, GPIO::Edge::BOTH, keySwitch, 10);
+    GPIO::add_event_detect(24, GPIO::Edge::BOTH, keySwitch, 10);
     
-    GPIO::add_event_detect(40, GPIO::Edge::FALLING, keySwitch, 10);
-    GPIO::add_event_detect(38, GPIO::Edge::FALLING, keySwitch, 10);
-    GPIO::add_event_detect(26, GPIO::Edge::FALLING, keySwitch, 10);
-    GPIO::add_event_detect(24, GPIO::Edge::FALLING, keySwitch, 10);
-    GPIO::add_event_detect(22, GPIO::Edge::FALLING, keySwitch, 10);
-
     std::thread broadcastListenThread(broadcastListen);
 
     if (SDL_Init(SDL_INIT_GAMECONTROLLER) != 0) {

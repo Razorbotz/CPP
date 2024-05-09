@@ -9,6 +9,7 @@ set(CMAKE_CXX_STANDARD 17)
 
 #find_package(
 #)
+find_package(JetsonGPIO)
 
 
 include_directories(
@@ -69,7 +70,7 @@ include_directories(
 )
 
 
-add_executable(videoStream 
+add_executable(control 
   src/control.cpp
   src/InfoFrame.cpp
   src/InfoItem.cpp
@@ -77,7 +78,7 @@ add_executable(videoStream
 )
 
 
-target_link_libraries(videoStream
+target_link_libraries(control
   SDL2
   glib-2.0
   gio-2.0
@@ -94,5 +95,6 @@ target_link_libraries(videoStream
   gdkmm-3.0
   atk-1.0
   atkmm-1.6
+  JetsonGPIO::JetsonGPIO
 )
 

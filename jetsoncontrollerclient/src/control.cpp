@@ -21,6 +21,8 @@
 #include <gtkmm.h>
 #include <gdkmm.h>
 
+#include <JetsonGPIO.h>
+
 #include "InfoFrame.hpp"
 #include "BinaryMessage.hpp"
 
@@ -63,6 +65,7 @@ void insert(int value,uint8_t* array){
     array[2]=uint8_t((uint32_t(*(static_cast<uint32_t*>(static_cast<void*>(&value))))>>8) & 0xff);
     array[3]=uint8_t((uint32_t(*(static_cast<uint32_t*>(static_cast<void*>(&value))))>>0) & 0xff);
 }
+
 
 Gtk::ListBox* addressListBox;
 Gtk::Entry* ipAddressEntry;
@@ -673,10 +676,60 @@ void adjustRobotList(){
     }
 }
 
+void keySwitch1(const std::string& channel){
+    std::cout << channel << std::endl;
+    /*
+    int messageSize=5;
+    uint8_t command=2;// keyboard
+    uint8_t message[messageSize];
+    message[0]=messageSize;
+    message[1]=command;
+    message[2]=(uint8_t)(((key_event->keyval)>>8)& 0xff);
+    message[3]=(uint8_t)(((key_event->keyval)>>0)& 0xff);
+    message[4]=1;
+    send(sock, message, messageSize, 0);
+    */
+}
+
+void keySwitch1(const std::string& channel){
+    std::cout << channel << std::endl;
+    /*
+    int messageSize=5;
+    uint8_t command=2;// keyboard
+    uint8_t message[messageSize];
+    message[0]=messageSize;
+    message[1]=command;
+    message[2]=(uint8_t)(((key_event->keyval)>>8)& 0xff);
+    message[3]=(uint8_t)(((key_event->keyval)>>0)& 0xff);
+    message[4]=0;
+    send(sock, message, messageSize, 0);
+    */
+}
+
  
 int main(int argc, char** argv) { 
     Glib::RefPtr<Gtk::Application> application = Gtk::Application::create(argc, argv, "edu.uark.razorbotz");
     setupGUI(application);
+
+    GPIO::setmode(GPIO::BOARD);
+    GPIO::setup(40, GPIO::IN);
+    GPIO::setup(38, GPIO::IN);
+
+    GPIO::setup(26, GPIO::IN);
+    GPIO::setup(24, GPIO::IN);
+    GPIO::setup(22, GPIO::IN);
+
+    GPIO::add_event_detect(40, GPIO::Edge::RISING, keySwitch, 10);
+    GPIO::add_event_detect(38, GPIO::Edge::RISING, keySwitch, 10);
+    GPIO::add_event_detect(26, GPIO::Edge::RISING, keySwitch, 10);
+    GPIO::add_event_detect(24, GPIO::Edge::RISING, keySwitch, 10);
+    GPIO::add_event_detect(22, GPIO::Edge::RISING, keySwitch, 10);
+    
+    GPIO::add_event_detect(40, GPIO::Edge::FALLING, keySwitch, 10);
+    GPIO::add_event_detect(38, GPIO::Edge::FALLING, keySwitch, 10);
+    GPIO::add_event_detect(26, GPIO::Edge::FALLING, keySwitch, 10);
+    GPIO::add_event_detect(24, GPIO::Edge::FALLING, keySwitch, 10);
+    GPIO::add_event_detect(22, GPIO::Edge::FALLING, keySwitch, 10);
 
     std::thread broadcastListenThread(broadcastListen);
 
@@ -870,6 +923,7 @@ int main(int argc, char** argv) {
             }
         }
     }
+    GPIO::cleanup();
     return 0; 
 }
 

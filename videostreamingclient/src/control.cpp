@@ -24,23 +24,37 @@
 
 #define PORT 31338
 
-
-bool quit(GdkEventAny* event){
-    exit(0);
-}
-
 Gtk::ListBox* addressListBox;
 Gtk::Entry* ipAddressEntry;
 Gtk::Label* connectionStatusLabel;
-  
+
+Gtk::ComboBoxText* comboBox;
 Gtk::Button* videoStreamButton;
 Gtk::Button* connectButton;
   
 Gtk::FlowBox* sensorBox;
 
+Gtk::Entry* heightEntry;
+Gtk::Entry* widthEntry;
+Gtk::Button* updateButton;
+
 Gtk::Window* window;
 int sock = 0; 
 bool connected=false;
+bool videoStreaming = false;
+
+cv::Mat img;
+int imgSize;
+int width = 376, height = 672;
+int newWidth = 1400, newHeight = 800;
+bool gray = true;
+
+bool quit(GdkEventAny* event){
+	if(connected)
+		close(sock);
+    exit(0);
+}
+
 
 void setDisconnectedState(){
     connectButton->set_label("Connect");
@@ -127,9 +141,22 @@ void disconnectFromServer(){
     Gtk::MessageDialog dialog(*window,"Disconnect now?",false,Gtk::MESSAGE_QUESTION,Gtk::BUTTONS_OK_CANCEL);
     //dialog.set_secondary_text("Do you want to shutdown now?");
     int result=dialog.run();
-
+    
+    std::string currentButtonState=videoStreamButton->get_label();
+    if(currentButtonState=="Video Streaming"){
+    	int messageSize=3;
+        uint8_t command=1;// silence 
+        uint8_t message[messageSize];
+        message[0]=messageSize;
+        message[1]=command;
+        message[2]=0;
+        send(sock, message, messageSize, 0); 
+		videoStreaming=false;
+        videoStreamButton->set_label("Not Video Streaming");
+	}
+	
     switch(result) {
-        case (Gtk::RESPONSE_OK): 
+        case (Gtk::RESPONSE_OK):
             if(shutdown(sock,SHUT_RDWR)==-1){
                 Gtk::MessageDialog dialog(*window,"Failed Shutdown",false,Gtk::MESSAGE_ERROR,Gtk::BUTTONS_OK);
                 int result=dialog.run();
@@ -176,7 +203,7 @@ void videoStream(){
         message[1]=command;
         message[2]=1;
         send(sock, message, messageSize, 0); 
-
+		videoStreaming=true;
         videoStreamButton->set_label("Video Streaming");
     }
     else{
@@ -187,9 +214,76 @@ void videoStream(){
         message[1]=command;
         message[2]=0;
         send(sock, message, messageSize, 0); 
-
+		videoStreaming=false;
         videoStreamButton->set_label("Not Video Streaming");
     }
+}
+
+
+void updateSize(){
+	newHeight = atoi(heightEntry->get_text().c_str());
+	newWidth = atoi(widthEntry->get_text().c_str());
+}
+
+
+void comboChanged(){
+	if(!connected)return;
+	int messageSize=3;
+    uint8_t command=2;
+    uint8_t message[messageSize];
+    message[0]=messageSize;
+    message[1]=command;
+	if(comboBox->get_active_text() == "VGA - Gray"){
+		message[2]=0;
+		img = cv::Mat::zeros(376,672,CV_8UC1);
+		width = 376, height = 672;
+		gray = true;
+	}
+    if(comboBox->get_active_text() == "VGA"){
+    	message[2]=1;
+    	img = cv::Mat::zeros(376,672,CV_8UC3);
+    	width = 376, height = 672;
+		gray = false;
+    }
+    if(comboBox->get_active_text() == "HD720 - Gray"){
+    	message[2]=2;
+    	img = cv::Mat::zeros(720,1280,CV_8UC1);
+    	width = 720, height = 1280;
+		gray = true;
+    }
+    if(comboBox->get_active_text() == "HD720"){
+    	message[2]=3;
+    	img = cv::Mat::zeros(720,1280,CV_8UC3);
+    	width = 720, height = 1280;
+		gray = false;
+    }
+    if(comboBox->get_active_text() == "HD1080 - Gray"){
+    	message[2]=4;
+    	img = cv::Mat::zeros(1080,1920,CV_8UC1);
+    	width = 1080, height = 1920;
+		gray = true;
+    }
+    if(comboBox->get_active_text() == "HD1080"){
+    	message[2]=5;
+    	img = cv::Mat::zeros(1080,1920,CV_8UC3);
+    	width = 1080, height = 1920;
+		gray = false;
+    }
+    if(comboBox->get_active_text() == "HD2K - Gray"){
+    	message[2]=6;
+    	img = cv::Mat::zeros(1242,2208,CV_8UC1);
+    	width = 1242, height = 2208;
+		gray = true;
+    }
+    if(comboBox->get_active_text() == "HD2K"){
+    	message[2]=7;
+    	img = cv::Mat::zeros(1242,2208,CV_8UC3);
+    	width = 1242, height = 2208;
+		gray = false;
+	}
+	imgSize = img.total() * img.elemSize();
+	
+	send(sock, message, messageSize, 0); 
 }
 
 
@@ -235,6 +329,20 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application){
     connectionStatusLabel->override_background_color(red);
     
     Gtk::Box* stateBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,2));
+    Gtk::Box* sizeBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,2));
+    
+    comboBox=Gtk::manage(new Gtk::ComboBoxText());
+    comboBox->append("VGA - Gray");
+    comboBox->append("VGA");
+    comboBox->append("HD720 - Gray");
+    comboBox->append("HD720");
+    comboBox->append("HD1080 - Gray");
+    comboBox->append("HD1080");
+    comboBox->append("HD2K - Gray");
+    comboBox->append("HD2K");
+    comboBox->set_active(0);
+    comboBox->signal_changed().connect(sigc::ptr_fun(&comboChanged));
+    
     videoStreamButton=Gtk::manage(new Gtk::Button("Not Video Streaming"));
     videoStreamButton->signal_clicked().connect(sigc::ptr_fun(&videoStream));
 
@@ -249,10 +357,33 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application){
     connectBox->add(*connectButton);
     connectBox->add(*connectionStatusLabel);
 
+	stateBox->add(*comboBox);
     stateBox->add(*videoStreamButton);
+    
+    Gtk::Label* heightLabel=Gtk::manage(new Gtk::Label("Height"));
+    heightEntry=Gtk::manage(new Gtk::Entry());
+    heightEntry->set_can_focus(true);
+    heightEntry->set_editable(true);
+    heightEntry->set_text("800");
+    heightEntry->set_width_chars(5);
+    Gtk::Label* widthLabel=Gtk::manage(new Gtk::Label("Width"));
+    widthEntry=Gtk::manage(new Gtk::Entry());
+    widthEntry->set_can_focus(true);
+    widthEntry->set_editable(true);
+    widthEntry->set_text("1400");
+    widthEntry->set_width_chars(5);
+    updateButton=Gtk::manage(new Gtk::Button("Update Size"));
+    updateButton->signal_clicked().connect(sigc::ptr_fun(&updateSize));
+    
+    sizeBox->add(*heightLabel);
+    sizeBox->add(*heightEntry);
+    sizeBox->add(*widthLabel);
+    sizeBox->add(*widthEntry);
+    sizeBox->add(*updateButton);
 
     controlsRightBox->add(*connectBox);
     controlsRightBox->add(*stateBox);
+    controlsRightBox->add(*sizeBox);
 
     scrolledList->add(*addressListBox);
 
@@ -423,17 +554,21 @@ void adjustRobotList(){
 }
 
  
-int main(int argc, char** argv) { 
+int main(int argc, char** argv) {
+    std::cout << newWidth << std::endl;
+    std::cout << newHeight << std::endl;
     Glib::RefPtr<Gtk::Application> application = Gtk::Application::create(argc, argv, "edu.uark.razorbotz");
     setupGUI(application);
 
     std::thread broadcastListenThread(broadcastListen);
 
-    cv::Mat img = cv::Mat::zeros(376, 672, CV_8UC1);
-    int imgSize = img.total() * img.elemSize();
-    uchar sockData[imgSize];
-    int bytesRead=0, total = 0;
-
+    int bytesRead = 0;
+    int total = 0;
+    img = cv::Mat::zeros(376,672,CV_8UC1);
+    imgSize = img.total() * img.elemSize();
+    uchar sockData[8227008];
+    
+    
     bool running=true;
     while(running){
         adjustRobotList();
@@ -443,26 +578,32 @@ int main(int argc, char** argv) {
         }
 
         if(!connected)continue;
-        if(!videoStream)continue;
+        if(!videoStreaming)continue;
+        
         total = 0;
         while(total < imgSize){
-            bytesRead = recv(sock, &sockData[total], imgSize-total, 0);
-            if(bytesRead==0){
-                //std::cout << "Lost Connection" << std::endl;
-                setDisconnectedState();
-                continue;
-            }
-            if(bytesRead != -1){
-                total += bytesRead;
-            }
-        }
-        
-        cv::Mat img(376, 672, CV_8UC1, sockData);
-        cv::resize(img, img, cv::Size(1400, 800), cv::INTER_LINEAR);
-        cv::imshow("Video", img);
-        cv::waitKey(10);
-
-
+		    bytesRead = recv(sock, &sockData[total], imgSize-total, 0);
+		    if(bytesRead != -1)
+			    total += bytesRead;
+			if(bytesRead == 0){
+				setDisconnectedState();
+			}
+	    }
+	    if(gray){
+			cv::Mat img(width, height, CV_8UC1, sockData);
+			cv::resize(img, img, cv::Size(newWidth, newHeight), cv::INTER_CUBIC);
+		
+			cv::imshow("Video", img);
+			cv::waitKey(10);
+		}
+		else{
+			cv::Mat img(width, height, CV_8UC3, sockData);
+			cv::resize(img, img, cv::Size(newWidth, newHeight), cv::INTER_CUBIC);
+		
+			cv::imshow("Video", img);
+			cv::waitKey(10);
+		}
+		
     }
     return 0; 
 }

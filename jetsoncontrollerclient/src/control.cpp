@@ -680,6 +680,7 @@ void keySwitch1(const std::string& channel){
     int messageSize=5;
     uint8_t message[messageSize];
     message[0]=messageSize;
+    // s
     if(channel == "40"){
         uint8_t command=2;// keyboard
         message[1]=command;
@@ -687,6 +688,7 @@ void keySwitch1(const std::string& channel){
         message[3]=(uint8_t)(((115)>>0)& 0xff);
         message[4]= GPIO::input(channel);
     }
+    // d
     if(channel == "38"){
         uint8_t command=2;// keyboard
         message[1]=command;
@@ -694,6 +696,7 @@ void keySwitch1(const std::string& channel){
         message[3]=(uint8_t)(((100)>>0)& 0xff);
         message[4]= GPIO::input(channel);
     }
+    // a
     if(channel == "26"){
         uint8_t command=2;// keyboard
         message[1]=command;
@@ -701,7 +704,16 @@ void keySwitch1(const std::string& channel){
         message[3]=(uint8_t)(((97)>>0)& 0xff);
         message[4]= GPIO::input(channel);
     }
+    // +
     if(channel == "24"){
+        uint8_t command=2;// keyboard
+        message[1]=command;
+        message[2]=(uint8_t)(((43)>>8)& 0xff);
+        message[3]=(uint8_t)(((43)>>0)& 0xff);
+        message[4]= GPIO::input(channel);
+    }
+    // joystick button 2
+    if(channel == "22"){
         uint8_t command=5;
         message[1] = command;
         message[2] = 0;
@@ -726,6 +738,7 @@ int main(int argc, char** argv) {
     GPIO::add_event_detect(38, GPIO::Edge::BOTH, keySwitch, 10);
     GPIO::add_event_detect(26, GPIO::Edge::BOTH, keySwitch, 10);
     GPIO::add_event_detect(24, GPIO::Edge::BOTH, keySwitch, 10);
+    GPIO::add_event_detect(22, GPIO::Edge::BOTH, keySwitch, 10);
     
     std::thread broadcastListenThread(broadcastListen);
 

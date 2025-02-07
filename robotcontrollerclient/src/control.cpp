@@ -727,26 +727,44 @@ int main(int argc, char** argv) {
             Gtk::Main::iteration();
         }
 
-        if(!connected)continue;
+        if(!connected){
+            if(messageBytesList.size() > 0){
+                messageBytesList.clear();
+            }
+            continue;
+        }
+
+        std::cout << "Before Read" << std::endl;
 
         bytesRead = read(sock, buffer, 2048);
         if(bytesRead==0){
             //std::cout << "Lost Connection" << std::endl;
             setDisconnectedState();
+            if(messageBytesList.size() > 0){
+                messageBytesList.clear();
+            }
             continue;
         }
+
+        std::cout << "After Read" << std::endl;
 
         for(int index=0;index<bytesRead;index++){
             messageBytesList.push_back(buffer[index]);
         }
 
+        std::cout << "Before hasMessage check" << std::endl;
         while(BinaryMessage::hasMessage(messageBytesList)){
+            std::cout << "Before message create" << std::endl;
             BinaryMessage message(messageBytesList);
+            std::cout << "Before GUI update" << std::endl;
             updateGUI(message);
+            std::cout << "Before size decode" << std::endl;
             uint64_t size=BinaryMessage::decodeSizeBytes(messageBytesList);
             for(int count=0; count < size; count++){
+                std::cout << messageBytesList.front();
                 messageBytesList.pop_front();
             }
+            std::cout << std::endl;
         }
 
         while(SDL_PollEvent(&event)){
@@ -790,7 +808,7 @@ int main(int argc, char** argv) {
                     break;
                 }
                 case SDL_JOYBUTTONDOWN:{
-
+                    std::cout << "Joystick button down" << std::endl;
                     uint8_t command=5;
                     int length=5;
                     uint8_t message[length];
@@ -805,6 +823,7 @@ int main(int argc, char** argv) {
                     break;
                 }
                 case SDL_JOYBUTTONUP:{
+                    std::cout << "Joystick button up" << std::endl;
                     uint8_t command=5;
                     int length=5;
                     uint8_t message[length];
@@ -819,7 +838,7 @@ int main(int argc, char** argv) {
                     break;
                 }
                 case SDL_JOYAXISMOTION: {
-
+                    std::cout << "Joystick axis motion" << std::endl;
                     int deadZone=4000;
                     if(event.jaxis.value < -deadZone || deadZone < event.jaxis.value ) {
                         axisEventList->at(event.jaxis.which)->at(event.jaxis.axis)->isSet = true;
@@ -849,7 +868,7 @@ int main(int argc, char** argv) {
             for(int joystickIndex=0; joystickIndex < axisEventList->size(); joystickIndex++){
                 for(int axisIndex=0; axisIndex < axisEventList->at(joystickIndex)->size(); axisIndex++){
                     if(axisEventList->at(joystickIndex)->at(axisIndex)->isSet){
-                        //std::cout << joystickIndex << " " << axisIndex << " " << axisEventList->at(joystickIndex)->at(axisIndex)->value << std::endl;
+                        std::cout << joystickIndex << " " << axisIndex << " " << axisEventList->at(joystickIndex)->at(axisIndex)->value << std::endl;
                         axisEventList->at(joystickIndex)->at(axisIndex)->isSet = false;
 
                         uint8_t command = 1;

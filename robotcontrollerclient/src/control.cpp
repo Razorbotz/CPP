@@ -19,7 +19,8 @@
 #include <glibmm/ustring.h>
 #include <SDL2/SDL.h>
 #include <gtkmm.h>
-#include <gdkmm.h>
+#include <gtkmm/window.h>
+#include <gdk-pixbuf/gdk-pixbuf.h>
 
 #include "InfoFrame.hpp"
 #include "BinaryMessage.hpp"
@@ -445,6 +446,11 @@ bool on_key_press_event(GdkEventKey* key_event){
 void setupGUI(Glib::RefPtr<Gtk::Application> application){
 
     window=new Gtk::Window();
+
+    // auto icon = "CPP/robotcontrollerclient/resources/razorbotz.png";
+    auto icon = "../resources/razorbotz.png";
+
+    window->set_icon_from_file(icon);
 
     window->add_events(Gdk::KEY_PRESS_MASK);
     window->add_events(Gdk::KEY_RELEASE_MASK);

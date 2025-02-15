@@ -20,7 +20,7 @@
 #include <SDL2/SDL.h>
 #include <gtkmm.h>
 #include <gtkmm/window.h>
-#include <gdk-pixbuf/gdk-pixbuf.h>
+//#include <gdk-pixbuf/gdk-pixbuf.h>
 
 #include "InfoFrame.hpp"
 #include "BinaryMessage.hpp"
@@ -92,6 +92,17 @@ struct AxisEvent{
     int value;
 };
 std::vector<std::vector<AxisEvent*>*>* axisEventList;
+
+BinaryMessage createDummyMessage() {
+    BinaryMessage dummy("Dummy Motor Info");
+
+    dummy.addElementUInt16("RPM", 1500);
+    dummy.addElementUInt16("Voltage", 1200);
+    dummy.addElementUInt16("Output Current", 500);
+
+    return dummy;
+}
+
 
 void updateGUI (BinaryMessage& message){
 
@@ -445,75 +456,98 @@ bool on_key_press_event(GdkEventKey* key_event){
 
 void setupGUI(Glib::RefPtr<Gtk::Application> application){
 
+    // Create windows instance
     window=new Gtk::Window();
 
-    // auto icon = "CPP/robotcontrollerclient/resources/razorbotz.png";
+    // Location of icon and set icon
     auto icon = "../resources/razorbotz.png";
-
     window->set_icon_from_file(icon);
 
+    // Handles key press and release events  
     window->add_events(Gdk::KEY_PRESS_MASK);
     window->add_events(Gdk::KEY_RELEASE_MASK);
-
     window->signal_key_press_event().connect(sigc::ptr_fun(&on_key_press_event));
     window->signal_key_release_event().connect(sigc::ptr_fun(&on_key_release_event));
 
+    // Create verticle box to hold top level widgets 
     Gtk::Box* topLevelBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL,5));
 
+    // Create horizontal box to hold control widgets
     Gtk::Box* controlsBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,5));
 
+    // Create scolled window instance and list of addresses 
     Gtk::ScrolledWindow* scrolledList=Gtk::manage(new Gtk::ScrolledWindow());
     addressListBox=Gtk::manage(new Gtk::ListBox());
     addressListBox->signal_row_activated().connect(sigc::ptr_fun(&rowActivated));
 
+    // Create Verticle box on right of screen to house controls 
     Gtk::Box* controlsRightBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL,5));
 
+    // Create box to hold connection information (IP, connect button, etc.)
     Gtk::Box* connectBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,5));
+    
     Gtk::Label* ipAddressLabel=Gtk::manage(new Gtk::Label(" IP Address "));
+
+    // Create entry box for IP connection
     ipAddressEntry=Gtk::manage(new Gtk::Entry());
     ipAddressEntry->set_can_focus(true);
     ipAddressEntry->set_editable(true);
     ipAddressEntry->set_text("192.168.1.6");
+
+    // Create connection button, single click logic to connectOrDisconnect function
     connectButton=Gtk::manage(new Gtk::Button("Connect"));
     connectButton->signal_clicked().connect(sigc::ptr_fun(&connectOrDisconnect));
     connectionStatusLabel=Gtk::manage(new Gtk::Label("Not Connected"));
+    // Disconnect graphics for connect button
     Gdk::RGBA red;
     red.set_rgba(1.0,0,0,1.0);
     connectionStatusLabel->override_background_color(red);
     
+    // Create horizontal box to hold silent run functionality
     Gtk::Box* stateBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,2));
     silentRunButton=Gtk::manage(new Gtk::Button("Silent Running"));
     silentRunButton->signal_clicked().connect(sigc::ptr_fun(&silentRun));
 
+    // Create horizaontal box to hold remote control functionality
     Gtk::Box* remoteControlBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,2));
+
+    // Create button to shutdown robot
     Gtk::Button* shutdownRobotButton=Gtk::manage(new Gtk::Button("Shutdown Robot"));
     shutdownRobotButton->signal_clicked().connect(sigc::bind<Gtk::Window*>(sigc::ptr_fun(&shutdownDialog),window));
 
-
+    // Create horizontal flow box to hold sensor widgets
     sensorBox=Gtk::manage(new Gtk::FlowBox());
     sensorBox->set_orientation(Gtk::ORIENTATION_HORIZONTAL);
 
+    // Set size for address list box
     addressListBox->set_size_request(200,100);
     scrolledList->set_size_request(200,100);
 
+    // Add widgets to connect box
     connectBox->add(*ipAddressLabel);
     connectBox->add(*ipAddressEntry);
     connectBox->add(*connectButton);
     connectBox->add(*connectionStatusLabel);
 
+    // Add widgets to silent run box
     stateBox->add(*silentRunButton);
 
+    // Add widgets to shut down robot box
     remoteControlBox->add(*shutdownRobotButton);
 
+    // Add wigets to controls box
     controlsRightBox->add(*connectBox);
     controlsRightBox->add(*stateBox);
     controlsRightBox->add(*remoteControlBox);
 
+    // Add address list to scrollable list
     scrolledList->add(*addressListBox);
 
+    // Add widgets to controls box
     controlsBox->add(*scrolledList);
     controlsBox->add(*controlsRightBox);
 
+    // Add wigets to top level box
     topLevelBox->add(*controlsBox);
     topLevelBox->add(*sensorBox);
     window->add(*topLevelBox);

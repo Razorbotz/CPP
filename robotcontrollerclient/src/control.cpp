@@ -82,6 +82,13 @@ Gtk::FlowBox* sensorBox;
 Gtk::Window* window;
 int sock = 0; 
 bool connected=false;
+double roll_rotation_angle = 0.0;
+Glib::RefPtr<Gdk::Pixbuf> roll_pixbuf;
+Gtk::Image* roll_image;
+
+double pitch_rotation_angle = 45.0;
+Glib::RefPtr<Gdk::Pixbuf> pitch_pixbuf;
+Gtk::Image* pitch_image;
 
 std::vector<InfoFrame*> infoFrameList;
 
@@ -93,22 +100,137 @@ struct AxisEvent{
 };
 std::vector<std::vector<AxisEvent*>*>* axisEventList;
 
-BinaryMessage createDummyMessage() {
-    BinaryMessage dummy("Dummy Motor Info");
 
-    dummy.addElementUInt16("RPM", 1500);
-    dummy.addElementUInt16("Voltage", 1200);
-    dummy.addElementUInt16("Output Current", 500);
+Glib::RefPtr<Gdk::Pixbuf> rotate_image(Glib::RefPtr<Gdk::Pixbuf> pixbuf, double angle_deg, int target_width, int target_height) {
+    // Convert degrees to radians
+    double angle_rad = angle_deg * M_PI / 180.0;
 
-    return dummy;
+    // Get the original width and height
+    int width = pixbuf->get_width();
+    int height = pixbuf->get_height();
+
+    // Calculate new width and height after rotation
+    int new_width = static_cast<int>(std::abs(width * std::cos(angle_rad)) + std::abs(height * std::sin(angle_rad)));
+    int new_height = static_cast<int>(std::abs(width * std::sin(angle_rad)) + std::abs(height * std::cos(angle_rad)));
+
+    // Create a new pixbuf to hold the rotated image
+    Glib::RefPtr<Gdk::Pixbuf> rotated_pixbuf = Gdk::Pixbuf::create(Gdk::COLORSPACE_RGB, true, 8, new_width, new_height);
+
+    // Access the raw pixel data of the original image
+    unsigned char* pixels = pixbuf->get_pixels();
+    int rowstride = pixbuf->get_rowstride();
+    int channels = pixbuf->get_n_channels();
+
+    // Access the raw pixel data of the rotated image
+    unsigned char* rotated_pixels = rotated_pixbuf->get_pixels();
+    int rotated_rowstride = rotated_pixbuf->get_rowstride();
+
+    // Calculate the center of the original image and the rotated image
+    double center_x = width / 2.0;
+    double center_y = height / 2.0;
+    double new_center_x = new_width / 2.0;
+    double new_center_y = new_height / 2.0;
+
+    // Loop through the new pixbuf and calculate where each pixel from the original image will go
+    for (int y = 0; y < new_height; ++y) {
+        for (int x = 0; x < new_width; ++x) {
+            // Translate (x, y) to center-based coordinates
+            double new_x = x - new_center_x;
+            double new_y = y - new_center_y;
+
+            // Apply the rotation matrix (inverse transformation)
+            double old_x = new_x * std::cos(angle_rad) + new_y * std::sin(angle_rad) + center_x;
+            double old_y = -new_x * std::sin(angle_rad) + new_y * std::cos(angle_rad) + center_y;
+
+            // Check if the old coordinates are within the bounds of the original image
+            if (old_x >= 0 && old_x < width && old_y >= 0 && old_y < height) {
+                // Compute pixel position in the original image
+                int old_pixel_x = static_cast<int>(old_x);
+                int old_pixel_y = static_cast<int>(old_y);
+
+                // Get the pixel data from the original image
+                unsigned char* original_pixel = pixels + old_pixel_y * rowstride + old_pixel_x * channels;
+
+                // Get the pixel data for the rotated image
+                unsigned char* rotated_pixel = rotated_pixels + y * rotated_rowstride + x * channels;
+
+                // Copy the pixel data to the rotated image
+                for (int c = 0; c < channels; ++c) {
+                    rotated_pixel[c] = original_pixel[c];
+                }
+            }
+            else {
+                // Set the background pixel to white (255 for RGB)
+                unsigned char* rotated_pixel = rotated_pixels + y * rotated_rowstride + x * channels;
+                rotated_pixel[0] = 255;  // Red
+                rotated_pixel[1] = 255;  // Green
+                rotated_pixel[2] = 255;  // Blue
+                if (channels == 4) {
+                    rotated_pixel[3] = 255;  // Alpha (fully opaque)
+                }
+            }
+        }
+    }
+
+    Glib::RefPtr<Gdk::Pixbuf> resized_pixbuf = rotated_pixbuf->scale_simple(target_width, target_height, Gdk::InterpType::INTERP_BILINEAR);
+
+	unsigned char* new_pixels = resized_pixbuf->get_pixels();
+	int new_rowstride = resized_pixbuf->get_rowstride();
+	int new_channels = resized_pixbuf->get_n_channels();
+		
+	for (int y = 0; y < new_height; ++y) {
+    	for (int x = 0; x < new_width; ++x) {
+    	unsigned char* new_pixel = new_pixels + y * new_rowstride + x * new_channels;
+        	if(angle_deg > 30 || angle_deg < -30){
+        		if(new_pixel[0] == 255 && new_pixel[1] == 255 && new_pixel[2] == 255){
+	                new_pixel[0] = 255;  // Red
+    	            new_pixel[1] = 0;  // Green
+    	            new_pixel[2] = 0;  // Blue
+    	            if (channels == 4) {
+    	                new_pixel[3] = 255;  // Alpha (fully opaque)
+    	            }
+	            }
+            }
+            if(y == 98 || y == 99 || y == 100 || y == 101){
+    			if(x <= 15 || x == 199 || x == 198 || x == 197 || x == 196
+    			|| x == 195|| x == 194|| x == 193|| x == 192|| x == 191 || x == 190
+    			|| x == 189|| x == 188|| x == 187|| x == 186 || x == 185){
+    				new_pixel[0] = 0;  // Red
+		            new_pixel[1] = 0;  // Green
+		            new_pixel[2] = 0;  // Blue
+		            if (channels == 4) {
+		                new_pixel[3] = 255;  // Alpha (fully opaque)
+		            }
+    			}
+    		}
+        }
+	}
+    return resized_pixbuf;
 }
 
 
 void updateGUI (BinaryMessage& message){
 
     for(int frameIndex=0; frameIndex < infoFrameList.size(); frameIndex++){
-	InfoFrame* infoFrame = infoFrameList[frameIndex];    
+	    InfoFrame* infoFrame = infoFrameList[frameIndex]; 
         if(infoFrame->get_label() == message.getLabel()){
+            if(message.getLabel() == "Zed"){
+                for(int elementIndex=0; elementIndex<message.getObject().elementList.size(); elementIndex++){
+                    Element element=message.getObject().elementList[elementIndex];
+                    if(element.type == TYPE::FLOAT32){
+                        if(element.label == "roll"){
+                            roll_rotation_angle = std::round(element.data.front().float32);
+                            Glib::RefPtr<Gdk::Pixbuf> newrollpixbuf = rotate_image(roll_pixbuf, -roll_rotation_angle, 200, 200);
+                            roll_image->set(newrollpixbuf);
+                        }
+                        if(element.label == "yaw"){
+                            pitch_rotation_angle = std::round(element.data.front().float32);
+                            Glib::RefPtr<Gdk::Pixbuf> newpitchpixbuf = rotate_image(pitch_pixbuf, pitch_rotation_angle, 200, 200);
+                            pitch_image->set(newpitchpixbuf);
+                        }
+                    }
+                }
+            }
             for(int elementIndex=0; elementIndex<message.getObject().elementList.size(); elementIndex++){
                 Element element=message.getObject().elementList[elementIndex];
                 if(element.type == TYPE::BOOLEAN){
@@ -163,75 +285,81 @@ void updateGUI (BinaryMessage& message){
         }
     }
 
-    InfoFrame* infoFrame=Gtk::manage( new InfoFrame(message.getLabel()) );
-    infoFrameList.push_back(infoFrame);
+    std::string label = message.getLabel();
+	if(label == "Falcon 1" || label == "Falcon 2" || label == "Falcon 3" || label == "Falcon 4"
+	|| label == "Talon 1" || label == "Talon 2" || label == "Talon 3" || label == "Talon 4"
+	|| label == "Linear 1" || label == "Linear 2" || label == "Linear 3" || label == "Linear 4"
+	|| label == "Zed" || label == "Autonomy" || label == "Communication"){
+        InfoFrame* infoFrame=Gtk::manage( new InfoFrame(message.getLabel()) );
+        infoFrameList.push_back(infoFrame);
 
-    for(int index=0;index<message.getObject().elementList.size() ; index++){
-        Element element=message.getObject().elementList[index];
-        if(element.type == TYPE::BOOLEAN){
-            infoFrame->addItem(element.label);
-            infoFrame->setItem(element.label, element.data.begin()->boolean );
-        }
-        if(element.type == TYPE::INT8){
-            infoFrame->addItem(element.label);
-            infoFrame->setItem(element.label, element.data.begin()->int8 );
-        }
-        if(element.type == TYPE::UINT8){
-	        infoFrame->addItem(element.label);
-	        infoFrame->setItem(element.label, element.data.begin()->uint8 );
-        }
-        if(element.type == TYPE::INT16){
-            infoFrame->addItem(element.label);
-            infoFrame->setItem(element.label, element.data.begin()->int16 );
-        }
-        if(element.type == TYPE::UINT16){
-        	if(element.label == "Bus Voltage" || element.label == "Output Current"){
-        		// Change this over to float
-        		infoFrame->addItem(element.label);
-        		float voltage = (element.data.begin()->uint16 / 100.0);
-        		infoFrame->setItem(element.label, voltage);
-        	}
-        	else{
-            	infoFrame->addItem(element.label);
-            	infoFrame->setItem(element.label, element.data.begin()->uint16 );
-        	}
-        }
-        if(element.type == TYPE::INT32){
-            infoFrame->addItem(element.label);
-            infoFrame->setItem(element.label, element.data.begin()->int32 );
-        }
-        if(element.type == TYPE::UINT32){
-            infoFrame->addItem(element.label);
-            infoFrame->setItem(element.label, element.data.begin()->uint32 );
-        }
-        if(element.type == TYPE::INT64){
-            infoFrame->addItem(element.label);
-            infoFrame->setItem(element.label, element.data.begin()->int64 );
-        }
-        if(element.type == TYPE::UINT64){
-            infoFrame->addItem(element.label);
-            infoFrame->setItem(element.label, element.data.begin()->uint64 );
-        }
-        if(element.type == TYPE::FLOAT32){
-            infoFrame->addItem(element.label);
-            infoFrame->setItem(element.label, element.data.begin()->float32 );
-        }
-        if(element.type == TYPE::FLOAT64){
-            infoFrame->addItem(element.label);
-            infoFrame->setItem(element.label, element.data.begin()->float64 );
-        }
-        if(element.type == TYPE::STRING){
-            std::string theString= "";
-            for(auto iterator=element.data.begin(); iterator != element.data.end(); iterator++ ){
-                theString.push_back(iterator->character);
+        for(int index=0;index<message.getObject().elementList.size() ; index++){
+            Element element=message.getObject().elementList[index];
+            if(element.type == TYPE::BOOLEAN){
+                infoFrame->addItem(element.label);
+                infoFrame->setItem(element.label, element.data.begin()->boolean );
             }
-            infoFrame->addItem(element.label);
-            infoFrame->setItem(element.label, theString );
+            if(element.type == TYPE::INT8){
+                infoFrame->addItem(element.label);
+                infoFrame->setItem(element.label, element.data.begin()->int8 );
+            }
+            if(element.type == TYPE::UINT8){
+                infoFrame->addItem(element.label);
+                infoFrame->setItem(element.label, element.data.begin()->uint8 );
+            }
+            if(element.type == TYPE::INT16){
+                infoFrame->addItem(element.label);
+                infoFrame->setItem(element.label, element.data.begin()->int16 );
+            }
+            if(element.type == TYPE::UINT16){
+                if(element.label == "Bus Voltage" || element.label == "Output Current"){
+                    // Change this over to float
+                    infoFrame->addItem(element.label);
+                    float voltage = (element.data.begin()->uint16 / 100.0);
+                    infoFrame->setItem(element.label, voltage);
+                }
+                else{
+                    infoFrame->addItem(element.label);
+                    infoFrame->setItem(element.label, element.data.begin()->uint16 );
+                }
+            }
+            if(element.type == TYPE::INT32){
+                infoFrame->addItem(element.label);
+                infoFrame->setItem(element.label, element.data.begin()->int32 );
+            }
+            if(element.type == TYPE::UINT32){
+                infoFrame->addItem(element.label);
+                infoFrame->setItem(element.label, element.data.begin()->uint32 );
+            }
+            if(element.type == TYPE::INT64){
+                infoFrame->addItem(element.label);
+                infoFrame->setItem(element.label, element.data.begin()->int64 );
+            }
+            if(element.type == TYPE::UINT64){
+                infoFrame->addItem(element.label);
+                infoFrame->setItem(element.label, element.data.begin()->uint64 );
+            }
+            if(element.type == TYPE::FLOAT32){
+                infoFrame->addItem(element.label);
+                infoFrame->setItem(element.label, element.data.begin()->float32 );
+            }
+            if(element.type == TYPE::FLOAT64){
+                infoFrame->addItem(element.label);
+                infoFrame->setItem(element.label, element.data.begin()->float64 );
+            }
+            if(element.type == TYPE::STRING){
+                std::string theString= "";
+                for(auto iterator=element.data.begin(); iterator != element.data.end(); iterator++ ){
+                    theString.push_back(iterator->character);
+                }
+                infoFrame->addItem(element.label);
+                infoFrame->setItem(element.label, theString );
+            }
         }
-    }
 
-    sensorBox->add(*infoFrame);
-    infoFrame->show();
+        sensorBox->add(*infoFrame);
+        infoFrame->show();
+    }
 }
 
 
@@ -547,6 +675,34 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application){
     controlsBox->add(*scrolledList);
     controlsBox->add(*controlsRightBox);
 
+    roll_image = Gtk::manage(new Gtk::Image());
+    sensorBox->add(*roll_image);
+    
+    try{
+        roll_pixbuf = Gdk::Pixbuf::create_from_file("/home/team/SoftwareDevelopment/C++/robotcontrollerclient/src/RobotSide.png");
+    }
+    catch(const Glib::FileError& e){
+        g_print("Failed to load image: %s\n", e.what().c_str());
+        return;
+    }
+    
+    Glib::RefPtr<Gdk::Pixbuf> newrollpixbuf = rotate_image(roll_pixbuf, roll_rotation_angle, 200, 200);
+    roll_image->set(newrollpixbuf);
+    
+    pitch_image = Gtk::manage(new Gtk::Image());
+    sensorBox->add(*pitch_image);
+    
+    try{
+        pitch_pixbuf = Gdk::Pixbuf::create_from_file("/home/team/SoftwareDevelopment/C++/robotcontrollerclient/src/RobotBack.png");
+    }
+    catch(const Glib::FileError& e){
+        g_print("Failed to load image: %s\n", e.what().c_str());
+        return;
+    }
+    
+    Glib::RefPtr<Gdk::Pixbuf> newpitchpixbuf = rotate_image(pitch_pixbuf, pitch_rotation_angle, 200, 200);
+    pitch_image->set(newpitchpixbuf);
+
     // Add wigets to top level box
     topLevelBox->add(*controlsBox);
     topLevelBox->add(*sensorBox);
@@ -712,9 +868,284 @@ void adjustRobotList(){
 }
 
  
+void initGUI(){
+    BinaryMessage talonMessage1("Talon 1");
+    talonMessage1.addElementUInt8("Device ID",(uint8_t)0);
+    talonMessage1.addElementUInt16("Bus Voltage",0);
+    talonMessage1.addElementUInt16("Output Current",0);
+    talonMessage1.addElementFloat32("Output Percent",0.0);
+    talonMessage1.addElementUInt8("Temperature",(uint8_t)0);
+    talonMessage1.addElementUInt16("Sensor Position",(uint8_t)0);
+    talonMessage1.addElementInt8("Sensor Velocity",(uint8_t)0);
+    talonMessage1.addElementFloat32("Max Current", 0.0);
+    updateGUI(talonMessage1);
+
+    BinaryMessage talonMessage2("Talon 2");
+    talonMessage2.addElementUInt8("Device ID",(uint8_t)0);
+    talonMessage2.addElementUInt16("Bus Voltage",0);
+    talonMessage2.addElementUInt16("Output Current",0);
+    talonMessage2.addElementFloat32("Output Percent",0.0);
+    talonMessage2.addElementUInt8("Temperature",(uint8_t)0);
+    talonMessage2.addElementUInt16("Sensor Position",(uint8_t)0);
+    talonMessage2.addElementInt8("Sensor Velocity",(uint8_t)0);
+    talonMessage2.addElementFloat32("Max Current", 0.0);
+    updateGUI(talonMessage2);
+
+    BinaryMessage talonMessage3("Talon 3");
+    talonMessage3.addElementUInt8("Device ID",(uint8_t)0);
+    talonMessage3.addElementUInt16("Bus Voltage",0);
+    talonMessage3.addElementUInt16("Output Current",0);
+    talonMessage3.addElementFloat32("Output Percent",0.0);
+    talonMessage3.addElementUInt8("Temperature",(uint8_t)0);
+    talonMessage3.addElementUInt16("Sensor Position",(uint8_t)0);
+    talonMessage3.addElementInt8("Sensor Velocity",(uint8_t)0);
+    talonMessage3.addElementFloat32("Max Current", 0.0);
+    updateGUI(talonMessage3);
+
+    BinaryMessage talonMessage4("Talon 4");
+    talonMessage4.addElementUInt8("Device ID",(uint8_t)0);
+    talonMessage4.addElementUInt16("Bus Voltage",0);
+    talonMessage4.addElementUInt16("Output Current",0);
+    talonMessage4.addElementFloat32("Output Percent",0.0);
+    talonMessage4.addElementUInt8("Temperature",(uint8_t)0);
+    talonMessage4.addElementUInt16("Sensor Position",(uint8_t)0);
+    talonMessage4.addElementInt8("Sensor Velocity",(uint8_t)0);
+    talonMessage4.addElementFloat32("Max Current", 0.0);
+    updateGUI(talonMessage4);
+
+    BinaryMessage falconMessage1("Falcon 1");
+    falconMessage1.addElementUInt8("Device ID",(uint8_t)0);
+    falconMessage1.addElementUInt16("Bus Voltage",0);
+    falconMessage1.addElementUInt16("Output Current",0);
+    falconMessage1.addElementFloat32("Output Percent",0.0);
+    falconMessage1.addElementUInt8("Temperature",(uint8_t)0);
+    falconMessage1.addElementUInt16("Sensor Position",(uint8_t)0);
+    falconMessage1.addElementInt8("Sensor Velocity",(uint8_t)0);
+    falconMessage1.addElementFloat32("Max Current", 0.0);
+    updateGUI(falconMessage1);
+
+    BinaryMessage falconMessage2("Falcon 2");
+    falconMessage2.addElementUInt8("Device ID",(uint8_t)0);
+    falconMessage2.addElementUInt16("Bus Voltage",0);
+    falconMessage2.addElementUInt16("Output Current",0);
+    falconMessage2.addElementFloat32("Output Percent",0.0);
+    falconMessage2.addElementUInt8("Temperature",(uint8_t)0);
+    falconMessage2.addElementUInt16("Sensor Position",(uint8_t)0);
+    falconMessage2.addElementInt8("Sensor Velocity",(uint8_t)0);
+    falconMessage2.addElementFloat32("Max Current", 0.0);
+    updateGUI(falconMessage2);
+
+    BinaryMessage falconMessage3("Falcon 3");
+    falconMessage3.addElementUInt8("Device ID",(uint8_t)0);
+    falconMessage3.addElementUInt16("Bus Voltage",0);
+    falconMessage3.addElementUInt16("Output Current",0);
+    falconMessage3.addElementFloat32("Output Percent",0.0);
+    falconMessage3.addElementUInt8("Temperature",(uint8_t)0);
+    falconMessage3.addElementUInt16("Sensor Position",(uint8_t)0);
+    falconMessage3.addElementInt8("Sensor Velocity",(uint8_t)0);
+    falconMessage3.addElementFloat32("Max Current", 0.0);
+    updateGUI(falconMessage3);
+
+    BinaryMessage falconMessage4("Falcon 4");
+    falconMessage4.addElementUInt8("Device ID",(uint8_t)0);
+    falconMessage4.addElementUInt16("Bus Voltage",0);
+    falconMessage4.addElementUInt16("Output Current",0);
+    falconMessage4.addElementFloat32("Output Percent",0.0);
+    falconMessage4.addElementUInt8("Temperature",(uint8_t)0);
+    falconMessage4.addElementUInt16("Sensor Position",(uint8_t)0);
+    falconMessage4.addElementInt8("Sensor Velocity",(uint8_t)0);
+    falconMessage4.addElementFloat32("Max Current", 0.0);
+    updateGUI(falconMessage4);
+
+    std::shared_ptr<std::list<uint8_t>> byteList = falconMessage4.getBytes();
+
+    std::vector<uint8_t> bytes(byteList->size());
+    int index = 0;
+    for(auto byteIterator = byteList->begin(); byteIterator != byteList->end(); byteIterator++, index++){
+        bytes.at(index) = *byteIterator;
+    }
+    for(std::uint8_t byte : bytes){
+        std::cout << std::hex << static_cast<int>(byte) << " ";
+    }
+    std::cout << std::endl;
+}
+
+void initGUI(){
+	BinaryMessage talonMessage1("Talon 1");
+    talonMessage1.addElementUInt8("Device ID",(uint8_t)0);
+    talonMessage1.addElementUInt16("Bus Voltage",0);
+    talonMessage1.addElementUInt16("Output Current",9);
+    talonMessage1.addElementFloat32("Output Percent",0.0);
+    talonMessage1.addElementUInt8("Temperature",(uint8_t)0);
+    talonMessage1.addElementUInt16("Sensor Position",(uint8_t)0);
+    talonMessage1.addElementInt8("Sensor Velocity",(uint8_t)0);
+    talonMessage1.addElementFloat32("Max Current", 0.0);
+    updateGUI(talonMessage1);
+    
+    BinaryMessage talonMessage2("Talon 2");
+    talonMessage2.addElementUInt8("Device ID",(uint8_t)0);
+    talonMessage2.addElementUInt16("Bus Voltage",0);
+    talonMessage2.addElementUInt16("Output Current",9);
+    talonMessage2.addElementFloat32("Output Percent",0.0);
+    talonMessage2.addElementUInt8("Temperature",(uint8_t)0);
+    talonMessage2.addElementUInt16("Sensor Position",(uint8_t)0);
+    talonMessage2.addElementInt8("Sensor Velocity",(uint8_t)0);
+    talonMessage2.addElementFloat32("Max Current", 0.0);
+    updateGUI(talonMessage2);
+    
+    BinaryMessage talonMessage3("Talon 3");
+    talonMessage3.addElementUInt8("Device ID",(uint8_t)0);
+    talonMessage3.addElementUInt16("Bus Voltage",0);
+    talonMessage3.addElementUInt16("Output Current",9);
+    talonMessage3.addElementFloat32("Output Percent",0.0);
+    talonMessage3.addElementUInt8("Temperature",(uint8_t)0);
+    talonMessage3.addElementUInt16("Sensor Position",(uint8_t)0);
+    talonMessage3.addElementInt8("Sensor Velocity",(uint8_t)0);
+    talonMessage3.addElementFloat32("Max Current", 0.0);
+    updateGUI(talonMessage3);
+    
+    BinaryMessage talonMessage4("Talon 4");
+    talonMessage4.addElementUInt8("Device ID",(uint8_t)0);
+    talonMessage4.addElementUInt16("Bus Voltage",0);
+    talonMessage4.addElementUInt16("Output Current",9);
+    talonMessage4.addElementFloat32("Output Percent",0.0);
+    talonMessage4.addElementUInt8("Temperature",(uint8_t)0);
+    talonMessage4.addElementUInt16("Sensor Position",(uint8_t)0);
+    talonMessage4.addElementInt8("Sensor Velocity",(uint8_t)0);
+    talonMessage4.addElementFloat32("Max Current", 0.0);
+    updateGUI(talonMessage4);
+    
+    BinaryMessage falconMessage1("Falcon 1");
+    falconMessage1.addElementUInt8("Device ID",(uint8_t)0);
+    falconMessage1.addElementUInt16("Bus Voltage",0);
+    falconMessage1.addElementUInt16("Output Current",9);
+    falconMessage1.addElementFloat32("Output Percent",0.0);
+    falconMessage1.addElementUInt8("Temperature",(uint8_t)0);
+    falconMessage1.addElementUInt16("Sensor Position",(uint8_t)0);
+    falconMessage1.addElementInt8("Sensor Velocity",(uint8_t)0);
+    falconMessage1.addElementFloat32("Max Current", 0.0);
+    updateGUI(falconMessage1);
+    
+    BinaryMessage falconMessage2("Falcon 2");
+    falconMessage2.addElementUInt8("Device ID",(uint8_t)0);
+    falconMessage2.addElementUInt16("Bus Voltage",0);
+    falconMessage2.addElementUInt16("Output Current",9);
+    falconMessage2.addElementFloat32("Output Percent",0.0);
+    falconMessage2.addElementUInt8("Temperature",(uint8_t)0);
+    falconMessage2.addElementUInt16("Sensor Position",(uint8_t)0);
+    falconMessage2.addElementInt8("Sensor Velocity",(uint8_t)0);
+    falconMessage2.addElementFloat32("Max Current", 0.0);
+    updateGUI(falconMessage2);
+    
+    BinaryMessage falconMessage3("Falcon 3");
+    falconMessage3.addElementUInt8("Device ID",(uint8_t)0);
+    falconMessage3.addElementUInt16("Bus Voltage",0);
+    falconMessage3.addElementUInt16("Output Current",9);
+    falconMessage3.addElementFloat32("Output Percent",0.0);
+    falconMessage3.addElementUInt8("Temperature",(uint8_t)0);
+    falconMessage3.addElementUInt16("Sensor Position",(uint8_t)0);
+    falconMessage3.addElementInt8("Sensor Velocity",(uint8_t)0);
+    falconMessage3.addElementFloat32("Max Current", 0.0);
+    updateGUI(falconMessage3);
+    
+    BinaryMessage falconMessage4("Falcon 4");
+    falconMessage4.addElementUInt8("Device ID",(uint8_t)0);
+    falconMessage4.addElementUInt16("Bus Voltage",0);
+    falconMessage4.addElementUInt16("Output Current",9);
+    falconMessage4.addElementFloat32("Output Percent",0.0);
+    falconMessage4.addElementUInt8("Temperature",(uint8_t)0);
+    falconMessage4.addElementUInt16("Sensor Position",(uint8_t)0);
+    falconMessage4.addElementInt8("Sensor Velocity",(uint8_t)0);
+    falconMessage4.addElementFloat32("Max Current", 0.0);
+    updateGUI(falconMessage4);
+    
+    BinaryMessage linearMessage1("Linear 1");
+    linearMessage1.addElementUInt8("Motor Number", (uint8_t)0);
+    linearMessage1.addElementFloat32("Speed", 0.0);
+    linearMessage1.addElementUInt16("Potentiometer", (uint16_t)0);
+    linearMessage1.addElementUInt8("Time Without Change", (uint8_t)0);
+    linearMessage1.addElementUInt16("Max", (uint16_t)0);
+    linearMessage1.addElementUInt16("Min", (uint16_t)0);
+    linearMessage1.addElementString("Error", "No Error");
+    linearMessage1.addElementBoolean("At Min", false);
+    linearMessage1.addElementBoolean("At Max", false);
+    linearMessage1.addElementFloat32("Distance", 0.0);
+    linearMessage1.addElementBoolean("Sensorless", false);
+    updateGUI(linearMessage1);
+    
+    BinaryMessage linearMessage2("Linear 2");
+    linearMessage2.addElementUInt8("Motor Number", (uint8_t)0);
+    linearMessage2.addElementFloat32("Speed", 0.0);
+    linearMessage2.addElementUInt16("Potentiometer", (uint16_t)0);
+    linearMessage2.addElementUInt8("Time Without Change", (uint8_t)0);
+    linearMessage2.addElementUInt16("Max", (uint16_t)0);
+    linearMessage2.addElementUInt16("Min", (uint16_t)0);
+    linearMessage2.addElementString("Error", "No Error");
+    linearMessage2.addElementBoolean("At Min", false);
+    linearMessage2.addElementBoolean("At Max", false);
+    linearMessage2.addElementFloat32("Distance", 0.0);
+    linearMessage2.addElementBoolean("Sensorless", false);
+    updateGUI(linearMessage2);
+    
+    BinaryMessage linearMessage3("Linear 3");
+    linearMessage3.addElementUInt8("Motor Number", (uint8_t)0);
+    linearMessage3.addElementFloat32("Speed", 0.0);
+    linearMessage3.addElementUInt16("Potentiometer", (uint16_t)0);
+    linearMessage3.addElementUInt8("Time Without Change", (uint8_t)0);
+    linearMessage3.addElementUInt16("Max", (uint16_t)0);
+    linearMessage3.addElementUInt16("Min", (uint16_t)0);
+    linearMessage3.addElementString("Error", "No Error");
+    linearMessage3.addElementBoolean("At Min", false);
+    linearMessage3.addElementBoolean("At Max", false);
+    linearMessage3.addElementFloat32("Distance", 0.0);
+    linearMessage3.addElementBoolean("Sensorless", false);
+    updateGUI(linearMessage3);
+    
+    BinaryMessage linearMessage4("Linear 4");
+    linearMessage4.addElementUInt8("Motor Number", (uint8_t)0);
+    linearMessage4.addElementFloat32("Speed", 0.0);
+    linearMessage4.addElementUInt16("Potentiometer", (uint16_t)0);
+    linearMessage4.addElementUInt8("Time Without Change", (uint8_t)0);
+    linearMessage4.addElementUInt16("Max", (uint16_t)0);
+    linearMessage4.addElementUInt16("Min", (uint16_t)0);
+    linearMessage4.addElementString("Error", "No Error");
+    linearMessage4.addElementBoolean("At Min", false);
+    linearMessage4.addElementBoolean("At Max", false);
+    linearMessage4.addElementFloat32("Distance", 0.0);
+    linearMessage4.addElementBoolean("Sensorless", false);
+    updateGUI(linearMessage4);
+    
+    BinaryMessage communicationMessage("Communication");
+    communicationMessage.addElementString("Wi-Fi", "NORMAL OPERATION");
+    communicationMessage.addElementString("CAN BUS", "NON-FUNCTIONAL OPERATION");
+    updateGUI(communicationMessage);
+    
+    BinaryMessage autonomyMessage("Autonomy");
+    autonomyMessage.addElementString("Robot State", "No");
+    autonomyMessage.addElementString("Excavation State", "No");
+    autonomyMessage.addElementString("Error State", "No");
+    autonomyMessage.addElementString("Diagnostics State", "No");
+    updateGUI(autonomyMessage);
+    
+    BinaryMessage zedMessage("Zed");
+    zedMessage.addElementFloat32("X", 0.0);
+    zedMessage.addElementFloat32("Y", 0.0);
+    zedMessage.addElementFloat32("Z", 0.0);
+    zedMessage.addElementFloat32("roll", 0.0);
+    zedMessage.addElementFloat32("pitch", 0.0);
+    zedMessage.addElementFloat32("yaw", 0.0);
+    zedMessage.addElementFloat32("aruco roll", 0.0);
+    zedMessage.addElementFloat32("aruco pitch", 0.0);
+    zedMessage.addElementFloat32("aruco yaw", 0.0);
+    zedMessage.addElementBoolean("aruco", false);
+    updateGUI(zedMessage);
+}
+
+
 int main(int argc, char** argv) { 
     Glib::RefPtr<Gtk::Application> application = Gtk::Application::create(argc, argv, "edu.uark.razorbotz");
     setupGUI(application);
+    initGUI();
 
     std::thread broadcastListenThread(broadcastListen);
 
@@ -767,26 +1198,44 @@ int main(int argc, char** argv) {
             Gtk::Main::iteration();
         }
 
-        if(!connected)continue;
+        if(!connected){
+            if(messageBytesList.size() > 0){
+                messageBytesList.clear();
+            }
+            continue;
+        }
+
+        std::cout << "Before Read" << std::endl;
 
         bytesRead = read(sock, buffer, 2048);
         if(bytesRead==0){
             //std::cout << "Lost Connection" << std::endl;
             setDisconnectedState();
+            if(messageBytesList.size() > 0){
+                messageBytesList.clear();
+            }
             continue;
         }
+
+        std::cout << "After Read" << std::endl;
 
         for(int index=0;index<bytesRead;index++){
             messageBytesList.push_back(buffer[index]);
         }
 
+        std::cout << "Before hasMessage check" << std::endl;
         while(BinaryMessage::hasMessage(messageBytesList)){
+            std::cout << "Before message create" << std::endl;
             BinaryMessage message(messageBytesList);
+            std::cout << "Before GUI update" << std::endl;
             updateGUI(message);
+            std::cout << "Before size decode" << std::endl;
             uint64_t size=BinaryMessage::decodeSizeBytes(messageBytesList);
             for(int count=0; count < size; count++){
+                //std::cout << messageBytesList.front();
                 messageBytesList.pop_front();
             }
+            std::cout << std::endl;
         }
 
         while(SDL_PollEvent(&event)){
@@ -830,7 +1279,7 @@ int main(int argc, char** argv) {
                     break;
                 }
                 case SDL_JOYBUTTONDOWN:{
-
+                    std::cout << "Joystick button down" << std::endl;
                     uint8_t command=5;
                     int length=5;
                     uint8_t message[length];
@@ -845,6 +1294,7 @@ int main(int argc, char** argv) {
                     break;
                 }
                 case SDL_JOYBUTTONUP:{
+                    std::cout << "Joystick button up" << std::endl;
                     uint8_t command=5;
                     int length=5;
                     uint8_t message[length];
@@ -859,7 +1309,7 @@ int main(int argc, char** argv) {
                     break;
                 }
                 case SDL_JOYAXISMOTION: {
-
+                    std::cout << "Joystick axis motion" << std::endl;
                     int deadZone=4000;
                     if(event.jaxis.value < -deadZone || deadZone < event.jaxis.value ) {
                         axisEventList->at(event.jaxis.which)->at(event.jaxis.axis)->isSet = true;
@@ -889,7 +1339,7 @@ int main(int argc, char** argv) {
             for(int joystickIndex=0; joystickIndex < axisEventList->size(); joystickIndex++){
                 for(int axisIndex=0; axisIndex < axisEventList->at(joystickIndex)->size(); axisIndex++){
                     if(axisEventList->at(joystickIndex)->at(axisIndex)->isSet){
-                        //std::cout << joystickIndex << " " << axisIndex << " " << axisEventList->at(joystickIndex)->at(axisIndex)->value << std::endl;
+                        std::cout << joystickIndex << " " << axisIndex << " " << axisEventList->at(joystickIndex)->at(axisIndex)->value << std::endl;
                         axisEventList->at(joystickIndex)->at(axisIndex)->isSet = false;
 
                         uint8_t command = 1;
@@ -910,4 +1360,3 @@ int main(int argc, char** argv) {
     }
     return 0; 
 }
-

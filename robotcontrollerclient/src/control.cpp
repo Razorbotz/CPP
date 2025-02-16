@@ -95,7 +95,7 @@ std::vector<std::vector<AxisEvent*>*>* axisEventList;
 void updateGUI (BinaryMessage& message){
 
     for(int frameIndex=0; frameIndex < infoFrameList.size(); frameIndex++){
-	InfoFrame* infoFrame = infoFrameList[frameIndex];    
+	    InfoFrame* infoFrame = infoFrameList[frameIndex];    
         if(infoFrame->get_label() == message.getLabel()){
             for(int elementIndex=0; elementIndex<message.getObject().elementList.size(); elementIndex++){
                 Element element=message.getObject().elementList[elementIndex];
@@ -672,6 +672,109 @@ void adjustRobotList(){
 }
 
  
+void initGUI(){
+    BinaryMessage talonMessage1("Talon 1");
+    talonMessage1.addElementUInt8("Device ID",(uint8_t)0);
+    talonMessage1.addElementUInt16("Bus Voltage",0);
+    talonMessage1.addElementUInt16("Output Current",0);
+    talonMessage1.addElementFloat32("Output Percent",0.0);
+    talonMessage1.addElementUInt8("Temperature",(uint8_t)0);
+    talonMessage1.addElementUInt16("Sensor Position",(uint8_t)0);
+    talonMessage1.addElementInt8("Sensor Velocity",(uint8_t)0);
+    talonMessage1.addElementFloat32("Max Current", 0.0);
+    updateGUI(talonMessage1);
+
+    BinaryMessage talonMessage2("Talon 2");
+    talonMessage2.addElementUInt8("Device ID",(uint8_t)0);
+    talonMessage2.addElementUInt16("Bus Voltage",0);
+    talonMessage2.addElementUInt16("Output Current",0);
+    talonMessage2.addElementFloat32("Output Percent",0.0);
+    talonMessage2.addElementUInt8("Temperature",(uint8_t)0);
+    talonMessage2.addElementUInt16("Sensor Position",(uint8_t)0);
+    talonMessage2.addElementInt8("Sensor Velocity",(uint8_t)0);
+    talonMessage2.addElementFloat32("Max Current", 0.0);
+    updateGUI(talonMessage2);
+
+    BinaryMessage talonMessage3("Talon 3");
+    talonMessage3.addElementUInt8("Device ID",(uint8_t)0);
+    talonMessage3.addElementUInt16("Bus Voltage",0);
+    talonMessage3.addElementUInt16("Output Current",0);
+    talonMessage3.addElementFloat32("Output Percent",0.0);
+    talonMessage3.addElementUInt8("Temperature",(uint8_t)0);
+    talonMessage3.addElementUInt16("Sensor Position",(uint8_t)0);
+    talonMessage3.addElementInt8("Sensor Velocity",(uint8_t)0);
+    talonMessage3.addElementFloat32("Max Current", 0.0);
+    updateGUI(talonMessage3);
+
+    BinaryMessage talonMessage4("Talon 4");
+    talonMessage4.addElementUInt8("Device ID",(uint8_t)0);
+    talonMessage4.addElementUInt16("Bus Voltage",0);
+    talonMessage4.addElementUInt16("Output Current",0);
+    talonMessage4.addElementFloat32("Output Percent",0.0);
+    talonMessage4.addElementUInt8("Temperature",(uint8_t)0);
+    talonMessage4.addElementUInt16("Sensor Position",(uint8_t)0);
+    talonMessage4.addElementInt8("Sensor Velocity",(uint8_t)0);
+    talonMessage4.addElementFloat32("Max Current", 0.0);
+    updateGUI(talonMessage4);
+
+    BinaryMessage falconMessage1("Falcon 1");
+    falconMessage1.addElementUInt8("Device ID",(uint8_t)0);
+    falconMessage1.addElementUInt16("Bus Voltage",0);
+    falconMessage1.addElementUInt16("Output Current",0);
+    falconMessage1.addElementFloat32("Output Percent",0.0);
+    falconMessage1.addElementUInt8("Temperature",(uint8_t)0);
+    falconMessage1.addElementUInt16("Sensor Position",(uint8_t)0);
+    falconMessage1.addElementInt8("Sensor Velocity",(uint8_t)0);
+    falconMessage1.addElementFloat32("Max Current", 0.0);
+    updateGUI(falconMessage1);
+
+    BinaryMessage falconMessage2("Falcon 2");
+    falconMessage2.addElementUInt8("Device ID",(uint8_t)0);
+    falconMessage2.addElementUInt16("Bus Voltage",0);
+    falconMessage2.addElementUInt16("Output Current",0);
+    falconMessage2.addElementFloat32("Output Percent",0.0);
+    falconMessage2.addElementUInt8("Temperature",(uint8_t)0);
+    falconMessage2.addElementUInt16("Sensor Position",(uint8_t)0);
+    falconMessage2.addElementInt8("Sensor Velocity",(uint8_t)0);
+    falconMessage2.addElementFloat32("Max Current", 0.0);
+    updateGUI(falconMessage2);
+
+    BinaryMessage falconMessage3("Falcon 3");
+    falconMessage3.addElementUInt8("Device ID",(uint8_t)0);
+    falconMessage3.addElementUInt16("Bus Voltage",0);
+    falconMessage3.addElementUInt16("Output Current",0);
+    falconMessage3.addElementFloat32("Output Percent",0.0);
+    falconMessage3.addElementUInt8("Temperature",(uint8_t)0);
+    falconMessage3.addElementUInt16("Sensor Position",(uint8_t)0);
+    falconMessage3.addElementInt8("Sensor Velocity",(uint8_t)0);
+    falconMessage3.addElementFloat32("Max Current", 0.0);
+    updateGUI(falconMessage3);
+
+    BinaryMessage falconMessage4("Falcon 4");
+    falconMessage4.addElementUInt8("Device ID",(uint8_t)0);
+    falconMessage4.addElementUInt16("Bus Voltage",0);
+    falconMessage4.addElementUInt16("Output Current",0);
+    falconMessage4.addElementFloat32("Output Percent",0.0);
+    falconMessage4.addElementUInt8("Temperature",(uint8_t)0);
+    falconMessage4.addElementUInt16("Sensor Position",(uint8_t)0);
+    falconMessage4.addElementInt8("Sensor Velocity",(uint8_t)0);
+    falconMessage4.addElementFloat32("Max Current", 0.0);
+    updateGUI(falconMessage4);
+
+    std::shared_ptr<std::list<uint8_t>> byteList = falconMessage4.getBytes();
+
+    std::vector<uint8_t> bytes(byteList->size());
+    int index = 0;
+    for(auto byteIterator = byteList->begin(); byteIterator != byteList->end(); byteIterator++, index++){
+        bytes.at(index) = *byteIterator;
+    }
+    for(std::uint8_t byte : bytes){
+        std::cout << std::hex << static_cast<int>(byte) << " ";
+    }
+    std::cout << std::endl;
+}
+
+
 int main(int argc, char** argv) { 
     Glib::RefPtr<Gtk::Application> application = Gtk::Application::create(argc, argv, "edu.uark.razorbotz");
     setupGUI(application);
@@ -761,7 +864,7 @@ int main(int argc, char** argv) {
             std::cout << "Before size decode" << std::endl;
             uint64_t size=BinaryMessage::decodeSizeBytes(messageBytesList);
             for(int count=0; count < size; count++){
-                std::cout << messageBytesList.front();
+                //std::cout << messageBytesList.front();
                 messageBytesList.pop_front();
             }
             std::cout << std::endl;

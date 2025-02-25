@@ -588,8 +588,19 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application){
     window=new Gtk::Window();
 
     // Location of icon and set icon
-    auto icon = "../resources/razorbotz.png";
-    window->set_icon_from_file(icon);
+    //auto icon = "../resources/razorbotz.png";
+    //window->set_icon_from_file(icon);
+
+    try{
+        auto icon = "../resources/razorbotz.png";
+        window->set_icon_from_file(icon);
+    }
+    catch(const Glib::FileError& e){
+        g_print("Failed to load image: %s\n", e.what().c_str());
+        return;
+    }
+
+
 
     // Handles key press and release events  
     window->add_events(Gdk::KEY_PRESS_MASK);
@@ -636,7 +647,7 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application){
     silentRunButton=Gtk::manage(new Gtk::Button("Silent Running"));
     silentRunButton->signal_clicked().connect(sigc::ptr_fun(&silentRun));
 
-    // Create horizaontal box to hold remote control functionality
+    // Create horizontal box to hold remote control functionality
     Gtk::Box* remoteControlBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,2));
 
     // Create button to shutdown robot

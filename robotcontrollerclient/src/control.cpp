@@ -600,7 +600,23 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application){
         return;
     }
 
+    auto css_provider = Gtk::CssProvider::create();
+    auto css_provider = Gtk::CssProvider::create();
+    css_provider->load_from_data(R"(
+        window { background-color: #0b1a21; }
+        label, button, entry {
+            color: #edf6fa;
+        }
+        button {
+            border: 1px solid #edf6fa;
+            background-color: transparent;
+        }
+    )");
 
+
+    auto screen = Gdk::Screen::get_default();
+    auto style_context = Gtk::StyleContext::create();
+    style_context->add_provider_for_screen(screen, css_provider, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
 
     // Handles key press and release events  
     window->add_events(Gdk::KEY_PRESS_MASK);

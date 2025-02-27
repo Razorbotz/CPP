@@ -19,7 +19,9 @@
 #include <glibmm/ustring.h>
 #include <SDL2/SDL.h>
 #include <gtkmm.h>
+#include <gdkmm.h>
 #include <gtkmm/window.h>
+#include <webkit2/webkit2>
 //#include <gdk-pixbuf/gdk-pixbuf.h>
 
 #include "InfoFrame.hpp"
@@ -82,6 +84,9 @@ Gtk::FlowBox* sensorBox;
 Gtk::Window* window;
 int sock = 0; 
 bool connected=false;
+
+Gtk::Window* webcamWindow;
+
 double roll_rotation_angle = 0.0;
 Glib::RefPtr<Gdk::Pixbuf> roll_pixbuf;
 Gtk::Image* roll_image;
@@ -100,6 +105,46 @@ struct AxisEvent{
 };
 std::vector<std::vector<AxisEvent*>*>* axisEventList;
 
+
+class DrawingArea : public Gtk::DrawingArea {
+    public:
+        DrawingArea() : top_color_("#D3D3D3"), bottom_color_("#A9A9A9"), ratio_(2.0 / 3.0) {}
+        
+        void set_height_ratio(double ratio){
+            ratio_ = ratio;
+            queue_draw();
+        }
+    
+    protected:
+        bool on_draw(const Cairo::RefPtr<Cairo::Context>& cr) override {
+            int width = get_allocated_width();
+            int height = get_allocated_height();
+            cr->set_source_rgb(top_color_.get_red(), top_color_.get_green(), top_color_.get_blue());
+            cr->rectangle(0, 0, width, height * ratio_);
+            cr->fill();
+            
+            cr->set_source_rgb(bottom_color_.get_red(), bottom_color_.get_green(), bottom_color_.get_blue());
+            cr->rectangle(0, height * ratio_, width, height * (1 - ratio_));
+            cr->fill();
+            
+            return true;
+        }
+    
+    private:
+        Gdk::RGBA top_color_;
+        Gdk::RGBA bottom_color_;
+        double ratio_;
+    };
+
+DrawingArea* right_arm;
+DrawingArea* left_arm;
+DrawingArea* right_bucket;
+DrawingArea* left_bucket;
+Gtk::Box* armBox;
+Gtk::Box* bucketBox;
+bool arm_init = false, bucket_init = false, roll_init = false;
+
+int right_arm_pos = 450, left_arm_pos = 0, right_bucket_pos = 0, left_bucket_pos = 0;
 
 Glib::RefPtr<Gdk::Pixbuf> rotate_image(Glib::RefPtr<Gdk::Pixbuf> pixbuf, double angle_deg, int target_width, int target_height) {
     // Convert degrees to radians
@@ -172,8 +217,11 @@ Glib::RefPtr<Gdk::Pixbuf> rotate_image(Glib::RefPtr<Gdk::Pixbuf> pixbuf, double 
         }
     }
 
-    Glib::RefPtr<Gdk::Pixbuf> resized_pixbuf = rotated_pixbuf->scale_simple(target_width, target_height, Gdk::InterpType::INTERP_BILINEAR);
-
+    int crop_x = std::max(0, (new_width - target_width) / 2);
+    int crop_y = std::max(0, (new_height - target_height) / 2);
+    
+    Glib::RefPtr<Gdk::Pixbuf> resized_pixbuf = rotated_pixbuf->create_subpixbuf(rotated_pixbuf, crop_x, crop_y, target_width, target_height);
+    
 	unsigned char* new_pixels = resized_pixbuf->get_pixels();
 	int new_rowstride = resized_pixbuf->get_rowstride();
 	int new_channels = resized_pixbuf->get_n_channels();
@@ -209,6 +257,112 @@ Glib::RefPtr<Gdk::Pixbuf> rotate_image(Glib::RefPtr<Gdk::Pixbuf> pixbuf, double 
 }
 
 
+void initRollPitch(){
+    roll_image = Gtk::manage(new Gtk::Image());
+    sensorBox->add(*roll_image);
+    
+    try{
+        roll_pixbuf = Gdk::Pixbuf::create_from_file("../resources/RobotSide.png");
+    }
+    catch(const Glib::FileError& e){
+        g_print("Failed to load image: %s\n", e.what().c_str());
+        return;
+    }
+    
+    Glib::RefPtr<Gdk::Pixbuf> newrollpixbuf = rotate_image(roll_pixbuf, roll_rotation_angle, 200, 200);
+    roll_image->set(newrollpixbuf);
+    
+    pitch_image = Gtk::manage(new Gtk::Image());
+    sensorBox->add(*pitch_image);
+    
+    try{
+        pitch_pixbuf = Gdk::Pixbuf::create_from_file("../resources/RobotBack.png");
+    }
+    catch(const Glib::FileError& e){
+        g_print("Failed to load image: %s\n", e.what().c_str());
+        return;
+    }
+    
+    Glib::RefPtr<Gdk::Pixbuf> newpitchpixbuf = rotate_image(pitch_pixbuf, pitch_rotation_angle, 200, 200);
+    pitch_image->set(newpitchpixbuf);
+    roll_init = true;
+}
+
+
+void initArmPos(){
+    Gtk::Box* armTextBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL,2));
+    armBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,5));
+    armBox->set_size_request(110, -1);
+    
+    left_arm = Gtk::manage(new DrawingArea());
+    left_arm->set_size_request(40, 180);
+    left_arm->set_hexpand(true);
+    left_arm->set_halign(Gtk::ALIGN_CENTER);
+    armBox->add(*left_arm);
+    left_arm->show();
+    
+    right_arm = Gtk::manage(new DrawingArea());
+    right_arm->set_size_request(40, 180);
+    right_arm->set_hexpand(true);
+    right_arm->set_halign(Gtk::ALIGN_CENTER);
+    armBox->add(*right_arm);
+    right_arm->show();
+    right_arm->set_height_ratio(0.5);
+    
+    armBox->set_halign(Gtk::ALIGN_CENTER);
+    armBox->set_valign(Gtk::ALIGN_CENTER);
+    
+    armTextBox->add(*armBox);
+    armTextBox->set_halign(Gtk::ALIGN_CENTER);
+    
+    Gtk::Label* armPosLabel = Gtk::manage(new Gtk::Label("L 		R"));
+    Gtk::Label* armLabel = Gtk::manage(new Gtk::Label("Arm Positions"));
+    
+    armPosLabel->set_halign(Gtk::ALIGN_CENTER);    
+    armLabel->set_halign(Gtk::ALIGN_CENTER);
+    
+    armTextBox->add(*armPosLabel);
+    armTextBox->add(*armLabel);
+    
+    sensorBox->add(*armTextBox);
+
+    arm_init = true;
+}
+
+
+void initBucketPos(){
+    Gtk::Box* bucketTextBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL,3));
+    bucketBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,20));
+    bucketBox->set_size_request(110, -1);
+    
+    left_bucket = Gtk::manage(new DrawingArea());
+    left_bucket->set_size_request(40, 180);
+    left_bucket->set_hexpand(true);
+    left_bucket->set_halign(Gtk::ALIGN_CENTER);
+    bucketBox->add(*left_bucket);
+    left_bucket->show();
+    
+    right_bucket = Gtk::manage(new DrawingArea());
+    right_bucket->set_size_request(40, 180);
+    right_bucket->set_hexpand(true);
+    right_bucket->set_halign(Gtk::ALIGN_CENTER);
+    bucketBox->add(*right_bucket);
+    right_bucket->show();
+    right_bucket->set_height_ratio(0.5);
+    
+    bucketBox->set_halign(Gtk::ALIGN_CENTER);
+    bucketBox->set_valign(Gtk::ALIGN_CENTER);
+    
+    bucketTextBox->add(*bucketBox);
+    Gtk::Label* bucketPosLabel = Gtk::manage(new Gtk::Label("L 		R"));
+    Gtk::Label* bucketLabel = Gtk::manage(new Gtk::Label("Bucket Positions"));
+    bucketTextBox->add(*bucketPosLabel);
+    bucketTextBox->add(*bucketLabel);
+    
+    sensorBox->add(*bucketTextBox);
+    bucket_init = true;
+}
+
 void updateGUI (BinaryMessage& message){
 
     for(int frameIndex=0; frameIndex < infoFrameList.size(); frameIndex++){
@@ -230,6 +384,84 @@ void updateGUI (BinaryMessage& message){
                         }
                     }
                 }
+            }
+            if(label.find("Talon ") != std::string::npos){
+            	if(label == "Talon 1"){
+            		for(int elementIndex=0; elementIndex<message.getObject().elementList.size(); elementIndex++){
+                    	Element element=message.getObject().elementList[elementIndex];
+                    	if(element.label == "Sensor Position"){
+                    		left_arm_pos = element.data.front().uint16;
+            				left_arm->set_height_ratio((920 - element.data.front().uint16) / 920.0);
+            				if(std::abs(left_arm_pos - right_arm_pos) > 50){
+            					Gdk::RGBA red;
+								red.set_rgba(1.0,0,0,1.0);
+								armBox->override_background_color(red);
+            				}
+            				else{
+            					Gdk::RGBA white;
+								white.set_rgba(1.0,1.0,1.0,1.0);
+								armBox->override_background_color(white);
+            				}
+        				}
+    				}
+            	}
+            	if(label == "Talon 2"){
+            		for(int elementIndex=0; elementIndex<message.getObject().elementList.size(); elementIndex++){
+                    	Element element=message.getObject().elementList[elementIndex];
+                    	if(element.label == "Sensor Position"){
+                    		right_arm_pos = element.data.front().uint16;
+            				right_arm->set_height_ratio((920 - element.data.front().uint16) / 920.0);
+            				if(std::abs(left_arm_pos - right_arm_pos) > 50){
+            					Gdk::RGBA red;
+								red.set_rgba(1.0,0,0,1.0);
+								armBox->override_background_color(red);
+            				}
+            				else{
+            					Gdk::RGBA white;
+								white.set_rgba(1.0,1.0,1.0,1.0);
+								armBox->override_background_color(white);
+            				}
+        				}
+    				}
+            	}
+            	if(label == "Talon 3"){
+            		for(int elementIndex=0; elementIndex<message.getObject().elementList.size(); elementIndex++){
+                    	Element element=message.getObject().elementList[elementIndex];
+                    	if(element.label == "Sensor Position"){
+                    		left_bucket_pos = element.data.front().uint16;
+            				left_bucket->set_height_ratio((700 - element.data.front().uint16) / 700.0);
+            				if(std::abs(left_bucket_pos - right_bucket_pos) > 50){
+            					Gdk::RGBA red;
+								red.set_rgba(1.0,0,0,1.0);
+								bucketBox->override_background_color(red);
+            				}
+            				else{
+            					Gdk::RGBA white;
+								white.set_rgba(1.0,1.0,1.0,1.0);
+								bucketBox->override_background_color(white);
+            				}
+        				}
+    				}
+            	}
+            	if(label == "Talon 4"){
+            		for(int elementIndex=0; elementIndex<message.getObject().elementList.size(); elementIndex++){
+                    	Element element=message.getObject().elementList[elementIndex];
+                    	if(element.label == "Sensor Position"){
+                    		right_bucket_pos = element.data.front().uint16;
+            				right_bucket->set_height_ratio((700 - element.data.front().uint16) / 700.0);
+            				if(std::abs(left_bucket_pos - right_bucket_pos) > 50){
+            					Gdk::RGBA red;
+								red.set_rgba(1.0,0,0,1.0);
+								bucketBox->override_background_color(red);
+            				}
+            				else{
+            					Gdk::RGBA red;
+								red.set_rgba(1.0,1.0,1.0,1.0);
+								bucketBox->override_background_color(red);
+            				}
+        				}
+    				}
+            	}
             }
             for(int elementIndex=0; elementIndex<message.getObject().elementList.size(); elementIndex++){
                 Element element=message.getObject().elementList[elementIndex];
@@ -290,6 +522,16 @@ void updateGUI (BinaryMessage& message){
 	|| label == "Talon 1" || label == "Talon 2" || label == "Talon 3" || label == "Talon 4"
 	|| label == "Linear 1" || label == "Linear 2" || label == "Linear 3" || label == "Linear 4"
 	|| label == "Zed" || label == "Autonomy" || label == "Communication"){
+
+        if((label == "Talon 1" || label == "Talon 2") && !arm_init){
+            initArmPos();
+        }
+        if((label == "Talon 3" || label == "Talon 4") && !bucket_init){
+            initBucketPos();
+        }
+        if(label == "Zed" && !roll_init){
+            initRollPitch();
+        }
         InfoFrame* infoFrame=Gtk::manage( new InfoFrame(message.getLabel()) );
         infoFrameList.push_back(infoFrame);
 
@@ -380,6 +622,10 @@ void setDisconnectedState(){
         sensorBox->remove(*(*it));
         it++;
     }
+
+    arm_init = false;
+    bucket_init = false;
+    roll_init = false;
 
     infoFrameList.clear();
 }
@@ -702,34 +948,6 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application){
     controlsBox->add(*scrolledList);
     controlsBox->add(*controlsRightBox);
 
-    roll_image = Gtk::manage(new Gtk::Image());
-    sensorBox->add(*roll_image);
-    
-    try{
-        roll_pixbuf = Gdk::Pixbuf::create_from_file("../resources/RobotSide.png");
-    }
-    catch(const Glib::FileError& e){
-        g_print("Failed to load image: %s\n", e.what().c_str());
-        return;
-    }
-    
-    Glib::RefPtr<Gdk::Pixbuf> newrollpixbuf = rotate_image(roll_pixbuf, roll_rotation_angle, 200, 200);
-    roll_image->set(newrollpixbuf);
-    
-    pitch_image = Gtk::manage(new Gtk::Image());
-    sensorBox->add(*pitch_image);
-    
-    try{
-        pitch_pixbuf = Gdk::Pixbuf::create_from_file("../resources/RobotBack.png");
-    }
-    catch(const Glib::FileError& e){
-        g_print("Failed to load image: %s\n", e.what().c_str());
-        return;
-    }
-    
-    Glib::RefPtr<Gdk::Pixbuf> newpitchpixbuf = rotate_image(pitch_pixbuf, pitch_rotation_angle, 200, 200);
-    pitch_image->set(newpitchpixbuf);
-
     // Add wigets to top level box
     topLevelBox->add(*controlsBox);
     topLevelBox->add(*sensorBox);
@@ -894,285 +1112,227 @@ void adjustRobotList(){
     }
 }
 
- 
 void initGUI(){
-    BinaryMessage talonMessage1("Talon 1");
+ 	BinaryMessage talonMessage1("Talon 1");
     talonMessage1.addElementUInt8("Device ID",(uint8_t)0);
     talonMessage1.addElementUInt16("Bus Voltage",0);
-    talonMessage1.addElementUInt16("Output Current",0);
+    talonMessage1.addElementUInt16("Output Current",9);
     talonMessage1.addElementFloat32("Output Percent",0.0);
     talonMessage1.addElementUInt8("Temperature",(uint8_t)0);
     talonMessage1.addElementUInt16("Sensor Position",(uint8_t)0);
     talonMessage1.addElementInt8("Sensor Velocity",(uint8_t)0);
     talonMessage1.addElementFloat32("Max Current", 0.0);
     updateGUI(talonMessage1);
-
+    
     BinaryMessage talonMessage2("Talon 2");
     talonMessage2.addElementUInt8("Device ID",(uint8_t)0);
     talonMessage2.addElementUInt16("Bus Voltage",0);
-    talonMessage2.addElementUInt16("Output Current",0);
+    talonMessage2.addElementUInt16("Output Current",9);
     talonMessage2.addElementFloat32("Output Percent",0.0);
     talonMessage2.addElementUInt8("Temperature",(uint8_t)0);
     talonMessage2.addElementUInt16("Sensor Position",(uint8_t)0);
     talonMessage2.addElementInt8("Sensor Velocity",(uint8_t)0);
     talonMessage2.addElementFloat32("Max Current", 0.0);
     updateGUI(talonMessage2);
-
+    
     BinaryMessage talonMessage3("Talon 3");
     talonMessage3.addElementUInt8("Device ID",(uint8_t)0);
     talonMessage3.addElementUInt16("Bus Voltage",0);
-    talonMessage3.addElementUInt16("Output Current",0);
+    talonMessage3.addElementUInt16("Output Current",9);
     talonMessage3.addElementFloat32("Output Percent",0.0);
     talonMessage3.addElementUInt8("Temperature",(uint8_t)0);
     talonMessage3.addElementUInt16("Sensor Position",(uint8_t)0);
     talonMessage3.addElementInt8("Sensor Velocity",(uint8_t)0);
     talonMessage3.addElementFloat32("Max Current", 0.0);
     updateGUI(talonMessage3);
-
+    
     BinaryMessage talonMessage4("Talon 4");
     talonMessage4.addElementUInt8("Device ID",(uint8_t)0);
     talonMessage4.addElementUInt16("Bus Voltage",0);
-    talonMessage4.addElementUInt16("Output Current",0);
+    talonMessage4.addElementUInt16("Output Current",9);
     talonMessage4.addElementFloat32("Output Percent",0.0);
     talonMessage4.addElementUInt8("Temperature",(uint8_t)0);
     talonMessage4.addElementUInt16("Sensor Position",(uint8_t)0);
     talonMessage4.addElementInt8("Sensor Velocity",(uint8_t)0);
     talonMessage4.addElementFloat32("Max Current", 0.0);
     updateGUI(talonMessage4);
-
+  
     BinaryMessage falconMessage1("Falcon 1");
     falconMessage1.addElementUInt8("Device ID",(uint8_t)0);
     falconMessage1.addElementUInt16("Bus Voltage",0);
-    falconMessage1.addElementUInt16("Output Current",0);
+    falconMessage1.addElementUInt16("Output Current",9);
     falconMessage1.addElementFloat32("Output Percent",0.0);
     falconMessage1.addElementUInt8("Temperature",(uint8_t)0);
     falconMessage1.addElementUInt16("Sensor Position",(uint8_t)0);
     falconMessage1.addElementInt8("Sensor Velocity",(uint8_t)0);
     falconMessage1.addElementFloat32("Max Current", 0.0);
     updateGUI(falconMessage1);
-
+    
     BinaryMessage falconMessage2("Falcon 2");
     falconMessage2.addElementUInt8("Device ID",(uint8_t)0);
     falconMessage2.addElementUInt16("Bus Voltage",0);
-    falconMessage2.addElementUInt16("Output Current",0);
+    falconMessage2.addElementUInt16("Output Current",9);
     falconMessage2.addElementFloat32("Output Percent",0.0);
     falconMessage2.addElementUInt8("Temperature",(uint8_t)0);
     falconMessage2.addElementUInt16("Sensor Position",(uint8_t)0);
     falconMessage2.addElementInt8("Sensor Velocity",(uint8_t)0);
     falconMessage2.addElementFloat32("Max Current", 0.0);
     updateGUI(falconMessage2);
-
+    
     BinaryMessage falconMessage3("Falcon 3");
     falconMessage3.addElementUInt8("Device ID",(uint8_t)0);
     falconMessage3.addElementUInt16("Bus Voltage",0);
-    falconMessage3.addElementUInt16("Output Current",0);
+    falconMessage3.addElementUInt16("Output Current",9);
     falconMessage3.addElementFloat32("Output Percent",0.0);
     falconMessage3.addElementUInt8("Temperature",(uint8_t)0);
     falconMessage3.addElementUInt16("Sensor Position",(uint8_t)0);
     falconMessage3.addElementInt8("Sensor Velocity",(uint8_t)0);
     falconMessage3.addElementFloat32("Max Current", 0.0);
     updateGUI(falconMessage3);
-
+  
     BinaryMessage falconMessage4("Falcon 4");
     falconMessage4.addElementUInt8("Device ID",(uint8_t)0);
     falconMessage4.addElementUInt16("Bus Voltage",0);
-    falconMessage4.addElementUInt16("Output Current",0);
+    falconMessage4.addElementUInt16("Output Current",9);
     falconMessage4.addElementFloat32("Output Percent",0.0);
     falconMessage4.addElementUInt8("Temperature",(uint8_t)0);
     falconMessage4.addElementUInt16("Sensor Position",(uint8_t)0);
     falconMessage4.addElementInt8("Sensor Velocity",(uint8_t)0);
     falconMessage4.addElementFloat32("Max Current", 0.0);
     updateGUI(falconMessage4);
-
-    std::shared_ptr<std::list<uint8_t>> byteList = falconMessage4.getBytes();
-
-    std::vector<uint8_t> bytes(byteList->size());
-    int index = 0;
-    for(auto byteIterator = byteList->begin(); byteIterator != byteList->end(); byteIterator++, index++){
-        bytes.at(index) = *byteIterator;
-    }
-    for(std::uint8_t byte : bytes){
-        std::cout << std::hex << static_cast<int>(byte) << " ";
-    }
-    std::cout << std::endl;
+    
+    BinaryMessage linearMessage1("Linear 1");
+    linearMessage1.addElementUInt8("Motor Number", (uint8_t)0);
+    linearMessage1.addElementFloat32("Speed", 0.0);
+    linearMessage1.addElementUInt16("Potentiometer", (uint16_t)0);
+    linearMessage1.addElementUInt8("Time Without Change", (uint8_t)0);
+    linearMessage1.addElementUInt16("Max", (uint16_t)0);
+    linearMessage1.addElementUInt16("Min", (uint16_t)0);
+    linearMessage1.addElementString("Error", "No Error");
+    linearMessage1.addElementBoolean("At Min", false);
+    linearMessage1.addElementBoolean("At Max", false);
+    linearMessage1.addElementFloat32("Distance", 0.0);
+    linearMessage1.addElementBoolean("Sensorless", false);
+    updateGUI(linearMessage1);
+    
+    BinaryMessage linearMessage2("Linear 2");
+    linearMessage2.addElementUInt8("Motor Number", (uint8_t)0);
+    linearMessage2.addElementFloat32("Speed", 0.0);
+    linearMessage2.addElementUInt16("Potentiometer", (uint16_t)0);
+    linearMessage2.addElementUInt8("Time Without Change", (uint8_t)0);
+    linearMessage2.addElementUInt16("Max", (uint16_t)0);
+    linearMessage2.addElementUInt16("Min", (uint16_t)0);
+    linearMessage2.addElementString("Error", "No Error");
+    linearMessage2.addElementBoolean("At Min", false);
+    linearMessage2.addElementBoolean("At Max", false);
+    linearMessage2.addElementFloat32("Distance", 0.0);
+    linearMessage2.addElementBoolean("Sensorless", false);
+    updateGUI(linearMessage2);
+    
+    BinaryMessage linearMessage3("Linear 3");
+    linearMessage3.addElementUInt8("Motor Number", (uint8_t)0);
+    linearMessage3.addElementFloat32("Speed", 0.0);
+    linearMessage3.addElementUInt16("Potentiometer", (uint16_t)0);
+    linearMessage3.addElementUInt8("Time Without Change", (uint8_t)0);
+    linearMessage3.addElementUInt16("Max", (uint16_t)0);
+    linearMessage3.addElementUInt16("Min", (uint16_t)0);
+    linearMessage3.addElementString("Error", "No Error");
+    linearMessage3.addElementBoolean("At Min", false);
+    linearMessage3.addElementBoolean("At Max", false);
+    linearMessage3.addElementFloat32("Distance", 0.0);
+    linearMessage3.addElementBoolean("Sensorless", false);
+    updateGUI(linearMessage3);
+    
+    BinaryMessage linearMessage4("Linear 4");
+    linearMessage4.addElementUInt8("Motor Number", (uint8_t)0);
+    linearMessage4.addElementFloat32("Speed", 0.0);
+    linearMessage4.addElementUInt16("Potentiometer", (uint16_t)0);
+    linearMessage4.addElementUInt8("Time Without Change", (uint8_t)0);
+    linearMessage4.addElementUInt16("Max", (uint16_t)0);
+    linearMessage4.addElementUInt16("Min", (uint16_t)0);
+    linearMessage4.addElementString("Error", "No Error");
+    linearMessage4.addElementBoolean("At Min", false);
+    linearMessage4.addElementBoolean("At Max", false);
+    linearMessage4.addElementFloat32("Distance", 0.0);
+    linearMessage4.addElementBoolean("Sensorless", false);
+    updateGUI(linearMessage4);
+    
+    BinaryMessage communicationMessage("Communication");
+    communicationMessage.addElementInt32("RSSI", 0);
+    communicationMessage.addElementString("Wi-Fi", "NORMAL OPERATION");
+    communicationMessage.addElementString("CAN BUS", "NON-FUNCTIONAL OPERATION");
+    communicationMessage.addElementInt32("RX packets", 0);
+    communicationMessage.addElementInt32("TX packets", 0);
+    updateGUI(communicationMessage);
+    
+    BinaryMessage autonomyMessage("Autonomy");
+    autonomyMessage.addElementString("Robot State", "No");
+    autonomyMessage.addElementString("Excavation State", "No");
+    autonomyMessage.addElementString("Error State", "No");
+    autonomyMessage.addElementString("Diagnostics State", "No");
+    updateGUI(autonomyMessage);
+    
+    BinaryMessage zedMessage("Zed");
+    zedMessage.addElementFloat32("X", 0.0);
+    zedMessage.addElementFloat32("Y", 0.0);
+    zedMessage.addElementFloat32("Z", 0.0);
+    zedMessage.addElementFloat32("roll", 0.0);
+    zedMessage.addElementFloat32("pitch", 0.0);
+    zedMessage.addElementFloat32("yaw", 0.0);
+    zedMessage.addElementFloat32("aruco roll", 0.0);
+    zedMessage.addElementFloat32("aruco pitch", 0.0);
+    zedMessage.addElementFloat32("aruco yaw", 0.0);
+    zedMessage.addElementBoolean("aruco", false);
+    updateGUI(zedMessage);
+    
+    initRollPitch();
+    initArmPos();
+    initBucketPos();
 }
 
-// void initGUI(){
-// 	BinaryMessage talonMessage1("Talon 1");
-//     talonMessage1.addElementUInt8("Device ID",(uint8_t)0);
-//     talonMessage1.addElementUInt16("Bus Voltage",0);
-//     talonMessage1.addElementUInt16("Output Current",9);
-//     talonMessage1.addElementFloat32("Output Percent",0.0);
-//     talonMessage1.addElementUInt8("Temperature",(uint8_t)0);
-//     talonMessage1.addElementUInt16("Sensor Position",(uint8_t)0);
-//     talonMessage1.addElementInt8("Sensor Velocity",(uint8_t)0);
-//     talonMessage1.addElementFloat32("Max Current", 0.0);
-//     updateGUI(talonMessage1);
-    
-//     BinaryMessage talonMessage2("Talon 2");
-//     talonMessage2.addElementUInt8("Device ID",(uint8_t)0);
-//     talonMessage2.addElementUInt16("Bus Voltage",0);
-//     talonMessage2.addElementUInt16("Output Current",9);
-//     talonMessage2.addElementFloat32("Output Percent",0.0);
-//     talonMessage2.addElementUInt8("Temperature",(uint8_t)0);
-//     talonMessage2.addElementUInt16("Sensor Position",(uint8_t)0);
-//     talonMessage2.addElementInt8("Sensor Velocity",(uint8_t)0);
-//     talonMessage2.addElementFloat32("Max Current", 0.0);
-//     updateGUI(talonMessage2);
-    
-//     BinaryMessage talonMessage3("Talon 3");
-//     talonMessage3.addElementUInt8("Device ID",(uint8_t)0);
-//     talonMessage3.addElementUInt16("Bus Voltage",0);
-//     talonMessage3.addElementUInt16("Output Current",9);
-//     talonMessage3.addElementFloat32("Output Percent",0.0);
-//     talonMessage3.addElementUInt8("Temperature",(uint8_t)0);
-//     talonMessage3.addElementUInt16("Sensor Position",(uint8_t)0);
-//     talonMessage3.addElementInt8("Sensor Velocity",(uint8_t)0);
-//     talonMessage3.addElementFloat32("Max Current", 0.0);
-//     updateGUI(talonMessage3);
-    
-//     BinaryMessage talonMessage4("Talon 4");
-//     talonMessage4.addElementUInt8("Device ID",(uint8_t)0);
-//     talonMessage4.addElementUInt16("Bus Voltage",0);
-//     talonMessage4.addElementUInt16("Output Current",9);
-//     talonMessage4.addElementFloat32("Output Percent",0.0);
-//     talonMessage4.addElementUInt8("Temperature",(uint8_t)0);
-//     talonMessage4.addElementUInt16("Sensor Position",(uint8_t)0);
-//     talonMessage4.addElementInt8("Sensor Velocity",(uint8_t)0);
-//     talonMessage4.addElementFloat32("Max Current", 0.0);
-//     updateGUI(talonMessage4);
-    
-//     BinaryMessage falconMessage1("Falcon 1");
-//     falconMessage1.addElementUInt8("Device ID",(uint8_t)0);
-//     falconMessage1.addElementUInt16("Bus Voltage",0);
-//     falconMessage1.addElementUInt16("Output Current",9);
-//     falconMessage1.addElementFloat32("Output Percent",0.0);
-//     falconMessage1.addElementUInt8("Temperature",(uint8_t)0);
-//     falconMessage1.addElementUInt16("Sensor Position",(uint8_t)0);
-//     falconMessage1.addElementInt8("Sensor Velocity",(uint8_t)0);
-//     falconMessage1.addElementFloat32("Max Current", 0.0);
-//     updateGUI(falconMessage1);
-    
-//     BinaryMessage falconMessage2("Falcon 2");
-//     falconMessage2.addElementUInt8("Device ID",(uint8_t)0);
-//     falconMessage2.addElementUInt16("Bus Voltage",0);
-//     falconMessage2.addElementUInt16("Output Current",9);
-//     falconMessage2.addElementFloat32("Output Percent",0.0);
-//     falconMessage2.addElementUInt8("Temperature",(uint8_t)0);
-//     falconMessage2.addElementUInt16("Sensor Position",(uint8_t)0);
-//     falconMessage2.addElementInt8("Sensor Velocity",(uint8_t)0);
-//     falconMessage2.addElementFloat32("Max Current", 0.0);
-//     updateGUI(falconMessage2);
-    
-//     BinaryMessage falconMessage3("Falcon 3");
-//     falconMessage3.addElementUInt8("Device ID",(uint8_t)0);
-//     falconMessage3.addElementUInt16("Bus Voltage",0);
-//     falconMessage3.addElementUInt16("Output Current",9);
-//     falconMessage3.addElementFloat32("Output Percent",0.0);
-//     falconMessage3.addElementUInt8("Temperature",(uint8_t)0);
-//     falconMessage3.addElementUInt16("Sensor Position",(uint8_t)0);
-//     falconMessage3.addElementInt8("Sensor Velocity",(uint8_t)0);
-//     falconMessage3.addElementFloat32("Max Current", 0.0);
-//     updateGUI(falconMessage3);
-    
-//     BinaryMessage falconMessage4("Falcon 4");
-//     falconMessage4.addElementUInt8("Device ID",(uint8_t)0);
-//     falconMessage4.addElementUInt16("Bus Voltage",0);
-//     falconMessage4.addElementUInt16("Output Current",9);
-//     falconMessage4.addElementFloat32("Output Percent",0.0);
-//     falconMessage4.addElementUInt8("Temperature",(uint8_t)0);
-//     falconMessage4.addElementUInt16("Sensor Position",(uint8_t)0);
-//     falconMessage4.addElementInt8("Sensor Velocity",(uint8_t)0);
-//     falconMessage4.addElementFloat32("Max Current", 0.0);
-//     updateGUI(falconMessage4);
-    
-//     BinaryMessage linearMessage1("Linear 1");
-//     linearMessage1.addElementUInt8("Motor Number", (uint8_t)0);
-//     linearMessage1.addElementFloat32("Speed", 0.0);
-//     linearMessage1.addElementUInt16("Potentiometer", (uint16_t)0);
-//     linearMessage1.addElementUInt8("Time Without Change", (uint8_t)0);
-//     linearMessage1.addElementUInt16("Max", (uint16_t)0);
-//     linearMessage1.addElementUInt16("Min", (uint16_t)0);
-//     linearMessage1.addElementString("Error", "No Error");
-//     linearMessage1.addElementBoolean("At Min", false);
-//     linearMessage1.addElementBoolean("At Max", false);
-//     linearMessage1.addElementFloat32("Distance", 0.0);
-//     linearMessage1.addElementBoolean("Sensorless", false);
-//     updateGUI(linearMessage1);
-    
-//     BinaryMessage linearMessage2("Linear 2");
-//     linearMessage2.addElementUInt8("Motor Number", (uint8_t)0);
-//     linearMessage2.addElementFloat32("Speed", 0.0);
-//     linearMessage2.addElementUInt16("Potentiometer", (uint16_t)0);
-//     linearMessage2.addElementUInt8("Time Without Change", (uint8_t)0);
-//     linearMessage2.addElementUInt16("Max", (uint16_t)0);
-//     linearMessage2.addElementUInt16("Min", (uint16_t)0);
-//     linearMessage2.addElementString("Error", "No Error");
-//     linearMessage2.addElementBoolean("At Min", false);
-//     linearMessage2.addElementBoolean("At Max", false);
-//     linearMessage2.addElementFloat32("Distance", 0.0);
-//     linearMessage2.addElementBoolean("Sensorless", false);
-//     updateGUI(linearMessage2);
-    
-//     BinaryMessage linearMessage3("Linear 3");
-//     linearMessage3.addElementUInt8("Motor Number", (uint8_t)0);
-//     linearMessage3.addElementFloat32("Speed", 0.0);
-//     linearMessage3.addElementUInt16("Potentiometer", (uint16_t)0);
-//     linearMessage3.addElementUInt8("Time Without Change", (uint8_t)0);
-//     linearMessage3.addElementUInt16("Max", (uint16_t)0);
-//     linearMessage3.addElementUInt16("Min", (uint16_t)0);
-//     linearMessage3.addElementString("Error", "No Error");
-//     linearMessage3.addElementBoolean("At Min", false);
-//     linearMessage3.addElementBoolean("At Max", false);
-//     linearMessage3.addElementFloat32("Distance", 0.0);
-//     linearMessage3.addElementBoolean("Sensorless", false);
-//     updateGUI(linearMessage3);
-    
-//     BinaryMessage linearMessage4("Linear 4");
-//     linearMessage4.addElementUInt8("Motor Number", (uint8_t)0);
-//     linearMessage4.addElementFloat32("Speed", 0.0);
-//     linearMessage4.addElementUInt16("Potentiometer", (uint16_t)0);
-//     linearMessage4.addElementUInt8("Time Without Change", (uint8_t)0);
-//     linearMessage4.addElementUInt16("Max", (uint16_t)0);
-//     linearMessage4.addElementUInt16("Min", (uint16_t)0);
-//     linearMessage4.addElementString("Error", "No Error");
-//     linearMessage4.addElementBoolean("At Min", false);
-//     linearMessage4.addElementBoolean("At Max", false);
-//     linearMessage4.addElementFloat32("Distance", 0.0);
-//     linearMessage4.addElementBoolean("Sensorless", false);
-//     updateGUI(linearMessage4);
-    
-//     BinaryMessage communicationMessage("Communication");
-//     communicationMessage.addElementString("Wi-Fi", "NORMAL OPERATION");
-//     communicationMessage.addElementString("CAN BUS", "NON-FUNCTIONAL OPERATION");
-//     updateGUI(communicationMessage);
-    
-//     BinaryMessage autonomyMessage("Autonomy");
-//     autonomyMessage.addElementString("Robot State", "No");
-//     autonomyMessage.addElementString("Excavation State", "No");
-//     autonomyMessage.addElementString("Error State", "No");
-//     autonomyMessage.addElementString("Diagnostics State", "No");
-//     updateGUI(autonomyMessage);
-    
-//     BinaryMessage zedMessage("Zed");
-//     zedMessage.addElementFloat32("X", 0.0);
-//     zedMessage.addElementFloat32("Y", 0.0);
-//     zedMessage.addElementFloat32("Z", 0.0);
-//     zedMessage.addElementFloat32("roll", 0.0);
-//     zedMessage.addElementFloat32("pitch", 0.0);
-//     zedMessage.addElementFloat32("yaw", 0.0);
-//     zedMessage.addElementFloat32("aruco roll", 0.0);
-//     zedMessage.addElementFloat32("aruco pitch", 0.0);
-//     zedMessage.addElementFloat32("aruco yaw", 0.0);
-//     zedMessage.addElementBoolean("aruco", false);
-//     updateGUI(zedMessage);
-// }
+
+void initWebcam(){
+    webcamWindow = new Gtk::Window();
+    webcamWindow->set_title("Webcams");
+
+    Gtk::Box* outerBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,0));
+
+    Gtk::Box* livestreamBox1 = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,0));
+    liveStreamBox1->set_size_request(800, 600);
+    outerBox->add(*livestreamBox1);
+
+    auto webview = WEBKIT_WEB_VIEW(webkit_web_view_new());
+    webkit_web_view_load_uri(webview, "http://192.168.1.8/mjpeg/1");
+
+    Gtk::Widget* widget = Glib::wrap(GTK_WIDGET(webview));
+    widget->set_hexpand(true);
+    widget->set_vexpand(true);
+
+    livestreamBox1->pack_start(*widget, Gtk::PACK_EXPAND_WIDGET);
+
+    Gtk::Box* livestreamBox2 = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,0));
+    livestreamBox2->set_size_request(800, 600);
+    outerBox->add(*livestreamBox2);
+
+    auto webview2 = WEBKIT_WEB_VIEW(webkit_web_view_new());
+    webkit_web_view_load_uri(webview2, "http://192.168.1.9/mjpeg/1");
+
+    Gtk::Widget* widget2 = Glib::wrap(GTK_WIDGET(webview2));
+    widget2->set_hexpand(true);
+    widget2->set_vexpand(true);
+
+    livestreamBox2->pack_start(*widget2, Gtk::PACK_EXPAND_WIDGET);
+
+    webcamWindow->add(*outerBox);
+    webcamWindow->show_all();
+}
 
 
 int main(int argc, char** argv) { 
     Glib::RefPtr<Gtk::Application> application = Gtk::Application::create(argc, argv, "edu.uark.razorbotz");
     setupGUI(application);
     initGUI();
+    initWebcam();
 
     std::thread broadcastListenThread(broadcastListen);
 

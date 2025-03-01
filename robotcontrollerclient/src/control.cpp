@@ -257,6 +257,112 @@ Glib::RefPtr<Gdk::Pixbuf> rotate_image(Glib::RefPtr<Gdk::Pixbuf> pixbuf, double 
 }
 
 
+void initRollPitch(){
+    roll_image = Gtk::manage(new Gtk::Image());
+    sensorBox->add(*roll_image);
+    
+    try{
+        roll_pixbuf = Gdk::Pixbuf::create_from_file("../resources/RobotSide.png");
+    }
+    catch(const Glib::FileError& e){
+        g_print("Failed to load image: %s\n", e.what().c_str());
+        return;
+    }
+    
+    Glib::RefPtr<Gdk::Pixbuf> newrollpixbuf = rotate_image(roll_pixbuf, roll_rotation_angle, 200, 200);
+    roll_image->set(newrollpixbuf);
+    
+    pitch_image = Gtk::manage(new Gtk::Image());
+    sensorBox->add(*pitch_image);
+    
+    try{
+        pitch_pixbuf = Gdk::Pixbuf::create_from_file("../resources/RobotBack.png");
+    }
+    catch(const Glib::FileError& e){
+        g_print("Failed to load image: %s\n", e.what().c_str());
+        return;
+    }
+    
+    Glib::RefPtr<Gdk::Pixbuf> newpitchpixbuf = rotate_image(pitch_pixbuf, pitch_rotation_angle, 200, 200);
+    pitch_image->set(newpitchpixbuf);
+    roll_init = true;
+}
+
+
+void initArmPos(){
+    Gtk::Box* armTextBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL,2));
+    armBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,5));
+    armBox->set_size_request(110, -1);
+    
+    left_arm = Gtk::manage(new DrawingArea());
+    left_arm->set_size_request(40, 180);
+    left_arm->set_hexpand(true);
+    left_arm->set_halign(Gtk::ALIGN_CENTER);
+    armBox->add(*left_arm);
+    left_arm->show();
+    
+    right_arm = Gtk::manage(new DrawingArea());
+    right_arm->set_size_request(40, 180);
+    right_arm->set_hexpand(true);
+    right_arm->set_halign(Gtk::ALIGN_CENTER);
+    armBox->add(*right_arm);
+    right_arm->show();
+    right_arm->set_height_ratio(0.5);
+    
+    armBox->set_halign(Gtk::ALIGN_CENTER);
+    armBox->set_valign(Gtk::ALIGN_CENTER);
+    
+    armTextBox->add(*armBox);
+    armTextBox->set_halign(Gtk::ALIGN_CENTER);
+    
+    Gtk::Label* armPosLabel = Gtk::manage(new Gtk::Label("L 		R"));
+    Gtk::Label* armLabel = Gtk::manage(new Gtk::Label("Arm Positions"));
+    
+    armPosLabel->set_halign(Gtk::ALIGN_CENTER);    
+    armLabel->set_halign(Gtk::ALIGN_CENTER);
+    
+    armTextBox->add(*armPosLabel);
+    armTextBox->add(*armLabel);
+    
+    sensorBox->add(*armTextBox);
+
+    arm_init = true;
+}
+
+
+void initBucketPos(){
+    Gtk::Box* bucketTextBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL,3));
+    bucketBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,20));
+    bucketBox->set_size_request(110, -1);
+    
+    left_bucket = Gtk::manage(new DrawingArea());
+    left_bucket->set_size_request(40, 180);
+    left_bucket->set_hexpand(true);
+    left_bucket->set_halign(Gtk::ALIGN_CENTER);
+    bucketBox->add(*left_bucket);
+    left_bucket->show();
+    
+    right_bucket = Gtk::manage(new DrawingArea());
+    right_bucket->set_size_request(40, 180);
+    right_bucket->set_hexpand(true);
+    right_bucket->set_halign(Gtk::ALIGN_CENTER);
+    bucketBox->add(*right_bucket);
+    right_bucket->show();
+    right_bucket->set_height_ratio(0.5);
+    
+    bucketBox->set_halign(Gtk::ALIGN_CENTER);
+    bucketBox->set_valign(Gtk::ALIGN_CENTER);
+    
+    bucketTextBox->add(*bucketBox);
+    Gtk::Label* bucketPosLabel = Gtk::manage(new Gtk::Label("L 		R"));
+    Gtk::Label* bucketLabel = Gtk::manage(new Gtk::Label("Bucket Positions"));
+    bucketTextBox->add(*bucketPosLabel);
+    bucketTextBox->add(*bucketLabel);
+    
+    sensorBox->add(*bucketTextBox);
+    bucket_init = true;
+}
+
 void updateGUI (BinaryMessage& message){
 
     for(int frameIndex=0; frameIndex < infoFrameList.size(); frameIndex++){

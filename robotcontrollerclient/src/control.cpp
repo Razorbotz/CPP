@@ -1433,6 +1433,48 @@ void initWebcam(){
     webcamWindow->add(*outerBox);
     webcamWindow->show_all();
 }
+int key = 0x2C;
+int checksum_decode(std::shared_ptr<std::list<uint8_t>> byteList){
+    //Checks last byte of data for the checksum
+    if (byteList->size() < 1) {
+        std::cout << "Not enough data to decode checksum." << std::endl;
+        return;
+    }
+
+    // Extracts checksum (last byte)
+    auto it = byteList->end();
+    std::advance(it, -1);
+    uint8_t storedChecksum = *it;
+
+    // Sums byteList, excludes last byte (checksum) 
+    uint32_t sum = 0;
+    auto dataEnd = byteList->end();
+    std::advance(dataEnd, -1);
+    std::cout << "Data: ";
+    for (auto dataIt = byteList->begin(); dataIt != dataEnd; ++dataIt) {
+        sum += *dataIt;
+        std::cout<<std::hex<<static_cast<int>(*dataIt)<<" ";
+        
+    }
+    std::cout<<std::endl;
+
+    // Recalculate the checksum as sum modulo key.
+    uint8_t computedChecksum = sum % key;
+
+    std::cout << "Computed checksum from data: 0x" << std::hex << static_cast<int>(computedChecksum) << std::endl;
+    std::cout << "Stored checksum: 0x" << std::hex << static_cast<int>(storedChecksum) << std::endl;
+
+    if (computedChecksum == storedChecksum) {
+        std::cout << "Checksum is valid." << std::endl;
+        return 1;
+    } else {
+        std::cout << "Checksum is invalid." << std::endl;
+        byteList.clear();
+        return 0;
+
+    }
+
+}
 
 
 int main(int argc, char** argv) { 
@@ -1517,19 +1559,31 @@ int main(int argc, char** argv) {
             messageBytesList.push_back(buffer[index]);
         }
 
+        
+
         std::cout << "Before hasMessage check" << std::endl;
         while(BinaryMessage::hasMessage(messageBytesList)){
+
             std::cout << "Before message create" << std::endl;
-            BinaryMessage message(messageBytesList);
-            std::cout << "Before GUI update" << std::endl;
-            updateGUI(message);
-            std::cout << "Before size decode" << std::endl;
-            uint64_t size=BinaryMessage::decodeSizeBytes(messageBytesList);
-            for(int count=0; count < size; count++){
-                //std::cout << messageBytesList.front();
-                messageBytesList.pop_front();
+            int checksum = checksum_decode(messageBytesList); 
+            if (checksum = 0){
+                break; 
             }
-            std::cout << std::endl;
+            else{
+
+                BinaryMessage message(messageBytesList);
+                std::cout << "Before GUI update" << std::endl;
+                updateGUI(message);
+                std::cout << "Before size decode" << std::endl;
+                uint64_t size=BinaryMessage::decodeSizeBytes(messageBytesList);
+                for(int count=0; count < size; count++){
+                    //std::cout << messageBytesList.front();
+                    messageBytesList.pop_front();
+                }
+                std::cout << std::endl;
+
+            }
+
         }
 
         while(SDL_PollEvent(&event)){

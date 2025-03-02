@@ -21,7 +21,7 @@
 #include <gtkmm.h>
 #include <gdkmm.h>
 #include <gtkmm/window.h>
-#include <webkit2/webkit2>
+#include <webkit2/webkit2.h>
 //#include <gdk-pixbuf/gdk-pixbuf.h>
 
 #include "InfoFrame.hpp"
@@ -367,8 +367,9 @@ void updateGUI (BinaryMessage& message){
 
     for(int frameIndex=0; frameIndex < infoFrameList.size(); frameIndex++){
 	    InfoFrame* infoFrame = infoFrameList[frameIndex]; 
+        std::string label = message.getLabel();
         if(infoFrame->get_label() == message.getLabel()){
-            if(message.getLabel() == "Zed"){
+            if(label == "Zed"){
                 for(int elementIndex=0; elementIndex<message.getObject().elementList.size(); elementIndex++){
                     Element element=message.getObject().elementList[elementIndex];
                     if(element.type == TYPE::FLOAT32){
@@ -828,113 +829,6 @@ bool on_key_press_event(GdkEventKey* key_event){
 }
 
 
-void initRollPitch(){
-    roll_image = Gtk::manage(new Gtk::Image());
-    sensorBox->add(*roll_image);
-    
-    try{
-        roll_pixbuf = Gdk::Pixbuf::create_from_file("../resources/RobotSide.png");
-    }
-    catch(const Glib::FileError& e){
-        g_print("Failed to load image: %s\n", e.what().c_str());
-        return;
-    }
-    
-    Glib::RefPtr<Gdk::Pixbuf> newrollpixbuf = rotate_image(roll_pixbuf, roll_rotation_angle, 200, 200);
-    roll_image->set(newrollpixbuf);
-    
-    pitch_image = Gtk::manage(new Gtk::Image());
-    sensorBox->add(*pitch_image);
-    
-    try{
-        pitch_pixbuf = Gdk::Pixbuf::create_from_file("../resources/RobotBack.png");
-    }
-    catch(const Glib::FileError& e){
-        g_print("Failed to load image: %s\n", e.what().c_str());
-        return;
-    }
-    
-    Glib::RefPtr<Gdk::Pixbuf> newpitchpixbuf = rotate_image(pitch_pixbuf, pitch_rotation_angle, 200, 200);
-    pitch_image->set(newpitchpixbuf);
-    roll_init = true;
-}
-
-
-void initArmPos(){
-    Gtk::Box* armTextBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL,2));
-    armBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,5));
-    armBox->set_size_request(110, -1);
-    
-    left_arm = Gtk::manage(new DrawingArea());
-    left_arm->set_size_request(40, 180);
-    left_arm->set_hexpand(true);
-    left_arm->set_halign(Gtk::ALIGN_CENTER);
-    armBox->add(*left_arm);
-    left_arm->show();
-    
-    right_arm = Gtk::manage(new DrawingArea());
-    right_arm->set_size_request(40, 180);
-    right_arm->set_hexpand(true);
-    right_arm->set_halign(Gtk::ALIGN_CENTER);
-    armBox->add(*right_arm);
-    right_arm->show();
-    right_arm->set_height_ratio(0.5);
-    
-    armBox->set_halign(Gtk::ALIGN_CENTER);
-    armBox->set_valign(Gtk::ALIGN_CENTER);
-    
-    armTextBox->add(*armBox);
-    armTextBox->set_halign(Gtk::ALIGN_CENTER);
-    
-    Gtk::Label* armPosLabel = Gtk::manage(new Gtk::Label("L 		R"));
-    Gtk::Label* armLabel = Gtk::manage(new Gtk::Label("Arm Positions"));
-    
-    armPosLabel->set_halign(Gtk::ALIGN_CENTER);    
-    armLabel->set_halign(Gtk::ALIGN_CENTER);
-    
-    armTextBox->add(*armPosLabel);
-    armTextBox->add(*armLabel);
-    
-    sensorBox->add(*armTextBox);
-
-    arm_init = true;
-}
-
-
-void initBucketPos(){
-    Gtk::Box* bucketTextBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL,3));
-    bucketBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,20));
-    bucketBox->set_size_request(110, -1);
-    
-    left_bucket = Gtk::manage(new DrawingArea());
-    left_bucket->set_size_request(40, 180);
-    left_bucket->set_hexpand(true);
-    left_bucket->set_halign(Gtk::ALIGN_CENTER);
-    bucketBox->add(*left_bucket);
-    left_bucket->show();
-    
-    right_bucket = Gtk::manage(new DrawingArea());
-    right_bucket->set_size_request(40, 180);
-    right_bucket->set_hexpand(true);
-    right_bucket->set_halign(Gtk::ALIGN_CENTER);
-    bucketBox->add(*right_bucket);
-    right_bucket->show();
-    right_bucket->set_height_ratio(0.5);
-    
-    bucketBox->set_halign(Gtk::ALIGN_CENTER);
-    bucketBox->set_valign(Gtk::ALIGN_CENTER);
-    
-    bucketTextBox->add(*bucketBox);
-    Gtk::Label* bucketPosLabel = Gtk::manage(new Gtk::Label("L 		R"));
-    Gtk::Label* bucketLabel = Gtk::manage(new Gtk::Label("Bucket Positions"));
-    bucketTextBox->add(*bucketPosLabel);
-    bucketTextBox->add(*bucketLabel);
-    
-    sensorBox->add(*bucketTextBox);
-    bucket_init = true;
-}
-
-
 void setupGUI(Glib::RefPtr<Gtk::Application> application){
 
     // Create windows instance
@@ -953,7 +847,6 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application){
         return;
     }
 
-    auto css_provider = Gtk::CssProvider::create();
     auto css_provider = Gtk::CssProvider::create();
     css_provider->load_from_data(R"(
         window { background-color: #0b1a21; }
@@ -1405,7 +1298,7 @@ void initWebcam(){
     Gtk::Box* outerBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,0));
 
     Gtk::Box* livestreamBox1 = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,0));
-    liveStreamBox1->set_size_request(800, 600);
+    livestreamBox1->set_size_request(800, 600);
     outerBox->add(*livestreamBox1);
 
     auto webview = WEBKIT_WEB_VIEW(webkit_web_view_new());
@@ -1433,25 +1326,27 @@ void initWebcam(){
     webcamWindow->add(*outerBox);
     webcamWindow->show_all();
 }
+
+
 int key = 0x2C;
-int checksum_decode(std::shared_ptr<std::list<uint8_t>> byteList){
+int checksum_decode(std::list<uint8_t>& byteList){
     //Checks last byte of data for the checksum
-    if (byteList->size() < 1) {
+    if (byteList.size() < 1) {
         std::cout << "Not enough data to decode checksum." << std::endl;
-        return;
+        return -1;
     }
 
     // Extracts checksum (last byte)
-    auto it = byteList->end();
+    auto it = byteList.end();
     std::advance(it, -1);
     uint8_t storedChecksum = *it;
 
     // Sums byteList, excludes last byte (checksum) 
     uint32_t sum = 0;
-    auto dataEnd = byteList->end();
+    auto dataEnd = byteList.end();
     std::advance(dataEnd, -1);
     std::cout << "Data: ";
-    for (auto dataIt = byteList->begin(); dataIt != dataEnd; ++dataIt) {
+    for (auto dataIt = byteList.begin(); dataIt != dataEnd; ++dataIt) {
         sum += *dataIt;
         std::cout<<std::hex<<static_cast<int>(*dataIt)<<" ";
         

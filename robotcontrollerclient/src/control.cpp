@@ -15,6 +15,7 @@
 #include <thread>
 #include <list>
 #include <chrono>
+#include <cmath>
 
 #include <glibmm/ustring.h>
 #include <SDL2/SDL.h>
@@ -22,6 +23,7 @@
 #include <gdkmm.h>
 #include <gtkmm/window.h>
 #include <webkit2/webkit2.h>
+#include <cairomm/context.h>
 //#include <gdk-pixbuf/gdk-pixbuf.h>
 
 #include "InfoFrame.hpp"
@@ -86,6 +88,7 @@ int sock = 0;
 bool connected=false;
 
 Gtk::Window* webcamWindow;
+Gtk::Window* arenaWindow;
 
 double roll_rotation_angle = 0.0;
 Glib::RefPtr<Gdk::Pixbuf> roll_pixbuf;
@@ -146,6 +149,66 @@ bool arm_init = false, bucket_init = false, roll_init = false;
 
 int right_arm_pos = 450, left_arm_pos = 0, right_bucket_pos = 0, left_bucket_pos = 0;
 
+class ImageOverlay : public Gtk::DrawingArea {
+    public:
+        ImageOverlay() :
+            img_x(200), img_y(150), rotation_angle(0.0) {
+                load_images();
+            }
+    
+        bool update_image_position(double x, double y){
+            img_x = x;
+            img_y = y;
+            queue_draw();
+            return true;
+        }
+
+        bool update_image_rotation(double rotation){
+
+            rotation_angle = ((rotation * M_PI) / 180);
+            queue_draw();
+            return true;
+        }
+
+    protected:
+        bool on_draw(const Cairo::RefPtr<Cairo::Context>& cr) override {
+            if(!background || !overlay)return false;
+
+            cr->save();
+            Gdk::Cairo::set_source_pixbuf(cr, background, 0, 0);
+            cr->paint();
+            cr->restore();
+
+            cr->save();
+            cr->translate(img_x + overlay->get_width() / 2, img_y + overlay->get_height() / 2);
+            cr->rotate(rotation_angle);
+            cr->translate(-overlay->get_width() / 2, -overlay->get_height() / 2);
+            Gdk::Cairo::set_source_pixbuf(cr, overlay, 0, 0);
+            cr->paint();
+            cr->restore();
+
+            return true;
+        }
+
+
+    private:
+        Glib::RefPtr<Gdk::Pixbuf> background, overlay;
+        double img_x, img_y;
+        double rotation_angle;
+    
+        void load_images(){
+            try{
+                background = Gdk::Pixbuf::create_from_file("../resources/Arena.png");
+                overlay = Gdk::Pixbuf::create_from_file("../resources/RobotTop.png");
+            }
+            catch(const Glib::Exception& ex){
+                g_warning("Failed to load images: %s", ex.what().c_str());
+            }
+        }
+};
+
+ImageOverlay* overlay_area;
+
 Glib::RefPtr<Gdk::Pixbuf> rotate_image(Glib::RefPtr<Gdk::Pixbuf> pixbuf, double angle_deg, int target_width, int target_height) {
     // Convert degrees to radians
     double angle_rad = angle_deg * M_PI / 180.0;
@@ -205,13 +268,22 @@ Glib::RefPtr<Gdk::Pixbuf> rotate_image(Glib::RefPtr<Gdk::Pixbuf> pixbuf, double 
                 }
             }
             else {
-                // Set the background pixel to white (255 for RGB)
                 unsigned char* rotated_pixel = rotated_pixels + y * rotated_rowstride + x * channels;
-                rotated_pixel[0] = 255;  // Red
-                rotated_pixel[1] = 255;  // Green
-                rotated_pixel[2] = 255;  // Blue
-                if (channels == 4) {
-                    rotated_pixel[3] = 255;  // Alpha (fully opaque)
+                if(angle_deg > 30 || angle_deg < -30){
+                    rotated_pixel[0] = 255;
+                    rotated_pixel[1] = 0;
+                    rotated_pixel[2] = 0;
+                    if (channels == 4) {
+                        rotated_pixel[3] = 255;
+                    }
+                }
+                else{
+                    rotated_pixel[0] = 255;
+                    rotated_pixel[1] = 255;
+                    rotated_pixel[2] = 255;
+                    if (channels == 4) {
+                        rotated_pixel[3] = 255;
+                    }
                 }
             }
         }
@@ -229,25 +301,15 @@ Glib::RefPtr<Gdk::Pixbuf> rotate_image(Glib::RefPtr<Gdk::Pixbuf> pixbuf, double 
 	for (int y = 0; y < new_height; ++y) {
     	for (int x = 0; x < new_width; ++x) {
     	unsigned char* new_pixel = new_pixels + y * new_rowstride + x * new_channels;
-        	if(angle_deg > 30 || angle_deg < -30){
-        		if(new_pixel[0] == 255 && new_pixel[1] == 255 && new_pixel[2] == 255){
-	                new_pixel[0] = 255;  // Red
-    	            new_pixel[1] = 0;  // Green
-    	            new_pixel[2] = 0;  // Blue
-    	            if (channels == 4) {
-    	                new_pixel[3] = 255;  // Alpha (fully opaque)
-    	            }
-	            }
-            }
             if(y == 98 || y == 99 || y == 100 || y == 101){
     			if(x <= 15 || x == 199 || x == 198 || x == 197 || x == 196
     			|| x == 195|| x == 194|| x == 193|| x == 192|| x == 191 || x == 190
     			|| x == 189|| x == 188|| x == 187|| x == 186 || x == 185){
-    				new_pixel[0] = 0;  // Red
-		            new_pixel[1] = 0;  // Green
-		            new_pixel[2] = 0;  // Blue
+    				new_pixel[0] = 0;
+		            new_pixel[1] = 0;
+		            new_pixel[2] = 0;
 		            if (channels == 4) {
-		                new_pixel[3] = 255;  // Alpha (fully opaque)
+		                new_pixel[3] = 255;
 		            }
     			}
     		}
@@ -258,109 +320,118 @@ Glib::RefPtr<Gdk::Pixbuf> rotate_image(Glib::RefPtr<Gdk::Pixbuf> pixbuf, double 
 
 
 void initRollPitch(){
-    roll_image = Gtk::manage(new Gtk::Image());
-    sensorBox->add(*roll_image);
-    
-    try{
-        roll_pixbuf = Gdk::Pixbuf::create_from_file("../resources/RobotSide.png");
+    if(!roll_init){
+        roll_image = Gtk::manage(new Gtk::Image());
+        sensorBox->add(*roll_image);
+        
+        try{
+            roll_pixbuf = Gdk::Pixbuf::create_from_file("../resources/RobotSide.png");
+        }
+        catch(const Glib::FileError& e){
+            g_print("Failed to load image: %s\n", e.what().c_str());
+            return;
+        }
+        
+        Glib::RefPtr<Gdk::Pixbuf> newrollpixbuf = rotate_image(roll_pixbuf, roll_rotation_angle, 200, 200);
+        roll_image->set(newrollpixbuf);
+        
+        pitch_image = Gtk::manage(new Gtk::Image());
+        sensorBox->add(*pitch_image);
+        
+        try{
+            pitch_pixbuf = Gdk::Pixbuf::create_from_file("../resources/RobotBack.png");
+        }
+        catch(const Glib::FileError& e){
+            g_print("Failed to load image: %s\n", e.what().c_str());
+            return;
+        }
+        
+        Glib::RefPtr<Gdk::Pixbuf> newpitchpixbuf = rotate_image(pitch_pixbuf, pitch_rotation_angle, 200, 200);
+        pitch_image->set(newpitchpixbuf);
+        roll_init = true;
+        window->show_all();
     }
-    catch(const Glib::FileError& e){
-        g_print("Failed to load image: %s\n", e.what().c_str());
-        return;
-    }
-    
-    Glib::RefPtr<Gdk::Pixbuf> newrollpixbuf = rotate_image(roll_pixbuf, roll_rotation_angle, 200, 200);
-    roll_image->set(newrollpixbuf);
-    
-    pitch_image = Gtk::manage(new Gtk::Image());
-    sensorBox->add(*pitch_image);
-    
-    try{
-        pitch_pixbuf = Gdk::Pixbuf::create_from_file("../resources/RobotBack.png");
-    }
-    catch(const Glib::FileError& e){
-        g_print("Failed to load image: %s\n", e.what().c_str());
-        return;
-    }
-    
-    Glib::RefPtr<Gdk::Pixbuf> newpitchpixbuf = rotate_image(pitch_pixbuf, pitch_rotation_angle, 200, 200);
-    pitch_image->set(newpitchpixbuf);
-    roll_init = true;
 }
 
 
 void initArmPos(){
-    Gtk::Box* armTextBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL,2));
-    armBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,5));
-    armBox->set_size_request(110, -1);
-    
-    left_arm = Gtk::manage(new DrawingArea());
-    left_arm->set_size_request(40, 180);
-    left_arm->set_hexpand(true);
-    left_arm->set_halign(Gtk::ALIGN_CENTER);
-    armBox->add(*left_arm);
-    left_arm->show();
-    
-    right_arm = Gtk::manage(new DrawingArea());
-    right_arm->set_size_request(40, 180);
-    right_arm->set_hexpand(true);
-    right_arm->set_halign(Gtk::ALIGN_CENTER);
-    armBox->add(*right_arm);
-    right_arm->show();
-    right_arm->set_height_ratio(0.5);
-    
-    armBox->set_halign(Gtk::ALIGN_CENTER);
-    armBox->set_valign(Gtk::ALIGN_CENTER);
-    
-    armTextBox->add(*armBox);
-    armTextBox->set_halign(Gtk::ALIGN_CENTER);
-    
-    Gtk::Label* armPosLabel = Gtk::manage(new Gtk::Label("L 		R"));
-    Gtk::Label* armLabel = Gtk::manage(new Gtk::Label("Arm Positions"));
-    
-    armPosLabel->set_halign(Gtk::ALIGN_CENTER);    
-    armLabel->set_halign(Gtk::ALIGN_CENTER);
-    
-    armTextBox->add(*armPosLabel);
-    armTextBox->add(*armLabel);
-    
-    sensorBox->add(*armTextBox);
+    if(!arm_init){
+        Gtk::Box* armTextBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL,2));
+        armBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,5));
+        armBox->set_size_request(110, -1);
+        
+        left_arm = Gtk::manage(new DrawingArea());
+        left_arm->set_size_request(40, 180);
+        left_arm->set_hexpand(true);
+        left_arm->set_halign(Gtk::ALIGN_CENTER);
+        armBox->add(*left_arm);
+        left_arm->show();
+        
+        right_arm = Gtk::manage(new DrawingArea());
+        right_arm->set_size_request(40, 180);
+        right_arm->set_hexpand(true);
+        right_arm->set_halign(Gtk::ALIGN_CENTER);
+        armBox->add(*right_arm);
+        right_arm->show();
+        right_arm->set_height_ratio(0.5);
+        
+        armBox->set_halign(Gtk::ALIGN_CENTER);
+        armBox->set_valign(Gtk::ALIGN_CENTER);
+        
+        armTextBox->add(*armBox);
+        armTextBox->set_halign(Gtk::ALIGN_CENTER);
+        
+        Gtk::Label* armPosLabel = Gtk::manage(new Gtk::Label("L 		R"));
+        Gtk::Label* armLabel = Gtk::manage(new Gtk::Label("Arm Positions"));
+        
+        armPosLabel->set_halign(Gtk::ALIGN_CENTER);    
+        armLabel->set_halign(Gtk::ALIGN_CENTER);
+        
+        armTextBox->add(*armPosLabel);
+        armTextBox->add(*armLabel);
+        
+        sensorBox->add(*armTextBox);
 
-    arm_init = true;
+        arm_init = true;
+        window->show_all();
+    }
 }
 
 
 void initBucketPos(){
-    Gtk::Box* bucketTextBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL,3));
-    bucketBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,20));
-    bucketBox->set_size_request(110, -1);
-    
-    left_bucket = Gtk::manage(new DrawingArea());
-    left_bucket->set_size_request(40, 180);
-    left_bucket->set_hexpand(true);
-    left_bucket->set_halign(Gtk::ALIGN_CENTER);
-    bucketBox->add(*left_bucket);
-    left_bucket->show();
-    
-    right_bucket = Gtk::manage(new DrawingArea());
-    right_bucket->set_size_request(40, 180);
-    right_bucket->set_hexpand(true);
-    right_bucket->set_halign(Gtk::ALIGN_CENTER);
-    bucketBox->add(*right_bucket);
-    right_bucket->show();
-    right_bucket->set_height_ratio(0.5);
-    
-    bucketBox->set_halign(Gtk::ALIGN_CENTER);
-    bucketBox->set_valign(Gtk::ALIGN_CENTER);
-    
-    bucketTextBox->add(*bucketBox);
-    Gtk::Label* bucketPosLabel = Gtk::manage(new Gtk::Label("L 		R"));
-    Gtk::Label* bucketLabel = Gtk::manage(new Gtk::Label("Bucket Positions"));
-    bucketTextBox->add(*bucketPosLabel);
-    bucketTextBox->add(*bucketLabel);
-    
-    sensorBox->add(*bucketTextBox);
-    bucket_init = true;
+    if(!bucket_init){
+        Gtk::Box* bucketTextBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL,3));
+        bucketBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,20));
+        bucketBox->set_size_request(110, -1);
+        
+        left_bucket = Gtk::manage(new DrawingArea());
+        left_bucket->set_size_request(40, 180);
+        left_bucket->set_hexpand(true);
+        left_bucket->set_halign(Gtk::ALIGN_CENTER);
+        bucketBox->add(*left_bucket);
+        left_bucket->show();
+        
+        right_bucket = Gtk::manage(new DrawingArea());
+        right_bucket->set_size_request(40, 180);
+        right_bucket->set_hexpand(true);
+        right_bucket->set_halign(Gtk::ALIGN_CENTER);
+        bucketBox->add(*right_bucket);
+        right_bucket->show();
+        right_bucket->set_height_ratio(0.5);
+        
+        bucketBox->set_halign(Gtk::ALIGN_CENTER);
+        bucketBox->set_valign(Gtk::ALIGN_CENTER);
+        
+        bucketTextBox->add(*bucketBox);
+        Gtk::Label* bucketPosLabel = Gtk::manage(new Gtk::Label("L 		R"));
+        Gtk::Label* bucketLabel = Gtk::manage(new Gtk::Label("Bucket Positions"));
+        bucketTextBox->add(*bucketPosLabel);
+        bucketTextBox->add(*bucketLabel);
+        
+        sensorBox->add(*bucketTextBox);
+        bucket_init = true;
+        window->show_all();
+    }
 }
 
 void updateGUI (BinaryMessage& message){
@@ -382,6 +453,9 @@ void updateGUI (BinaryMessage& message){
                             pitch_rotation_angle = std::round(element.data.front().float32);
                             Glib::RefPtr<Gdk::Pixbuf> newpitchpixbuf = rotate_image(pitch_pixbuf, pitch_rotation_angle, 200, 200);
                             pitch_image->set(newpitchpixbuf);
+                        }
+                        if(element.label == "pitch"){
+                            overlay_area->update_image_rotation(element.data.front().float32);
                         }
                     }
                 }
@@ -1372,11 +1446,24 @@ int checksum_decode(std::list<uint8_t>& byteList){
 }
 
 
+void initArena(){
+    arenaWindow = new Gtk::Window();
+    arenaWindow->set_title("Arena Map");
+
+    arenaWindow->set_default_size(1100, 800);
+
+    overlay_area = Gtk::manage(new ImageOverlay());
+    arenaWindow->add(*overlay_area);
+    overlay_area->show();
+    arenaWindow->show_all();
+}
+
 int main(int argc, char** argv) { 
     Glib::RefPtr<Gtk::Application> application = Gtk::Application::create(argc, argv, "edu.uark.razorbotz");
     setupGUI(application);
     initGUI();
     initWebcam();
+    initArena();
 
     std::thread broadcastListenThread(broadcastListen);
 

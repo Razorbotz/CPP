@@ -94,9 +94,18 @@ double roll_rotation_angle = 0.0;
 Glib::RefPtr<Gdk::Pixbuf> roll_pixbuf;
 Gtk::Image* roll_image;
 
-double pitch_rotation_angle = 45.0;
+double pitch_rotation_angle = 0.0;
 Glib::RefPtr<Gdk::Pixbuf> pitch_pixbuf;
 Gtk::Image* pitch_image;
+
+double MULTIPLIER_X = 1100.0 / 6.88;
+double MULTIPLIER_Y = 800.0 / 5.0;
+
+double ARENA_WIDTH_M = 6.88, ARENA_HEIGHT_M = 5.0;
+double ARENA_WIDTH_P = 1100.0, ARENA_HEIGHT_P = 800.0;
+
+double UCF_WIDTH_M = 8.14, UCF_HEIGHT_M = 4.57;
+double UCF_WIDTH_P = 1300.0, UCF_HEIGHT_P = 730;
 
 std::vector<InfoFrame*> infoFrameList;
 
@@ -147,7 +156,7 @@ Gtk::Box* armBox;
 Gtk::Box* bucketBox;
 bool arm_init = false, bucket_init = false, roll_init = false;
 
-int right_arm_pos = 450, left_arm_pos = 0, right_bucket_pos = 0, left_bucket_pos = 0;
+int right_arm_pos = 0, left_arm_pos = 0, right_bucket_pos = 0, left_bucket_pos = 0;
 
 class ImageOverlay : public Gtk::DrawingArea {
     public:
@@ -164,10 +173,43 @@ class ImageOverlay : public Gtk::DrawingArea {
         }
 
         bool update_image_rotation(double rotation){
-
             rotation_angle = ((rotation * M_PI) / 180);
             queue_draw();
             return true;
+        }
+
+        bool update_image_x(double x){
+            img_x = x;
+            queue_draw();
+            return true;
+        }
+
+        bool update_image_y(double y){
+            img_y = y;
+            queue_draw();
+            return true;
+        }
+
+        bool add_rock(double x, double y, double width){
+
+            queue_draw();
+            return true;
+        }
+
+        bool add_hole(double x, double y, double width){
+
+            queue_draw();
+            return true;
+        }
+
+        void add_rock_image(int x, int y, double scale_multiplier) {
+            rock_data.emplace_back(x, y, scale_multiplier);
+            queue_draw();
+        }
+
+        void add_hole_image(int x, int y, double scale_multiplier) {
+            hole_data.emplace_back(x, y, scale_multiplier);
+            queue_draw();
         }
 
     protected:
@@ -187,19 +229,50 @@ class ImageOverlay : public Gtk::DrawingArea {
             cr->paint();
             cr->restore();
 
+            for (const auto& data : rock_data) {
+                int new_width = rock->get_width() * data.scale_multiplier;
+                int new_height = rock->get_height() * data.scale_multiplier;
+                
+                auto scaled_pixbuf = rock->scale_simple(new_width, new_height, Gdk::INTERP_BILINEAR);
+    
+                Gdk::Cairo::set_source_pixbuf(cr, scaled_pixbuf, data.x, data.y);
+                cr->paint();
+            }
+
+            for (const auto& data : hole_data) {
+                int new_width = hole->get_width() * data.scale_multiplier;
+                int new_height = hole->get_height() * data.scale_multiplier;
+                
+                auto scaled_pixbuf = hole->scale_simple(new_width, new_height, Gdk::INTERP_BILINEAR);
+    
+                Gdk::Cairo::set_source_pixbuf(cr, scaled_pixbuf, data.x, data.y);
+                cr->paint();
+            }
+
             return true;
         }
 
 
     private:
-        Glib::RefPtr<Gdk::Pixbuf> background, overlay;
+        Glib::RefPtr<Gdk::Pixbuf> background, overlay, rock, hole;
         double img_x, img_y;
         double rotation_angle;
+
+        struct ImageData {
+            int x, y;
+            double scale_multiplier;
+            ImageData(int x, int y, double scale) : x(x), y(y), scale_multiplier(scale) {}
+        };
+        std::vector<ImageData> rock_data;
+        std::vector<ImageData> hole_data;
+        double m_scale_multiplier;
     
         void load_images(){
             try{
                 background = Gdk::Pixbuf::create_from_file("../resources/Arena.png");
                 overlay = Gdk::Pixbuf::create_from_file("../resources/RobotTop.png");
+                rock = Gdk::Pixbuf::create_from_file("../resources/Rock.png");
+                hole = Gdk::Pixbuf::create_from_file("../resources/Hole.png");
             }
             catch(const Glib::Exception& ex){
                 g_warning("Failed to load images: %s", ex.what().c_str());
@@ -455,7 +528,13 @@ void updateGUI (BinaryMessage& message){
                             pitch_image->set(newpitchpixbuf);
                         }
                         if(element.label == "pitch"){
-                            overlay_area->update_image_rotation(element.data.front().float32);
+                            overlay_area->update_image_rotation(double(element.data.front().float32));
+                        }
+                        if(element.label == "X"){
+                            overlay_area->update_image_x(double(element.data.front().float32) * MULTIPLIER_X);
+                        }
+                        if(element.label == "Z"){
+                            overlay_area->update_image_y(double(element.data.front().float32) * MULTIPLIER_Y);
                         }
                     }
                 }

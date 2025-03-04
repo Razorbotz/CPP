@@ -69,7 +69,7 @@ include_directories(
   /usr/lib/x86_64-linux-gnu/gtkmm-3.0/include
   ${GTKMM_INCLUDE_DIRS}
   ${CAIRO_INCLUDE_DIRS}
-  ${WEWBKITGTK_INCLUDE_DIRS}
+  ${WEBKITGTK_INCLUDE_DIRS}
 )
 
 

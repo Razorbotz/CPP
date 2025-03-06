@@ -80,6 +80,7 @@ Gtk::Label* connectionStatusLabel;
   
 Gtk::Button* silentRunButton;
 Gtk::Button* connectButton;
+Gtk::Button* toggleModeButton;
   
 Gtk::FlowBox* sensorBox;
 
@@ -506,6 +507,49 @@ void initBucketPos(){
         window->show_all();
     }
 }
+
+// Dark mode
+const std::string darkMode = R"(
+    window { background-color: #0b1a21; }
+    label, button, entry {
+        color: #edf6fa;
+    }
+    button {
+        border: 1px solid #edf6fa;
+        background-color: transparent;
+    }
+)";
+
+// Light mode
+const std::string lightMode = R"(
+    window { background-color:rgb(229, 252, 252); }
+    label, button, entry {
+        color: #000000;
+    }
+    button {
+        border: 1px solid #000000;
+        background-color: #f0f0f0;
+    }
+)";
+
+
+bool isLightMode = true;
+void toggleMode() {
+    auto css_provider = Gtk::CssProvider::create();
+
+    if (isLightMode) {
+        css_provider->load_from_data(darkMode);
+        isLightMode = false;
+    } else {
+        css_provider->load_from_data(lightMode);
+        isLightMode = true;
+    }
+
+    auto screen = Gdk::Screen::get_default();
+    Gtk::StyleContext::add_provider_for_screen(
+        screen, css_provider, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION
+    );
+} 
 
 void updateGUI (BinaryMessage& message){
 
@@ -984,12 +1028,9 @@ bool on_key_press_event(GdkEventKey* key_event){
 
 void setupGUI(Glib::RefPtr<Gtk::Application> application){
 
-    // Create windows instance
+    // Create window instance
     window=new Gtk::Window();
-
-    // Location of icon and set icon
-    //auto icon = "../resources/razorbotz.png";
-    //window->set_icon_from_file(icon);
+    window->set_default_size(1800,500);
 
     try{
         auto icon = "../resources/razorbotz.png";
@@ -999,55 +1040,38 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application){
         g_print("Failed to load image: %s\n", e.what().c_str());
         return;
     }
-
-    auto css_provider = Gtk::CssProvider::create();
-    css_provider->load_from_data(R"(
-        window { background-color: #0b1a21; }
-        label, button, entry {
-            color: #edf6fa;
-        }
-        button {
-            border: 1px solid #edf6fa;
-            background-color: transparent;
-        }
-    )");
-
-
-    auto screen = Gdk::Screen::get_default();
-    auto style_context = Gtk::StyleContext::create();
-    style_context->add_provider_for_screen(screen, css_provider, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
-
+    
     // Handles key press and release events  
     window->add_events(Gdk::KEY_PRESS_MASK);
     window->add_events(Gdk::KEY_RELEASE_MASK);
     window->signal_key_press_event().connect(sigc::ptr_fun(&on_key_press_event));
     window->signal_key_release_event().connect(sigc::ptr_fun(&on_key_release_event));
-
+    
     // Create verticle box to hold top level widgets 
     Gtk::Box* topLevelBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL,5));
 
     // Create horizontal box to hold control widgets
     Gtk::Box* controlsBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,5));
-
+    
     // Create scolled window instance and list of addresses 
     Gtk::ScrolledWindow* scrolledList=Gtk::manage(new Gtk::ScrolledWindow());
     addressListBox=Gtk::manage(new Gtk::ListBox());
     addressListBox->signal_row_activated().connect(sigc::ptr_fun(&rowActivated));
-
+    
     // Create Verticle box on right of screen to house controls 
     Gtk::Box* controlsRightBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL,5));
-
+    
     // Create box to hold connection information (IP, connect button, etc.)
     Gtk::Box* connectBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,5));
-    
-    Gtk::Label* ipAddressLabel=Gtk::manage(new Gtk::Label(" IP Address "));
 
+    Gtk::Label* ipAddressLabel=Gtk::manage(new Gtk::Label(" IP Address "));
+    
     // Create entry box for IP connection
     ipAddressEntry=Gtk::manage(new Gtk::Entry());
     ipAddressEntry->set_can_focus(true);
     ipAddressEntry->set_editable(true);
     ipAddressEntry->set_text("192.168.1.6");
-
+    
     // Create connection button, single click logic to connectOrDisconnect function
     connectButton=Gtk::manage(new Gtk::Button("Connect"));
     connectButton->signal_clicked().connect(sigc::ptr_fun(&connectOrDisconnect));
@@ -1061,42 +1085,59 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application){
     Gtk::Box* stateBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,2));
     silentRunButton=Gtk::manage(new Gtk::Button("Silent Running"));
     silentRunButton->signal_clicked().connect(sigc::ptr_fun(&silentRun));
-
+    
     // Create horizontal box to hold remote control functionality
     Gtk::Box* remoteControlBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,2));
-
+    
     // Create button to shutdown robot
     Gtk::Button* shutdownRobotButton=Gtk::manage(new Gtk::Button("Shutdown Robot"));
     shutdownRobotButton->signal_clicked().connect(sigc::bind<Gtk::Window*>(sigc::ptr_fun(&shutdownDialog),window));
-
+    
+    // Button to toggle from dark to light mode
+    toggleModeButton = Gtk::manage(new Gtk::Button("Toggle Dark/Light Mode"));
+    toggleModeButton->signal_clicked().connect(sigc::ptr_fun(&toggleMode));
+    
+    // Apply CSS
+    auto css_provider = Gtk::CssProvider::create();
+    css_provider->load_from_data(lightMode);
+    auto screen = Gdk::Screen::get_default();
+    auto style_context = Gtk::StyleContext::create();
+    style_context->add_provider_for_screen(screen, css_provider, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+    
     // Create horizontal flow box to hold sensor widgets
     sensorBox=Gtk::manage(new Gtk::FlowBox());
     sensorBox->set_orientation(Gtk::ORIENTATION_HORIZONTAL);
-
+    
     // Set size for address list box
     addressListBox->set_size_request(200,100);
     scrolledList->set_size_request(200,100);
+    toggleModeButton->set_size_request(200,100);
 
+    Gtk::Label* spacer = Gtk::manage(new Gtk::Label());
+    spacer->set_hexpand(true);
+    
     // Add widgets to connect box
     connectBox->add(*ipAddressLabel);
     connectBox->add(*ipAddressEntry);
     connectBox->add(*connectButton);
     connectBox->add(*connectionStatusLabel);
-
+    connectBox->add(*spacer);
+    connectBox->add(*toggleModeButton);
+    
     // Add widgets to silent run box
     stateBox->add(*silentRunButton);
-
+    
     // Add widgets to shut down robot box
     remoteControlBox->add(*shutdownRobotButton);
-
+    
     // Add wigets to controls box
     controlsRightBox->add(*connectBox);
     controlsRightBox->add(*stateBox);
     controlsRightBox->add(*remoteControlBox);
-
+    
     // Add address list to scrollable list
     scrolledList->add(*addressListBox);
-
+    
     // Add widgets to controls box
     controlsBox->add(*scrolledList);
     controlsBox->add(*controlsRightBox);

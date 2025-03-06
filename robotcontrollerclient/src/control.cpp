@@ -1111,7 +1111,6 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application){
     // Set size for address list box
     addressListBox->set_size_request(200,100);
     scrolledList->set_size_request(200,100);
-    toggleModeButton->set_size_request(200,100);
 
     Gtk::Label* spacer = Gtk::manage(new Gtk::Label());
     spacer->set_hexpand(true);

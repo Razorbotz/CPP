@@ -191,18 +191,6 @@ class ImageOverlay : public Gtk::DrawingArea {
             return true;
         }
 
-        bool add_rock(double x, double y, double width){
-
-            queue_draw();
-            return true;
-        }
-
-        bool add_hole(double x, double y, double width){
-
-            queue_draw();
-            return true;
-        }
-
         void add_rock_image(int x, int y, double scale_multiplier) {
             rock_data.emplace_back(x, y, scale_multiplier);
             queue_draw();
@@ -223,6 +211,7 @@ class ImageOverlay : public Gtk::DrawingArea {
             cr->restore();
 
             cr->save();
+            cv->translate(0, 800 - overlay->get_height());
             cr->translate(img_x + overlay->get_width() / 2, img_y + overlay->get_height() / 2);
             cr->rotate(rotation_angle);
             cr->translate(-overlay->get_width() / 2, -overlay->get_height() / 2);
@@ -575,10 +564,10 @@ void updateGUI (BinaryMessage& message){
                             overlay_area->update_image_rotation(double(element.data.front().float32));
                         }
                         if(element.label == "X"){
-                            overlay_area->update_image_x(double(element.data.front().float32) * MULTIPLIER_X);
+                            overlay_area->update_image_y(double(element.data.front().float32) * MULTIPLIER_Y);
                         }
                         if(element.label == "Z"){
-                            overlay_area->update_image_y(double(element.data.front().float32) * MULTIPLIER_Y);
+                            overlay_area->update_image_x(double(element.data.front().float32) * MULTIPLIER_X);
                         }
                     }
                 }
@@ -1463,6 +1452,7 @@ void initGUI(){
     autonomyMessage.addElementString("Excavation State", "No");
     autonomyMessage.addElementString("Error State", "No");
     autonomyMessage.addElementString("Diagnostics State", "No");
+    autonomyMessage.addElementString("Tilt State", "No");
     updateGUI(autonomyMessage);
     
     BinaryMessage zedMessage("Zed");
@@ -1620,7 +1610,7 @@ int main(int argc, char** argv) {
     }
 
     SDL_Event event;
-    char buffer[2048] = {0}; 
+    char buffer[16384] = {0}; 
     int bytesRead=0;
 
     std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
@@ -1644,7 +1634,7 @@ int main(int argc, char** argv) {
 
         std::cout << "Before Read" << std::endl;
 
-        bytesRead = read(sock, buffer, 2048);
+        bytesRead = read(sock, buffer, 16384);
         if(bytesRead==0){
             //std::cout << "Lost Connection" << std::endl;
             setDisconnectedState();

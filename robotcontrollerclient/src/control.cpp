@@ -81,12 +81,14 @@ Gtk::Label* connectionStatusLabel;
 Gtk::Button* silentRunButton;
 Gtk::Button* connectButton;
 Gtk::Button* toggleModeButton;
+Gtk::Button* toggleEncodeButton;
   
 Gtk::FlowBox* sensorBox;
 
 Gtk::Window* window;
 int sock = 0; 
 bool connected=false;
+bool encoding = false;
 
 Gtk::Window* webcamWindow;
 Gtk::Window* arenaWindow;
@@ -211,7 +213,7 @@ class ImageOverlay : public Gtk::DrawingArea {
             cr->restore();
 
             cr->save();
-            cv->translate(0, 800 - overlay->get_height());
+            cr->translate(0, 800 - overlay->get_height());
             cr->translate(img_x + overlay->get_width() / 2, img_y + overlay->get_height() / 2);
             cr->rotate(rotation_angle);
             cr->translate(-overlay->get_width() / 2, -overlay->get_height() / 2);
@@ -500,6 +502,12 @@ void initBucketPos(){
 // Dark mode
 const std::string darkMode = R"(
     window { background-color: #0b1a21; }
+    #dark_text {
+        color: #000000;
+    }
+    #dark_text label {
+        color: #000000;
+    }
     label, button, entry {
         color: #edf6fa;
     }
@@ -830,6 +838,18 @@ void setConnectedState(){
 }
 
 
+void enableEncoding(){
+    toggleEncodeButton->set_label("Stop Encoding");
+    encoding=true;
+}
+
+
+void disbleEncoding(){
+    toggleEncodeButton->set_label("Enable Encoding");
+    encoding=false;
+}
+
+
 void connectToServer(){
     if(connected==true)return;
     struct sockaddr_in address; 
@@ -916,6 +936,16 @@ void connectOrDisconnect(){
     }
     else{
         disconnectFromServer();
+    }
+}
+
+void encodeOrNot(){
+    Glib::ustring string=toggleEncodeButton->get_label();
+    if(string=="Enable Encoding"){
+        enableEncoding();
+    }
+    else{
+        disbleEncoding();
     }
 }
 
@@ -1060,20 +1090,29 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application){
     ipAddressEntry->set_can_focus(true);
     ipAddressEntry->set_editable(true);
     ipAddressEntry->set_text("192.168.1.6");
+    ipAddressEntry->set_name("dark_text");
     
     // Create connection button, single click logic to connectOrDisconnect function
     connectButton=Gtk::manage(new Gtk::Button("Connect"));
     connectButton->signal_clicked().connect(sigc::ptr_fun(&connectOrDisconnect));
+    connectButton->set_name("dark_text");
+
     connectionStatusLabel=Gtk::manage(new Gtk::Label("Not Connected"));
     // Disconnect graphics for connect button
     Gdk::RGBA red;
     red.set_rgba(1.0,0,0,1.0);
     connectionStatusLabel->override_background_color(red);
+    connectionStatusLabel->set_name("dark_text");
+
+    toggleEncodeButton=Gtk::manage(new Gtk::Button("Enable Encoding"));
+    toggleEncodeButton->signal_clicked().connect(sigc::ptr_fun(&encodeOrNot));
+    toggleEncodeButton->set_name("dark_text");
     
     // Create horizontal box to hold silent run functionality
     Gtk::Box* stateBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,2));
     silentRunButton=Gtk::manage(new Gtk::Button("Silent Running"));
     silentRunButton->signal_clicked().connect(sigc::ptr_fun(&silentRun));
+    silentRunButton->set_name("dark_text");
     
     // Create horizontal box to hold remote control functionality
     Gtk::Box* remoteControlBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,2));
@@ -1081,11 +1120,13 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application){
     // Create button to shutdown robot
     Gtk::Button* shutdownRobotButton=Gtk::manage(new Gtk::Button("Shutdown Robot"));
     shutdownRobotButton->signal_clicked().connect(sigc::bind<Gtk::Window*>(sigc::ptr_fun(&shutdownDialog),window));
+    shutdownRobotButton->set_name("dark_text");
     
     // Button to toggle from dark to light mode
     toggleModeButton = Gtk::manage(new Gtk::Button("Toggle Dark/Light Mode"));
     toggleModeButton->signal_clicked().connect(sigc::ptr_fun(&toggleMode));
-    
+    toggleModeButton->set_name("dark_text");
+
     // Apply CSS
     auto css_provider = Gtk::CssProvider::create();
     css_provider->load_from_data(lightMode);
@@ -1110,6 +1151,7 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application){
     connectBox->add(*connectButton);
     connectBox->add(*connectionStatusLabel);
     connectBox->add(*spacer);
+    connectBox->add(*toggleEncodeButton);
     connectBox->add(*toggleModeButton);
     
     // Add widgets to silent run box
@@ -1441,8 +1483,8 @@ void initGUI(){
     
     BinaryMessage communicationMessage("Communication");
     communicationMessage.addElementInt32("RSSI", 0);
-    communicationMessage.addElementString("Wi-Fi", "NORMAL OPERATION");
-    communicationMessage.addElementString("CAN BUS", "NON-FUNCTIONAL OPERATION");
+    communicationMessage.addElementString("Wi-Fi", "NORMAL");
+    communicationMessage.addElementString("CAN BUS", "NON-OPERATIONAL");
     communicationMessage.addElementInt32("RX packets", 0);
     communicationMessage.addElementInt32("TX packets", 0);
     updateGUI(communicationMessage);
@@ -1654,14 +1696,26 @@ int main(int argc, char** argv) {
 
         std::cout << "Before hasMessage check" << std::endl;
         while(BinaryMessage::hasMessage(messageBytesList)){
-
-            std::cout << "Before message create" << std::endl;
-            int checksum = checksum_decode(messageBytesList); 
-            if (checksum = 0){
-                break; 
+            if(encoding){
+                std::cout << "Before message create" << std::endl;
+                int checksum = checksum_decode(messageBytesList); 
+                if (checksum = 0){
+                    break; 
+                }
+                else{
+                    BinaryMessage message(messageBytesList);
+                    std::cout << "Before GUI update" << std::endl;
+                    updateGUI(message);
+                    std::cout << "Before size decode" << std::endl;
+                    uint64_t size=BinaryMessage::decodeSizeBytes(messageBytesList);
+                    for(int count=0; count < size; count++){
+                        //std::cout << messageBytesList.front();
+                        messageBytesList.pop_front();
+                    }
+                    std::cout << std::endl;
+                }
             }
             else{
-
                 BinaryMessage message(messageBytesList);
                 std::cout << "Before GUI update" << std::endl;
                 updateGUI(message);
@@ -1672,7 +1726,6 @@ int main(int argc, char** argv) {
                     messageBytesList.pop_front();
                 }
                 std::cout << std::endl;
-
             }
 
         }

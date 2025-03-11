@@ -102,3 +102,12 @@ double InfoItem::getValueAsDouble(){
 void InfoItem::setBackground(std::string color){
     this->valueLabel->override_background_color(Gdk::RGBA(color));
 }
+
+void InfoItem::setTextColor(std::string color){
+    if(color == "white"){
+        Pango::FontDescription font;
+        font.set_weight(Pango::WEIGHT_BOLD);
+        this->valueLabel->override_font(font);
+    }
+    this->valueLabel->override_color(Gdk::RGBA(color));
+}

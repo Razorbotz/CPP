@@ -668,12 +668,17 @@ void updateGUI (BinaryMessage& message){
                         }
                         if(theString == "NON-FUNCTIONAL" || theString == "INTERFERENCE" || theString == "DOWN"){
                             infoFrame->setBackground(element.label, "#FF0000");
+                            infoFrame->setTextColor(element.label, "white");
                         }
                         else{
-                            if(isLightMode)
+                            if(isLightMode){
                                 infoFrame->setBackground(element.label, "rgb(229, 252, 252)");
-                            else
+                                infoFrame->setTextColor(element.label, "#000000");
+                            }
+                            else{
                                 infoFrame->setBackground(element.label, "#0b1a21");
+                                infoFrame->setTextColor(element.label, "white");
+                            }
                         }
                     }
                 }
@@ -736,7 +741,7 @@ void updateGUI (BinaryMessage& message){
 	if(label == "Falcon 1" || label == "Falcon 2" || label == "Falcon 3" || label == "Falcon 4"
 	|| label == "Talon 1" || label == "Talon 2" || label == "Talon 3" || label == "Talon 4"
 	|| label == "Linear 1" || label == "Linear 2" || label == "Linear 3" || label == "Linear 4"
-	|| label == "Zed" || label == "Autonomy" || label == "Communication"){
+	|| label == "Zed" || label == "Autonomy" || label == "Communication" || label == "Power" || label == "Power2"){
 
         if((label == "Talon 1" || label == "Talon 2") && !arm_init){
             initArmPos();
@@ -1156,8 +1161,8 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application){
     sensorBox->set_orientation(Gtk::ORIENTATION_HORIZONTAL);
     
     // Set size for address list box
-    addressListBox->set_size_request(200,100);
-    scrolledList->set_size_request(200,100);
+    addressListBox->set_size_request(200,75);
+    scrolledList->set_size_request(200,75);
 
     Gtk::Label* spacer = Gtk::manage(new Gtk::Label());
     spacer->set_hexpand(true);
@@ -1173,14 +1178,15 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application){
     
     // Add widgets to silent run box
     stateBox->add(*silentRunButton);
+    stateBox->add(*shutdownRobotButton);
     
     // Add widgets to shut down robot box
-    remoteControlBox->add(*shutdownRobotButton);
+    //remoteControlBox->add(*shutdownRobotButton);
     
     // Add wigets to controls box
     controlsRightBox->add(*connectBox);
     controlsRightBox->add(*stateBox);
-    controlsRightBox->add(*remoteControlBox);
+    //controlsRightBox->add(*remoteControlBox);
     
     // Add address list to scrollable list
     scrolledList->add(*addressListBox);
@@ -1530,6 +1536,31 @@ void initGUI(){
     initRollPitch();
     initArmPos();
     initBucketPos();
+
+    BinaryMessage powerMessage("Power");
+
+    powerMessage.addElementFloat32("Voltage",0.0);
+    powerMessage.addElementFloat32("Current 0",0.0);
+    powerMessage.addElementFloat32("Current 1",0.1);
+    powerMessage.addElementFloat32("Current 2",0.2);
+    powerMessage.addElementFloat32("Current 3",0.3);
+    powerMessage.addElementFloat32("Current 4",0.4);
+    powerMessage.addElementFloat32("Current 5",0.5);
+    powerMessage.addElementFloat32("Current 6",0.6);
+    powerMessage.addElementFloat32("Current 7",0.7);
+
+    BinaryMessage powerMessage2("Power2");
+    powerMessage2.addElementFloat32("Current 8",0.8);
+    powerMessage2.addElementFloat32("Current 9",0.9);
+    powerMessage2.addElementFloat32("Current 10",0.10);
+    powerMessage2.addElementFloat32("Current 11",0.11);
+    powerMessage2.addElementFloat32("Current 12",0.12);
+    powerMessage2.addElementFloat32("Current 13",0.13);
+    powerMessage2.addElementFloat32("Current 14",0.14);
+    powerMessage2.addElementFloat32("Current 15",0.15);
+    updateGUI(powerMessage);
+    updateGUI(powerMessage2);
+
 }
 
 

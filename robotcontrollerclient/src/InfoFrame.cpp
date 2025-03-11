@@ -120,3 +120,12 @@ void InfoFrame::setBackground(std::string itemName, std::string color){
         }
     }
 }
+
+void InfoFrame::setTextColor(std::string itemName, std::string color){
+    for(std::shared_ptr<InfoItem> infoItem:itemList){
+        if(infoItem->getName()==itemName){
+            infoItem->setTextColor(color);
+            break;
+        }
+    }
+}

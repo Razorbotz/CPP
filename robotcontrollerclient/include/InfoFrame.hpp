@@ -29,4 +29,5 @@ public:
     void setItem(std::string itemName, uint32_t itemValue);
     void setItem(std::string itemName, uint64_t itemValue);
     void setBackground(std::string itemName, std::string color);
+    void setTextColor(std::string itemName, std::string color);
 };

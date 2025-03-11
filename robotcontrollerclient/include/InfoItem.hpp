@@ -31,4 +31,5 @@ class InfoItem:public Gtk::Box{
     float getValueAsFloat();
     double getValueAsDouble();
     std::string getValue();
+    void setBackground(std::string color);
 };

@@ -658,6 +658,26 @@ void updateGUI (BinaryMessage& message){
     				}
             	}
             }
+            if(label == "Communication"){
+                for(int elementIndex=0; elementIndex<message.getObject().elementList.size(); elementIndex++){
+                    Element element=message.getObject().elementList[elementIndex];
+                    if(element.label == "Wi-Fi" || element.label == "CAN BUS"){
+                        std::string theString= "";
+                        for(auto iterator=element.data.begin(); iterator != element.data.end(); iterator++ ){
+                            theString.push_back(iterator->character);
+                        }
+                        if(theString == "NON-FUNCTIONAL" || theString == "INTERFERENCE" || theString == "DOWN"){
+                            infoFrame->setBackground(element.label, "#FF0000");
+                        }
+                        else{
+                            if(isLightMode)
+                                infoFrame->setBackground(element.label, "rgb(229, 252, 252)");
+                            else
+                                infoFrame->setBackground(element.label, "#0b1a21");
+                        }
+                    }
+                }
+            }
             for(int elementIndex=0; elementIndex<message.getObject().elementList.size(); elementIndex++){
                 Element element=message.getObject().elementList[elementIndex];
                 if(element.type == TYPE::BOOLEAN){
@@ -916,9 +936,6 @@ void disconnectFromServer(){
                 Gtk::MessageDialog dialog(*window,"Failed Close",false,Gtk::MESSAGE_ERROR,Gtk::BUTTONS_OK);
                 int result=dialog.run();
             }
-
-
-
             break;
         case (Gtk::RESPONSE_CANCEL):
         case (Gtk::RESPONSE_NONE):
@@ -1340,7 +1357,7 @@ void initGUI(){
  	BinaryMessage talonMessage1("Talon 1");
     talonMessage1.addElementUInt8("Device ID",(uint8_t)0);
     talonMessage1.addElementUInt16("Bus Voltage",0);
-    talonMessage1.addElementUInt16("Output Current",9);
+    talonMessage1.addElementUInt16("Output Current",0);
     talonMessage1.addElementFloat32("Output Percent",0.0);
     talonMessage1.addElementUInt8("Temperature",(uint8_t)0);
     talonMessage1.addElementUInt16("Sensor Position",(uint8_t)0);
@@ -1351,7 +1368,7 @@ void initGUI(){
     BinaryMessage talonMessage2("Talon 2");
     talonMessage2.addElementUInt8("Device ID",(uint8_t)0);
     talonMessage2.addElementUInt16("Bus Voltage",0);
-    talonMessage2.addElementUInt16("Output Current",9);
+    talonMessage2.addElementUInt16("Output Current",0);
     talonMessage2.addElementFloat32("Output Percent",0.0);
     talonMessage2.addElementUInt8("Temperature",(uint8_t)0);
     talonMessage2.addElementUInt16("Sensor Position",(uint8_t)0);
@@ -1362,7 +1379,7 @@ void initGUI(){
     BinaryMessage talonMessage3("Talon 3");
     talonMessage3.addElementUInt8("Device ID",(uint8_t)0);
     talonMessage3.addElementUInt16("Bus Voltage",0);
-    talonMessage3.addElementUInt16("Output Current",9);
+    talonMessage3.addElementUInt16("Output Current",0);
     talonMessage3.addElementFloat32("Output Percent",0.0);
     talonMessage3.addElementUInt8("Temperature",(uint8_t)0);
     talonMessage3.addElementUInt16("Sensor Position",(uint8_t)0);
@@ -1373,7 +1390,7 @@ void initGUI(){
     BinaryMessage talonMessage4("Talon 4");
     talonMessage4.addElementUInt8("Device ID",(uint8_t)0);
     talonMessage4.addElementUInt16("Bus Voltage",0);
-    talonMessage4.addElementUInt16("Output Current",9);
+    talonMessage4.addElementUInt16("Output Current",0);
     talonMessage4.addElementFloat32("Output Percent",0.0);
     talonMessage4.addElementUInt8("Temperature",(uint8_t)0);
     talonMessage4.addElementUInt16("Sensor Position",(uint8_t)0);
@@ -1384,7 +1401,7 @@ void initGUI(){
     BinaryMessage falconMessage1("Falcon 1");
     falconMessage1.addElementUInt8("Device ID",(uint8_t)0);
     falconMessage1.addElementUInt16("Bus Voltage",0);
-    falconMessage1.addElementUInt16("Output Current",9);
+    falconMessage1.addElementUInt16("Output Current",0);
     falconMessage1.addElementFloat32("Output Percent",0.0);
     falconMessage1.addElementUInt8("Temperature",(uint8_t)0);
     falconMessage1.addElementUInt16("Sensor Position",(uint8_t)0);
@@ -1395,7 +1412,7 @@ void initGUI(){
     BinaryMessage falconMessage2("Falcon 2");
     falconMessage2.addElementUInt8("Device ID",(uint8_t)0);
     falconMessage2.addElementUInt16("Bus Voltage",0);
-    falconMessage2.addElementUInt16("Output Current",9);
+    falconMessage2.addElementUInt16("Output Current",0);
     falconMessage2.addElementFloat32("Output Percent",0.0);
     falconMessage2.addElementUInt8("Temperature",(uint8_t)0);
     falconMessage2.addElementUInt16("Sensor Position",(uint8_t)0);
@@ -1406,7 +1423,7 @@ void initGUI(){
     BinaryMessage falconMessage3("Falcon 3");
     falconMessage3.addElementUInt8("Device ID",(uint8_t)0);
     falconMessage3.addElementUInt16("Bus Voltage",0);
-    falconMessage3.addElementUInt16("Output Current",9);
+    falconMessage3.addElementUInt16("Output Current",0);
     falconMessage3.addElementFloat32("Output Percent",0.0);
     falconMessage3.addElementUInt8("Temperature",(uint8_t)0);
     falconMessage3.addElementUInt16("Sensor Position",(uint8_t)0);
@@ -1417,7 +1434,7 @@ void initGUI(){
     BinaryMessage falconMessage4("Falcon 4");
     falconMessage4.addElementUInt8("Device ID",(uint8_t)0);
     falconMessage4.addElementUInt16("Bus Voltage",0);
-    falconMessage4.addElementUInt16("Output Current",9);
+    falconMessage4.addElementUInt16("Output Current",0);
     falconMessage4.addElementFloat32("Output Percent",0.0);
     falconMessage4.addElementUInt8("Temperature",(uint8_t)0);
     falconMessage4.addElementUInt16("Sensor Position",(uint8_t)0);
@@ -1484,7 +1501,7 @@ void initGUI(){
     BinaryMessage communicationMessage("Communication");
     communicationMessage.addElementInt32("RSSI", 0);
     communicationMessage.addElementString("Wi-Fi", "NORMAL");
-    communicationMessage.addElementString("CAN BUS", "NON-OPERATIONAL");
+    communicationMessage.addElementString("CAN BUS", "DOWN");
     communicationMessage.addElementInt32("RX packets", 0);
     communicationMessage.addElementInt32("TX packets", 0);
     updateGUI(communicationMessage);

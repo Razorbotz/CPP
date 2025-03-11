@@ -98,3 +98,7 @@ float InfoItem::getValueAsFloat(){
 double InfoItem::getValueAsDouble(){
     return std::stod(getValue());
 }
+
+void InfoItem::setBackground(std::string color){
+    this->valueLabel->override_background_color(Gdk::RGBA(color));
+}

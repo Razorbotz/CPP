@@ -111,3 +111,21 @@ void InfoFrame::setItem(std::string itemName, uint16_t itemValue){
         }
     }
 }
+
+void InfoFrame::setBackground(std::string itemName, std::string color){
+    for(std::shared_ptr<InfoItem> infoItem:itemList){
+        if(infoItem->getName()==itemName){
+            infoItem->setBackground(color);
+            break;
+        }
+    }
+}
+
+void InfoFrame::setTextColor(std::string itemName, std::string color){
+    for(std::shared_ptr<InfoItem> infoItem:itemList){
+        if(infoItem->getName()==itemName){
+            infoItem->setTextColor(color);
+            break;
+        }
+    }
+}

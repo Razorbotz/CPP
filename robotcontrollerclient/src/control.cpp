@@ -24,6 +24,7 @@
 #include <gtkmm/window.h>
 #include <webkit2/webkit2.h>
 #include <cairomm/context.h>
+#include <pangomm.h>
 //#include <gdk-pixbuf/gdk-pixbuf.h>
 
 #include "InfoFrame.hpp"
@@ -501,6 +502,9 @@ void initBucketPos(){
 
 // Dark mode
 const std::string darkMode = R"(
+    * { font-family: 'Proxima Nova'; 
+        font-weight: bold;
+    }
     window { background-color: #0b1a21; }
     #dark_text {
         color: #000000;
@@ -519,7 +523,10 @@ const std::string darkMode = R"(
 
 // Light mode
 const std::string lightMode = R"(
-    window { background-color:rgb(229, 252, 252); }
+    * { font-family: 'Proxima Nova'; 
+        font-weight: bold;
+    }
+    window { background-color: #f0faf2; }
     label, button, entry {
         color: #000000;
     }
@@ -1067,83 +1074,81 @@ bool on_key_press_event(GdkEventKey* key_event){
 }
 
 
-void setupGUI(Glib::RefPtr<Gtk::Application> application){
-
+void setupGUI(Glib::RefPtr<Gtk::Application> application) {
     // Create window instance
-    window=new Gtk::Window();
-    window->set_default_size(1800,500);
+    window = new Gtk::Window();
+    window->set_default_size(1800, 500);
 
-    try{
+    try {
         auto icon = "../resources/razorbotz.png";
         window->set_icon_from_file(icon);
-    }
-    catch(const Glib::FileError& e){
+    } catch (const Glib::FileError& e) {
         g_print("Failed to load image: %s\n", e.what().c_str());
         return;
     }
-    
+
     // Handles key press and release events  
     window->add_events(Gdk::KEY_PRESS_MASK);
     window->add_events(Gdk::KEY_RELEASE_MASK);
     window->signal_key_press_event().connect(sigc::ptr_fun(&on_key_press_event));
     window->signal_key_release_event().connect(sigc::ptr_fun(&on_key_release_event));
-    
-    // Create verticle box to hold top level widgets 
-    Gtk::Box* topLevelBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL,5));
+
+    // Create vertical box to hold top level widgets 
+    Gtk::Box* topLevelBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
 
     // Create horizontal box to hold control widgets
-    Gtk::Box* controlsBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,5));
-    
-    // Create scolled window instance and list of addresses 
-    Gtk::ScrolledWindow* scrolledList=Gtk::manage(new Gtk::ScrolledWindow());
-    addressListBox=Gtk::manage(new Gtk::ListBox());
-    addressListBox->signal_row_activated().connect(sigc::ptr_fun(&rowActivated));
-    
-    // Create Verticle box on right of screen to house controls 
-    Gtk::Box* controlsRightBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL,5));
-    
-    // Create box to hold connection information (IP, connect button, etc.)
-    Gtk::Box* connectBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,5));
+    Gtk::Box* controlsBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
 
-    Gtk::Label* ipAddressLabel=Gtk::manage(new Gtk::Label(" IP Address "));
-    
+    // Create scrolled window instance and list of addresses 
+    Gtk::ScrolledWindow* scrolledList = Gtk::manage(new Gtk::ScrolledWindow());
+    addressListBox = Gtk::manage(new Gtk::ListBox());
+    addressListBox->signal_row_activated().connect(sigc::ptr_fun(&rowActivated));
+
+    // Create vertical box on right of screen to house controls 
+    Gtk::Box* controlsRightBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
+
+    // Create box to hold connection information (IP, connect button, etc.)
+    Gtk::Box* connectBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
+
+    Gtk::Label* ipAddressLabel = Gtk::manage(new Gtk::Label(" IP Address "));
+
     // Create entry box for IP connection
-    ipAddressEntry=Gtk::manage(new Gtk::Entry());
+    ipAddressEntry = Gtk::manage(new Gtk::Entry());
     ipAddressEntry->set_can_focus(true);
     ipAddressEntry->set_editable(true);
     ipAddressEntry->set_text("192.168.1.6");
     ipAddressEntry->set_name("dark_text");
-    
+
     // Create connection button, single click logic to connectOrDisconnect function
-    connectButton=Gtk::manage(new Gtk::Button("Connect"));
+    connectButton = Gtk::manage(new Gtk::Button("Connect"));
     connectButton->signal_clicked().connect(sigc::ptr_fun(&connectOrDisconnect));
     connectButton->set_name("dark_text");
 
-    connectionStatusLabel=Gtk::manage(new Gtk::Label("Not Connected"));
+    connectionStatusLabel = Gtk::manage(new Gtk::Label("Not Connected"));
     // Disconnect graphics for connect button
     Gdk::RGBA red;
-    red.set_rgba(1.0,0,0,1.0);
+    red.set_rgba(1.0, 0, 0, 1.0);
     connectionStatusLabel->override_background_color(red);
     connectionStatusLabel->set_name("dark_text");
 
-    toggleEncodeButton=Gtk::manage(new Gtk::Button("Enable Encoding"));
+    toggleEncodeButton = Gtk::manage(new Gtk::Button("Enable Encoding"));
     toggleEncodeButton->signal_clicked().connect(sigc::ptr_fun(&encodeOrNot));
     toggleEncodeButton->set_name("dark_text");
-    
+
     // Create horizontal box to hold silent run functionality
-    Gtk::Box* stateBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,2));
-    silentRunButton=Gtk::manage(new Gtk::Button("Silent Running"));
+    Gtk::Box* stateBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 2));
+    silentRunButton = Gtk::manage(new Gtk::Button("Silent Running"));
     silentRunButton->signal_clicked().connect(sigc::ptr_fun(&silentRun));
     silentRunButton->set_name("dark_text");
-    
+
     // Create horizontal box to hold remote control functionality
-    Gtk::Box* remoteControlBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,2));
-    
+    Gtk::Box* remoteControlBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 2));
+
     // Create button to shutdown robot
-    Gtk::Button* shutdownRobotButton=Gtk::manage(new Gtk::Button("Shutdown Robot"));
-    shutdownRobotButton->signal_clicked().connect(sigc::bind<Gtk::Window*>(sigc::ptr_fun(&shutdownDialog),window));
+    Gtk::Button* shutdownRobotButton = Gtk::manage(new Gtk::Button("Shutdown Robot"));
+    shutdownRobotButton->signal_clicked().connect(sigc::bind<Gtk::Window*>(sigc::ptr_fun(&shutdownDialog), window));
     shutdownRobotButton->set_name("dark_text");
-    
+
     // Button to toggle from dark to light mode
     toggleModeButton = Gtk::manage(new Gtk::Button("Toggle Dark/Light Mode"));
     toggleModeButton->signal_clicked().connect(sigc::ptr_fun(&toggleMode));
@@ -1155,18 +1160,38 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application){
     auto screen = Gdk::Screen::get_default();
     auto style_context = Gtk::StyleContext::create();
     style_context->add_provider_for_screen(screen, css_provider, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
-    
+
+    // Load and apply the new font
+    try {
+        auto font_provider = Gtk::CssProvider::create();
+        font_provider->load_from_data("* { font-family: 'Proxima Nova'; }");
+        style_context->add_provider_for_screen(screen, font_provider, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+
+        // Load the font file
+        std::string font_file = "../resources/ProximaNova.otf";
+        if (!Glib::file_test(font_file, Glib::FILE_TEST_EXISTS)) {
+            g_print("Font file not found: %s\n", font_file.c_str());
+        } else {
+            // If you need to load the font into Pango, you can do it here
+            Pango::FontDescription font_desc;
+            font_desc.set_family("Proxima Nova");
+            font_desc.set_weight(Pango::WEIGHT_BOLD);
+        }
+    } catch (const Glib::Error& e) {
+        g_print("Failed to load font: %s\n", e.what().c_str());
+    }
+
     // Create horizontal flow box to hold sensor widgets
-    sensorBox=Gtk::manage(new Gtk::FlowBox());
+    sensorBox = Gtk::manage(new Gtk::FlowBox());
     sensorBox->set_orientation(Gtk::ORIENTATION_HORIZONTAL);
-    
+
     // Set size for address list box
-    addressListBox->set_size_request(200,75);
-    scrolledList->set_size_request(200,75);
+    addressListBox->set_size_request(200, 75);
+    scrolledList->set_size_request(200, 75);
 
     Gtk::Label* spacer = Gtk::manage(new Gtk::Label());
     spacer->set_hexpand(true);
-    
+
     // Add widgets to connect box
     connectBox->add(*ipAddressLabel);
     connectBox->add(*ipAddressEntry);
@@ -1175,34 +1200,29 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application){
     connectBox->add(*spacer);
     connectBox->add(*toggleEncodeButton);
     connectBox->add(*toggleModeButton);
-    
+
     // Add widgets to silent run box
     stateBox->add(*silentRunButton);
     stateBox->add(*shutdownRobotButton);
-    
-    // Add widgets to shut down robot box
-    //remoteControlBox->add(*shutdownRobotButton);
-    
-    // Add wigets to controls box
+
+    // Add widgets to controls box
     controlsRightBox->add(*connectBox);
     controlsRightBox->add(*stateBox);
-    //controlsRightBox->add(*remoteControlBox);
-    
+
     // Add address list to scrollable list
     scrolledList->add(*addressListBox);
-    
+
     // Add widgets to controls box
     controlsBox->add(*scrolledList);
     controlsBox->add(*controlsRightBox);
 
-    // Add wigets to top level box
+    // Add widgets to top level box
     topLevelBox->add(*controlsBox);
     topLevelBox->add(*sensorBox);
     window->add(*topLevelBox);
 
     window->signal_delete_event().connect(sigc::ptr_fun(quit));
     window->show_all();
-
 }
 
 
@@ -1659,10 +1679,10 @@ void initArena(){
 
 int main(int argc, char** argv) { 
     Glib::RefPtr<Gtk::Application> application = Gtk::Application::create(argc, argv, "edu.uark.razorbotz");
-    setupGUI(application);
-    initGUI();
     initWebcam();
     initArena();
+    setupGUI(application);
+    initGUI();
 
     std::thread broadcastListenThread(broadcastListen);
 

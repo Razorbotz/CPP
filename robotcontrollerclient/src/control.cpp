@@ -1077,7 +1077,7 @@ bool on_key_press_event(GdkEventKey* key_event){
 void setupGUI(Glib::RefPtr<Gtk::Application> application) {
     // Create window instance
     window = new Gtk::Window();
-    window->set_default_size(1800, 500);
+    window->maximize();
 
     try {
         auto icon = "../resources/razorbotz.png";
@@ -1544,13 +1544,13 @@ void initGUI(){
     zedMessage.addElementFloat32("X", 0.0);
     zedMessage.addElementFloat32("Y", 0.0);
     zedMessage.addElementFloat32("Z", 0.0);
-    zedMessage.addElementFloat32("roll", 0.0);
-    zedMessage.addElementFloat32("pitch", 0.0);
-    zedMessage.addElementFloat32("yaw", 0.0);
-    zedMessage.addElementFloat32("aruco roll", 0.0);
-    zedMessage.addElementFloat32("aruco pitch", 0.0);
-    zedMessage.addElementFloat32("aruco yaw", 0.0);
-    zedMessage.addElementBoolean("aruco", false);
+    zedMessage.addElementFloat32("Roll", 0.0);
+    zedMessage.addElementFloat32("Pitch", 0.0);
+    zedMessage.addElementFloat32("Yaw", 0.0);
+    zedMessage.addElementFloat32("ARUCO Roll", 0.0);
+    zedMessage.addElementFloat32("ARUCO Pitch", 0.0);
+    zedMessage.addElementFloat32("ARUCO Yaw", 0.0);
+    zedMessage.addElementBoolean("ARUCO", false);
     updateGUI(zedMessage);
     
     initRollPitch();
@@ -1587,6 +1587,16 @@ void initGUI(){
 void initWebcam(){
     webcamWindow = new Gtk::Window();
     webcamWindow->set_title("Webcams");
+
+    try {
+        auto icon = "../resources/razorbotz.png";
+        webcamWindow->set_icon_from_file(icon);
+    } catch (const Glib::FileError& e) {
+        g_print("Failed to load image: %s\n", e.what().c_str());
+        return;
+    }
+
+    webcamWindow->maximize();
 
     Gtk::Box* outerBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,0));
 
@@ -1669,7 +1679,15 @@ void initArena(){
     arenaWindow = new Gtk::Window();
     arenaWindow->set_title("Arena Map");
 
-    arenaWindow->set_default_size(1100, 800);
+    arenaWindow->maximize();
+
+    try {
+        auto icon = "../resources/razorbotz.png";
+        arenaWindow->set_icon_from_file(icon);
+    } catch (const Glib::FileError& e) {
+        g_print("Failed to load image: %s\n", e.what().c_str());
+        return;
+    }
 
     overlay_area = Gtk::manage(new ImageOverlay());
     arenaWindow->add(*overlay_area);

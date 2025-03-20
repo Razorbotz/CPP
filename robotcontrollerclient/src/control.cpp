@@ -870,7 +870,6 @@ void setConnectedState(){
 }
 
 
-<<<<<<< Updated upstream
 void enableEncoding(){
     toggleEncodeButton->set_label("Stop Encoding");
     encoding=true;
@@ -883,7 +882,6 @@ void disbleEncoding(){
 }
 
 
-=======
 // void connectToServer(){
 //     if(connected==true)return;
 //     struct sockaddr_in address; 
@@ -936,7 +934,6 @@ void disbleEncoding(){
 // }
 
 //UDP Version
->>>>>>> Stashed changes
 void connectToServer(){
     if(connected==true)return;
     struct sockaddr_in address; 
@@ -2019,14 +2016,11 @@ int main(int argc, char** argv) {
     Glib::RefPtr<Gtk::Application> application = Gtk::Application::create(argc, argv, "edu.uark.razorbotz");
     initWebcam();
     initArena();
-<<<<<<< Updated upstream
     setupGUI(application);
     initGUI();
 
-=======
     
     //Start a thread to listen to updates from the robot
->>>>>>> Stashed changes
     std::thread broadcastListenThread(broadcastListen);
 
     //Initialize the controller and handle failure
@@ -2065,11 +2059,7 @@ int main(int argc, char** argv) {
     //-------------------------------------------------------------------------Initializing joystick(s)--------------------------------------------------------------------------
 
     SDL_Event event;
-<<<<<<< Updated upstream
     char buffer[16384] = {0}; 
-=======
-    char buffer[2048] = {0}; //Buffer to store incoming data
->>>>>>> Stashed changes
     int bytesRead=0;
 
     std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
@@ -2092,14 +2082,8 @@ int main(int argc, char** argv) {
         }
 
         std::cout << "Before Read" << std::endl;
-<<<<<<< Updated upstream
 
         bytesRead = read(sock, buffer, 16384);
-=======
-        
-        //Read data from the socket and record the number of bytes (bytesRead)
-        bytesRead = read(sock, buffer, 2048);
->>>>>>> Stashed changes
         if(bytesRead==0){
             //std::cout << "Lost Connection" << std::endl;
             setDisconnectedState();

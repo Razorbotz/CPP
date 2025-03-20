@@ -870,7 +870,6 @@ void setConnectedState(){
 }
 
 
-<<<<<<< Updated upstream
 void enableEncoding(){
     toggleEncodeButton->set_label("Stop Encoding");
     encoding=true;
@@ -883,7 +882,6 @@ void disbleEncoding(){
 }
 
 
-=======
 // void connectToServer(){
 //     if(connected==true)return;
 //     struct sockaddr_in address; 
@@ -935,8 +933,11 @@ void disbleEncoding(){
 //     }
 // }
 
+// Server address
+struct sockaddr_in serv_addr; 
+socklen_t addr_len = sizeof(serv_addr);
+
 //UDP Version
->>>>>>> Stashed changes
 void connectToServer(){
     if(connected==true)return;
     struct sockaddr_in address; 
@@ -970,11 +971,11 @@ void connectToServer(){
         return;
     } 
     //Send Hello
-    
-    sendto(sock , hello.c_str() , strlen(hello.c_str()) , 0 ,(struct sockaddr *)&serv_addr, sizeof(serv_addr));
+
+    sendto(sock , hello.c_str() , strlen(hello.c_str()) , 0 ,(struct sockaddr *)&serv_addr, addr_len);
     std::cout << "Hello sent" << std::endl;
 
-    bytesRead = recvfrom( sock , buffer, 2048, 0, (struct sockaddr *)&serv_addr, sizeof(serv_addr));
+    bytesRead = recvfrom( sock , buffer, 2048, 0, (struct sockaddr *)&serv_addr, &addr_len);
     std::cout << "Bytes read: " << bytesRead << std::endl;
     if(bytesRead > 0){
         setConnectedState();
@@ -1067,7 +1068,7 @@ void silentRun(){
         message[1]=command;
         message[2]=0;
         // send(sock, message, messageSize, 0);
-        sendto(sock , message , messageSize , 0 ,(struct sockaddr *)&serv_addr, sizeof(serv_addr));
+        sendto(sock , message , messageSize , 0 ,(struct sockaddr *)&serv_addr, addr_len);
 
 
         silentRunButton->set_label("Not Silent Running");
@@ -1080,7 +1081,7 @@ void silentRun(){
         message[1]=command;
         message[2]=1;
         // send(sock, message, messageSize, 0); 
-        sendto(sock , message , messageSize , 0 ,(struct sockaddr *)&serv_addr, sizeof(serv_addr));
+        sendto(sock , message , messageSize , 0 ,(struct sockaddr *)&serv_addr, addr_len);
 
         silentRunButton->set_label("Silent Running");
     }
@@ -1105,7 +1106,7 @@ void shutdownRobot(){
     message[0]=messageSize;
     message[1]=command;
     // send(sock, message, messageSize, 0);
-    sendto(sock , message , messageSize , 0 ,(struct sockaddr *)&serv_addr, sizeof(serv_addr));
+    sendto(sock , message , messageSize , 0 ,(struct sockaddr *)&serv_addr, addr_len);
 }
 
 
@@ -1135,7 +1136,7 @@ bool on_key_release_event(GdkEventKey* key_event){
     message[3]=(uint8_t)(((key_event->keyval)>>0)& 0xff);
     message[4]=0;
     // send(sock, message, messageSize, 0);
-    sendto(sock , message , messageSize , 0 ,(struct sockaddr *)&serv_addr, sizeof(serv_addr));
+    sendto(sock , message , messageSize , 0 ,(struct sockaddr *)&serv_addr, addr_len);
 
 
     return false;
@@ -1152,7 +1153,7 @@ bool on_key_press_event(GdkEventKey* key_event){
     message[3]=(uint8_t)(((key_event->keyval)>>0)& 0xff);
     message[4]=1;
     // send(sock, message, messageSize, 0);
-    sendto(sock , message , messageSize , 0 ,(struct sockaddr *)&serv_addr, sizeof(serv_addr));
+    sendto(sock , message , messageSize , 0 ,(struct sockaddr *)&serv_addr, addr_len);
 
 
     return false;
@@ -2001,14 +2002,8 @@ int main(int argc, char** argv) {
     Glib::RefPtr<Gtk::Application> application = Gtk::Application::create(argc, argv, "edu.uark.razorbotz");
     initWebcam();
     initArena();
-<<<<<<< Updated upstream
-    setupGUI(application);
-    initGUI();
-
-=======
     
     //Start a thread to listen to updates from the robot
->>>>>>> Stashed changes
     std::thread broadcastListenThread(broadcastListen);
 
     //Initialize the controller and handle failure
@@ -2047,11 +2042,7 @@ int main(int argc, char** argv) {
     //-------------------------------------------------------------------------Initializing joystick(s)--------------------------------------------------------------------------
 
     SDL_Event event;
-<<<<<<< Updated upstream
     char buffer[16384] = {0}; 
-=======
-    char buffer[2048] = {0}; //Buffer to store incoming data
->>>>>>> Stashed changes
     int bytesRead=0;
 
     std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
@@ -2074,22 +2065,16 @@ int main(int argc, char** argv) {
         }
 
         std::cout << "Before Read" << std::endl;
-<<<<<<< Updated upstream
 
         bytesRead = read(sock, buffer, 16384);
-=======
-        
-        //Read data from the socket and record the number of bytes (bytesRead)
-        bytesRead = read(sock, buffer, 2048);
->>>>>>> Stashed changes
-        if(bytesRead==0){
-            //std::cout << "Lost Connection" << std::endl;
-            setDisconnectedState();
-            if(messageBytesList.size() > 0){
-                messageBytesList.clear();
-            }
-            continue;
-        }
+        // if(bytesRead==0){
+        //     //std::cout << "Lost Connection" << std::endl;
+        //     setDisconnectedState();
+        //     if(messageBytesList.size() > 0){
+        //         messageBytesList.clear();
+        //     }
+        //     continue;
+        // }
 
         std::cout << "After Read" << std::endl;
         
@@ -2174,7 +2159,7 @@ int main(int argc, char** argv) {
                     message[4]=event.jhat.value;
 
                     // send(sock, message, length, 0);
-                    sendto(sock , message , length , 0 ,(struct sockaddr *)&serv_addr, sizeof(serv_addr));
+                    sendto(sock , message , length , 0 ,(struct sockaddr *)&serv_addr, addr_len);
                     break;
                 }
                 case SDL_JOYBUTTONDOWN:{
@@ -2189,7 +2174,7 @@ int main(int argc, char** argv) {
                     message[4]=event.jbutton.state;
 
                     // send(sock, message, length, 0);
-                    sendto(sock , message , length , 0 ,(struct sockaddr *)&serv_addr, sizeof(serv_addr));
+                    sendto(sock , message , length , 0 ,(struct sockaddr *)&serv_addr, addr_len);
                     break;
                 }
                 case SDL_JOYBUTTONUP:{
@@ -2204,7 +2189,7 @@ int main(int argc, char** argv) {
                     message[4]=event.jbutton.state;
 
                     // send(sock, message, length, 0);
-                    sendto(sock , message , length , 0 ,(struct sockaddr *)&serv_addr, sizeof(serv_addr));
+                    sendto(sock , message , length , 0 ,(struct sockaddr *)&serv_addr, addr_len);
                     break;
                 }
                 case SDL_JOYAXISMOTION: {
@@ -2252,7 +2237,7 @@ int main(int argc, char** argv) {
                         insert(value, &message[4]);
 
                         // send(sock, message, length, 0);
-                        sendto(sock , message , length , 0 ,(struct sockaddr *)&serv_addr, sizeof(serv_addr));
+                        sendto(sock , message , length , 0 ,(struct sockaddr *)&serv_addr, addr_len);
                 
                     }
                 }

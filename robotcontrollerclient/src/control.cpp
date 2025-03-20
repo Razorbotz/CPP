@@ -870,6 +870,7 @@ void setConnectedState(){
 }
 
 
+<<<<<<< Updated upstream
 void enableEncoding(){
     toggleEncodeButton->set_label("Stop Encoding");
     encoding=true;
@@ -882,6 +883,60 @@ void disbleEncoding(){
 }
 
 
+=======
+// void connectToServer(){
+//     if(connected==true)return;
+//     struct sockaddr_in address; 
+//     int bytesRead; 
+//     struct sockaddr_in serv_addr; 
+//     std::string hello("Hello Robot"); 
+
+//     memset(&serv_addr, '0', sizeof(serv_addr)); 
+
+//     serv_addr.sin_family = AF_INET; 
+//     serv_addr.sin_port = htons(PORT);
+
+//     char buffer[2048] = {0}; 
+//     //Create Socket
+//     if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) { 
+
+//         printf("\n Socket creation error \n");
+
+//         setDisconnectedState();
+//         return; 
+//     } 
+//     //Set IP
+//     if(inet_pton(AF_INET, ipAddressEntry->get_text().c_str(), &serv_addr.sin_addr)<=0)  { 
+
+//         printf("\nInvalid address/ Address not supported \n");
+
+//         Gtk::MessageDialog dialog(*window,"Invalid Address",false,Gtk::MESSAGE_QUESTION,Gtk::BUTTONS_OK);
+//         int result=dialog.run();
+
+//         setDisconnectedState();
+//         return;
+//     } 
+//     //Connect to socket
+//     if(connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
+//         printf("\nConnection Failed \n");
+
+//         Gtk::MessageDialog dialog(*window,"Connection Failed",false,Gtk::MESSAGE_QUESTION,Gtk::BUTTONS_OK);
+//         int result=dialog.run();
+
+//         setDisconnectedState();
+//     }
+//     //Send Hello
+//     else{
+//         send(sock , hello.c_str() , strlen(hello.c_str()) , 0 );
+//         bytesRead = read( sock , buffer, 2048);
+//         fcntl(sock,F_SETFL, O_NONBLOCK);
+
+//         setConnectedState();
+//     }
+// }
+
+//UDP Version
+>>>>>>> Stashed changes
 void connectToServer(){
     if(connected==true)return;
     struct sockaddr_in address; 
@@ -895,13 +950,15 @@ void connectToServer(){
     serv_addr.sin_port = htons(PORT);
 
     char buffer[2048] = {0}; 
-    if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) { 
+    //Create Socket
+    if ((sock = socket(AF_INET, SOCK_DGRAM, 0)) < 0) { 
 
         printf("\n Socket creation error \n");
 
         setDisconnectedState();
         return; 
     } 
+    //Set IP
     if(inet_pton(AF_INET, ipAddressEntry->get_text().c_str(), &serv_addr.sin_addr)<=0)  { 
 
         printf("\nInvalid address/ Address not supported \n");
@@ -912,23 +969,47 @@ void connectToServer(){
         setDisconnectedState();
         return;
     } 
-    if(connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
-        printf("\nConnection Failed \n");
+    //Send Hello
+    
+    sendto(sock , hello.c_str() , strlen(hello.c_str()) , 0 ,(struct sockaddr *)&serv_addr, sizeof(serv_addr));
+    std::cout << "Hello sent" << std::endl;
 
-        Gtk::MessageDialog dialog(*window,"Connection Failed",false,Gtk::MESSAGE_QUESTION,Gtk::BUTTONS_OK);
-        int result=dialog.run();
-
-        setDisconnectedState();
-    }
-    else{
-        send(sock , hello.c_str() , strlen(hello.c_str()) , 0 );
-        bytesRead = read( sock , buffer, 2048);
-        fcntl(sock,F_SETFL, O_NONBLOCK);
-
+    bytesRead = recvfrom( sock , buffer, 2048, 0, (struct sockaddr *)&serv_addr, sizeof(serv_addr));
+    std::cout << "Bytes read: " << bytesRead << std::endl;
+    if(bytesRead > 0){
         setConnectedState();
     }
+
 }
 
+// void disconnectFromServer(){
+//     Gtk::MessageDialog dialog(*window,"Disconnect now?",false,Gtk::MESSAGE_QUESTION,Gtk::BUTTONS_OK_CANCEL);
+//     //dialog.set_secondary_text("Do you want to shutdown now?");
+//     int result=dialog.run();
+
+//     switch(result) {
+//         case (Gtk::RESPONSE_OK): 
+//             if(shutdown(sock,SHUT_RDWR)==-1){
+//                 Gtk::MessageDialog dialog(*window,"Failed Shutdown",false,Gtk::MESSAGE_ERROR,Gtk::BUTTONS_OK);
+//                 int result=dialog.run();
+//             }
+//             if(close(sock)==0){
+//                 setDisconnectedState();
+//             }
+//             else{
+//                 Gtk::MessageDialog dialog(*window,"Failed Close",false,Gtk::MESSAGE_ERROR,Gtk::BUTTONS_OK);
+//                 int result=dialog.run();
+//             }
+
+
+
+//             break;
+//         case (Gtk::RESPONSE_CANCEL):
+//         case (Gtk::RESPONSE_NONE):
+//         default:
+//             break;
+//     }
+// }
 
 void disconnectFromServer(){
     Gtk::MessageDialog dialog(*window,"Disconnect now?",false,Gtk::MESSAGE_QUESTION,Gtk::BUTTONS_OK_CANCEL);
@@ -937,10 +1018,6 @@ void disconnectFromServer(){
 
     switch(result) {
         case (Gtk::RESPONSE_OK): 
-            if(shutdown(sock,SHUT_RDWR)==-1){
-                Gtk::MessageDialog dialog(*window,"Failed Shutdown",false,Gtk::MESSAGE_ERROR,Gtk::BUTTONS_OK);
-                int result=dialog.run();
-            }
             if(close(sock)==0){
                 setDisconnectedState();
             }
@@ -989,7 +1066,9 @@ void silentRun(){
         message[0]=messageSize;
         message[1]=command;
         message[2]=0;
-        send(sock, message, messageSize, 0); 
+        // send(sock, message, messageSize, 0);
+        sendto(sock , message , messageSize , 0 ,(struct sockaddr *)&serv_addr, sizeof(serv_addr));
+
 
         silentRunButton->set_label("Not Silent Running");
     }
@@ -1000,7 +1079,8 @@ void silentRun(){
         message[0]=messageSize;
         message[1]=command;
         message[2]=1;
-        send(sock, message, messageSize, 0); 
+        // send(sock, message, messageSize, 0); 
+        sendto(sock , message , messageSize , 0 ,(struct sockaddr *)&serv_addr, sizeof(serv_addr));
 
         silentRunButton->set_label("Silent Running");
     }
@@ -1024,7 +1104,8 @@ void shutdownRobot(){
     uint8_t message[messageSize];
     message[0]=messageSize;
     message[1]=command;
-    send(sock, message, messageSize, 0);
+    // send(sock, message, messageSize, 0);
+    sendto(sock , message , messageSize , 0 ,(struct sockaddr *)&serv_addr, sizeof(serv_addr));
 }
 
 
@@ -1053,7 +1134,9 @@ bool on_key_release_event(GdkEventKey* key_event){
     message[2]=(uint8_t)(((key_event->keyval)>>8)& 0xff);
     message[3]=(uint8_t)(((key_event->keyval)>>0)& 0xff);
     message[4]=0;
-    send(sock, message, messageSize, 0);
+    // send(sock, message, messageSize, 0);
+    sendto(sock , message , messageSize , 0 ,(struct sockaddr *)&serv_addr, sizeof(serv_addr));
+
 
     return false;
 }
@@ -1068,7 +1151,9 @@ bool on_key_press_event(GdkEventKey* key_event){
     message[2]=(uint8_t)(((key_event->keyval)>>8)& 0xff);
     message[3]=(uint8_t)(((key_event->keyval)>>0)& 0xff);
     message[4]=1;
-    send(sock, message, messageSize, 0);
+    // send(sock, message, messageSize, 0);
+    sendto(sock , message , messageSize , 0 ,(struct sockaddr *)&serv_addr, sizeof(serv_addr));
+
 
     return false;
 }
@@ -1677,20 +1762,261 @@ void initArena(){
     arenaWindow->show_all();
 }
 
+// int main(int argc, char** argv) { 
+//     Glib::RefPtr<Gtk::Application> application = Gtk::Application::create(argc, argv, "edu.uark.razorbotz");
+//     setupGUI(application);
+//     initGUI();
+//     initWebcam();
+//     initArena();
+
+//     std::thread broadcastListenThread(broadcastListen);
+
+//     if (SDL_Init(SDL_INIT_GAMECONTROLLER) != 0) {
+//         SDL_Log("Unable to initialize SDL: %s", SDL_GetError());
+//         return 1;
+//     }
+
+//     int joystickCount=SDL_NumJoysticks();
+//     std::cout << "number of joysticks " << joystickCount << std::endl;
+//     SDL_Joystick* joystickList[joystickCount];
+
+//     if(joystickCount>0){
+//         axisEventList = new std::vector<std::vector<AxisEvent*>*>(joystickCount);
+//         for(int joystickIndex=0;joystickIndex<joystickCount;joystickIndex++) {
+
+//             joystickList[joystickIndex]=SDL_JoystickOpen(joystickIndex);
+
+//             if (joystickList[joystickIndex]) {
+//                 axisEventList->at(joystickIndex) = new std::vector<AxisEvent*>(SDL_JoystickNumAxes(joystickList[joystickIndex]));
+//                 for(int axisIndex=0; axisIndex < SDL_JoystickNumAxes(joystickList[joystickIndex]); axisIndex++){
+//                     axisEventList->at(joystickIndex)->at(axisIndex) = new AxisEvent();
+//                 }
+//                 std::cout << "Opened Joystick " << joystickIndex << std::endl;
+//                 std::cout << "   Name: " << SDL_JoystickName(joystickList[joystickIndex]) << std::endl;
+//                 std::cout << "   Number of Axes: " << SDL_JoystickNumAxes(joystickList[joystickIndex]) << std::endl;
+//                 std::cout << "   Number of Buttons: " << SDL_JoystickNumButtons(joystickList[joystickIndex]) << std::endl;
+//                 std::cout << "   Number of Balls: " << SDL_JoystickNumBalls(joystickList[joystickIndex]) << std::endl;
+//             }
+//             else {
+//                 (*axisEventList)[joystickIndex] = new std::vector<AxisEvent*>(0);
+//                 std::cout << "Couldn't open Joystick " << joystickIndex << std::endl;
+//             }
+//         }
+//     }
+
+//     SDL_Event event;
+//     char buffer[2048] = {0}; 
+//     int bytesRead=0;
+
+//     std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
+//     std::chrono::high_resolution_clock::time_point lastTransmitTime = std::chrono::high_resolution_clock::now();
+//     std::list<uint8_t> messageBytesList;
+//     uint8_t message[256];
+//     bool running=true;
+//     while(running){
+//         adjustRobotList();
+
+//         while(Gtk::Main::events_pending()){
+//             Gtk::Main::iteration();
+//         }
+
+//         if(!connected){
+//             if(messageBytesList.size() > 0){
+//                 messageBytesList.clear();
+//             }
+//             continue;
+//         }
+
+//         std::cout << "Before Read" << std::endl;
+
+//         bytesRead = read(sock, buffer, 2048);
+//         if(bytesRead==0){
+//             //std::cout << "Lost Connection" << std::endl;
+//             setDisconnectedState();
+//             if(messageBytesList.size() > 0){
+//                 messageBytesList.clear();
+//             }
+//             continue;
+//         }
+
+//         std::cout << "After Read" << std::endl;
+
+//         for(int index=0;index<bytesRead;index++){
+//             messageBytesList.push_back(buffer[index]);
+//         }
+
+        
+
+//         std::cout << "Before hasMessage check" << std::endl;
+//         while(BinaryMessage::hasMessage(messageBytesList)){
+
+//             std::cout << "Before message create" << std::endl;
+//             int checksum = checksum_decode(messageBytesList); 
+//             if (checksum = 0){
+//                 break; 
+//             }
+//             else{
+
+//                 BinaryMessage message(messageBytesList);
+//                 std::cout << "Before GUI update" << std::endl;
+//                 updateGUI(message);
+//                 std::cout << "Before size decode" << std::endl;
+//                 uint64_t size=BinaryMessage::decodeSizeBytes(messageBytesList);
+//                 for(int count=0; count < size; count++){
+//                     //std::cout << messageBytesList.front();
+//                     messageBytesList.pop_front();
+//                 }
+//                 std::cout << std::endl;
+
+//             }
+
+//         }
+
+//         while(SDL_PollEvent(&event)){
+//             const Uint8 *state = SDL_GetKeyboardState(NULL);
+
+//             switch(event.type){
+
+//                 case SDL_MOUSEMOTION:{
+//                     int mouseX = event.motion.x;
+//                     int mouseY = event.motion.y;
+
+//                     std::cout << "X: " << mouseX << " Y: " << mouseY << std::endl;
+
+//                     break;
+//                 }
+
+//                 case SDL_KEYDOWN:{
+//                     std::cout << event.key.keysym.sym << std::endl;
+//                     std::cout << "key down" << std::endl;
+//                     break;
+//                 }
+
+//                 case SDL_KEYUP:{
+//                     std::cout << "key up" << std::endl;
+//                     break;
+//                 }
+
+//                 case SDL_JOYHATMOTION:{
+
+//                     uint8_t command=6;
+//                     int length=5;
+//                     uint8_t message[length];
+//                     message[0]=length;
+//                     message[1]=command;
+//                     message[2]=event.jhat.which;
+//                     message[3]=event.jhat.hat;
+//                     message[4]=event.jhat.value;
+
+//                     send(sock, message, length, 0);
+
+//                     break;
+//                 }
+//                 case SDL_JOYBUTTONDOWN:{
+//                     std::cout << "Joystick button down" << std::endl;
+//                     uint8_t command=5;
+//                     int length=5;
+//                     uint8_t message[length];
+//                     message[0]=length;
+//                     message[1]=command;
+//                     message[2]=event.jbutton.which;
+//                     message[3]=event.jbutton.button;
+//                     message[4]=event.jbutton.state;
+
+//                     send(sock, message, length, 0);
+
+//                     break;
+//                 }
+//                 case SDL_JOYBUTTONUP:{
+//                     std::cout << "Joystick button up" << std::endl;
+//                     uint8_t command=5;
+//                     int length=5;
+//                     uint8_t message[length];
+//                     message[0]=length;
+//                     message[1]=command;
+//                     message[2]=event.jbutton.which;
+//                     message[3]=event.jbutton.button;
+//                     message[4]=event.jbutton.state;
+
+//                     send(sock, message, length, 0);
+
+//                     break;
+//                 }
+//                 case SDL_JOYAXISMOTION: {
+//                     std::cout << "Joystick axis motion" << std::endl;
+//                     int deadZone=4000;
+//                     if(event.jaxis.value < -deadZone || deadZone < event.jaxis.value ) {
+//                         axisEventList->at(event.jaxis.which)->at(event.jaxis.axis)->isSet = true;
+//                         axisEventList->at(event.jaxis.which)->at(event.jaxis.axis)->which = event.jaxis.which;
+//                         axisEventList->at(event.jaxis.which)->at(event.jaxis.axis)->axis  = event.jaxis.axis;
+
+//                         int value = event.jaxis.value;
+//                         if(value < -deadZone)   value+=deadZone;
+//                         if(deadZone < value) value-=deadZone;
+
+//                         axisEventList->at(event.jaxis.which)->at(event.jaxis.axis)->value = value;
+//                     }
+
+//                     break;
+//                 }
+
+//                 default:
+//                     break;
+//             }
+//         }
+
+//         now = std::chrono::high_resolution_clock::now();
+//         std::chrono::duration<double> time_span = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastTransmitTime);
+//         double deltaTime = time_span.count();
+//         if(deltaTime > 0.05 ){
+//             lastTransmitTime = std::chrono::high_resolution_clock::now();
+//             for(int joystickIndex=0; joystickIndex < axisEventList->size(); joystickIndex++){
+//                 for(int axisIndex=0; axisIndex < axisEventList->at(joystickIndex)->size(); axisIndex++){
+//                     if(axisEventList->at(joystickIndex)->at(axisIndex)->isSet){
+//                         std::cout << joystickIndex << " " << axisIndex << " " << axisEventList->at(joystickIndex)->at(axisIndex)->value << std::endl;
+//                         axisEventList->at(joystickIndex)->at(axisIndex)->isSet = false;
+
+//                         uint8_t command = 1;
+//                         int length = 8;
+//                         float value = ((float)axisEventList->at(joystickIndex)->at(axisIndex)->value) / -32768.0;
+//                         uint8_t message[length];
+//                         message[0] = length;
+//                         message[1] = command;
+//                         message[2] = axisEventList->at(joystickIndex)->at(axisIndex)->which;
+//                         message[3] = axisEventList->at(joystickIndex)->at(axisIndex)->axis;//0-roll 1-pitch 2-throttle 3-yaw
+//                         insert(value, &message[4]);
+
+//                         send(sock, message, length, 0);
+//                     }
+//                 }
+//             }
+//         }
+//     }
+//     return 0; 
+// }
+
+//UDP Version
 int main(int argc, char** argv) { 
+    //Setup GUI
     Glib::RefPtr<Gtk::Application> application = Gtk::Application::create(argc, argv, "edu.uark.razorbotz");
     initWebcam();
     initArena();
+<<<<<<< Updated upstream
     setupGUI(application);
     initGUI();
 
+=======
+    
+    //Start a thread to listen to updates from the robot
+>>>>>>> Stashed changes
     std::thread broadcastListenThread(broadcastListen);
 
+    //Initialize the controller and handle failure
     if (SDL_Init(SDL_INIT_GAMECONTROLLER) != 0) {
         SDL_Log("Unable to initialize SDL: %s", SDL_GetError());
         return 1;
     }
-
+    //-------------------------------------------------------------------------Initializing joystick(s)--------------------------------------------------------------------------
     int joystickCount=SDL_NumJoysticks();
     std::cout << "number of joysticks " << joystickCount << std::endl;
     SDL_Joystick* joystickList[joystickCount];
@@ -1718,14 +2044,19 @@ int main(int argc, char** argv) {
             }
         }
     }
+    //-------------------------------------------------------------------------Initializing joystick(s)--------------------------------------------------------------------------
 
     SDL_Event event;
+<<<<<<< Updated upstream
     char buffer[16384] = {0}; 
+=======
+    char buffer[2048] = {0}; //Buffer to store incoming data
+>>>>>>> Stashed changes
     int bytesRead=0;
 
     std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
     std::chrono::high_resolution_clock::time_point lastTransmitTime = std::chrono::high_resolution_clock::now();
-    std::list<uint8_t> messageBytesList;
+    std::list<uint8_t> messageBytesList; //List to store incoming bytes
     uint8_t message[256];
     bool running=true;
     while(running){
@@ -1743,8 +2074,14 @@ int main(int argc, char** argv) {
         }
 
         std::cout << "Before Read" << std::endl;
+<<<<<<< Updated upstream
 
         bytesRead = read(sock, buffer, 16384);
+=======
+        
+        //Read data from the socket and record the number of bytes (bytesRead)
+        bytesRead = read(sock, buffer, 2048);
+>>>>>>> Stashed changes
         if(bytesRead==0){
             //std::cout << "Lost Connection" << std::endl;
             setDisconnectedState();
@@ -1755,7 +2092,8 @@ int main(int argc, char** argv) {
         }
 
         std::cout << "After Read" << std::endl;
-
+        
+        //Fill the messageBytesList with the bytes read from the socket
         for(int index=0;index<bytesRead;index++){
             messageBytesList.push_back(buffer[index]);
         }
@@ -1798,6 +2136,7 @@ int main(int argc, char** argv) {
 
         }
 
+        //-------------------------------------------------------------------------Handle control events--------------------------------------------------------------------------
         while(SDL_PollEvent(&event)){
             const Uint8 *state = SDL_GetKeyboardState(NULL);
 
@@ -1834,8 +2173,8 @@ int main(int argc, char** argv) {
                     message[3]=event.jhat.hat;
                     message[4]=event.jhat.value;
 
-                    send(sock, message, length, 0);
-
+                    // send(sock, message, length, 0);
+                    sendto(sock , message , length , 0 ,(struct sockaddr *)&serv_addr, sizeof(serv_addr));
                     break;
                 }
                 case SDL_JOYBUTTONDOWN:{
@@ -1849,8 +2188,8 @@ int main(int argc, char** argv) {
                     message[3]=event.jbutton.button;
                     message[4]=event.jbutton.state;
 
-                    send(sock, message, length, 0);
-
+                    // send(sock, message, length, 0);
+                    sendto(sock , message , length , 0 ,(struct sockaddr *)&serv_addr, sizeof(serv_addr));
                     break;
                 }
                 case SDL_JOYBUTTONUP:{
@@ -1864,8 +2203,8 @@ int main(int argc, char** argv) {
                     message[3]=event.jbutton.button;
                     message[4]=event.jbutton.state;
 
-                    send(sock, message, length, 0);
-
+                    // send(sock, message, length, 0);
+                    sendto(sock , message , length , 0 ,(struct sockaddr *)&serv_addr, sizeof(serv_addr));
                     break;
                 }
                 case SDL_JOYAXISMOTION: {
@@ -1912,7 +2251,9 @@ int main(int argc, char** argv) {
                         message[3] = axisEventList->at(joystickIndex)->at(axisIndex)->axis;//0-roll 1-pitch 2-throttle 3-yaw
                         insert(value, &message[4]);
 
-                        send(sock, message, length, 0);
+                        // send(sock, message, length, 0);
+                        sendto(sock , message , length , 0 ,(struct sockaddr *)&serv_addr, sizeof(serv_addr));
+                
                     }
                 }
             }

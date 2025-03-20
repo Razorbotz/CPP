@@ -1730,29 +1730,27 @@ int checksum_decode(std::list<uint8_t>& byteList){
     std::advance(it, -1);
     uint8_t storedChecksum = *it;
 
-    // Sums byteList, excludes last byte (checksum) 
     uint32_t sum = 0;
-    auto dataEnd = byteList.end();
-    std::advance(dataEnd, -1);
-    std::cout << "Data: ";
-    for (auto dataIt = byteList.begin(); dataIt != dataEnd; ++dataIt) {
-        sum += *dataIt;
-        std::cout<<std::hex<<static_cast<int>(*dataIt)<<" ";
-        
+    auto it = byteList.begin();
+    auto endIt = byteList.end();
+    --endIt; // Exclude the last byte (stored checksum)
+    for (; it != endIt; ++it) {
+        sum += *it;
     }
-    std::cout<<std::endl;
+
 
     // Recalculate the checksum as sum modulo key.
     uint8_t computedChecksum = sum % key;
 
-    std::cout << "Computed checksum from data: 0x" << std::hex << static_cast<int>(computedChecksum) << std::endl;
-    std::cout << "Stored checksum: 0x" << std::hex << static_cast<int>(storedChecksum) << std::endl;
 
     if (computedChecksum == storedChecksum) {
-        std::cout << "Checksum is valid." << std::endl;
         return 1;
     } else {
         std::cout << "Checksum is invalid." << std::endl;
+        std::cout << "Computed checksum from data: 0x" << std::hex << static_cast<int>(computedChecksum) << std::endl;
+        std::cout << "Stored checksum: 0x" << std::hex << static_cast<int>(storedChecksum) << std::endl;
+        std::cout << "Data: ";
+        std::cout<<<std::hex << static_cast<int>(dataEnd)<<std::endl;
         byteList.clear();
         return 0;
 
@@ -2114,7 +2112,6 @@ int main(int argc, char** argv) {
                 if (checksum = 0){
                     break; 
                 }
-                else{
                     BinaryMessage message(messageBytesList);
                     std::cout << "Before GUI update" << std::endl;
                     updateGUI(message);
@@ -2123,7 +2120,6 @@ int main(int argc, char** argv) {
                     for(int count=0; count < size; count++){
                         //std::cout << messageBytesList.front();
                         messageBytesList.pop_front();
-                    }
                     std::cout << std::endl;
                 }
             }

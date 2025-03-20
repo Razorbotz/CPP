@@ -1718,45 +1718,46 @@ void initWebcam(){
 
 
 int key = 0x2C;
-int checksum_decode(std::list<uint8_t>& byteList){
-    //Checks last byte of data for the checksum
-    if (byteList.size() < 1) {
+int checksum_decode(std::list<uint8_t>& byteList) {
+    // Check if there is at least one byte (needed for checksum)
+    if (byteList.empty()) {
         std::cout << "Not enough data to decode checksum." << std::endl;
         return -1;
     }
 
-    // Extracts checksum (last byte)
-    auto it = byteList.end();
-    std::advance(it, -1);
-    uint8_t storedChecksum = *it;
+    // Extract checksum (last byte)
+    auto lastIt = byteList.end();
+    std::advance(lastIt, -1);
+    uint8_t storedChecksum = *lastIt;
 
+    // Calculate the sum of all bytes except the last one (the checksum)
     uint32_t sum = 0;
-    auto it = byteList.begin();
-    auto endIt = byteList.end();
-    --endIt; // Exclude the last byte (stored checksum)
-    for (; it != endIt; ++it) {
+    for (auto it = byteList.begin(); it != lastIt; ++it) {
         sum += *it;
     }
 
-
-    // Recalculate the checksum as sum modulo key.
+    // Compute the checksum as sum modulo key
     uint8_t computedChecksum = sum % key;
-
 
     if (computedChecksum == storedChecksum) {
         return 1;
     } else {
         std::cout << "Checksum is invalid." << std::endl;
-        std::cout << "Computed checksum from data: 0x" << std::hex << static_cast<int>(computedChecksum) << std::endl;
-        std::cout << "Stored checksum: 0x" << std::hex << static_cast<int>(storedChecksum) << std::endl;
+        std::cout << "Computed checksum from data: 0x" 
+                  << std::hex << static_cast<int>(computedChecksum) << std::endl;
+        std::cout << "Stored checksum: 0x" 
+                  << std::hex << static_cast<int>(storedChecksum) << std::endl;
         std::cout << "Data: ";
-        std::cout<<<std::hex << static_cast<int>(dataEnd)<<std::endl;
+        // Print all data bytes (excluding the stored checksum)
+        for (auto it = byteList.begin(); it != lastIt; ++it) {
+            std::cout << std::hex << static_cast<int>(*it) << " ";
+        }
+        std::cout << std::endl;
         byteList.clear();
         return 0;
-
     }
-
 }
+
 
 
 void initArena(){

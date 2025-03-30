@@ -2087,7 +2087,9 @@ int main(int argc, char** argv) {
 
         std::cout << "Before Read" << std::endl;
 
-        bytesRead = read(sock, buffer, 16384);
+        //Receive messages from the robot, store in buffer of size 16384
+        bytesRead = recvfrom(sock, buffer, 16384, 0, (struct sockaddr *)&serv_addr, &addr_len);
+
         // if(bytesRead==0){
         //     //std::cout << "Lost Connection" << std::endl;
         //     setDisconnectedState();
@@ -2108,6 +2110,7 @@ int main(int argc, char** argv) {
 
         std::cout << "Before hasMessage check" << std::endl;
         while(BinaryMessage::hasMessage(messageBytesList)){
+            /****************CHECKSUM: Branch to process each message in messageBytesList in the case that the checksum is to be verified****************/
             if(encoding){
                 std::cout << "Before message create" << std::endl;
                 int checksum = checksum_decode(messageBytesList); 
@@ -2117,9 +2120,9 @@ int main(int argc, char** argv) {
                 else{
                     BinaryMessage message(messageBytesList);
                     std::cout << "Before GUI update" << std::endl;
-                    updateGUI(message);
+                    updateGUI(message); //Update the GUI with the message
                     std::cout << "Before size decode" << std::endl;
-                    uint64_t size=BinaryMessage::decodeSizeBytes(messageBytesList);
+                    uint64_t size=BinaryMessage::decodeSizeBytes(messageBytesList); //Decode the size of the message
                     for(int count=0; count < size; count++){
                         //std::cout << messageBytesList.front();
                         messageBytesList.pop_front();
@@ -2127,6 +2130,7 @@ int main(int argc, char** argv) {
                     std::cout << std::endl;
                 }
             }
+            /****************NO CHECKSUM: Branch to process each message in messageBytesList in the case that the checksum is NOT to be verified****************/
             else{
                 BinaryMessage message(messageBytesList);
                 std::cout << "Before GUI update" << std::endl;
@@ -2142,7 +2146,7 @@ int main(int argc, char** argv) {
 
         }
 
-        //-------------------------------------------------------------------------Handle control events--------------------------------------------------------------------------
+        /******************************Handle control events******************************/
         while(SDL_PollEvent(&event)){
             const Uint8 *state = SDL_GetKeyboardState(NULL);
 

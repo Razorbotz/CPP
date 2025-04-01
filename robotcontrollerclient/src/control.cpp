@@ -1669,54 +1669,6 @@ void initGUI(){
 
 }
 
-
-void initWebcam(){
-    webcamWindow = new Gtk::Window();
-    webcamWindow->set_title("Webcams");
-
-    try {
-        auto icon = "../resources/razorbotz.png";
-        webcamWindow->set_icon_from_file(icon);
-    } catch (const Glib::FileError& e) {
-        g_print("Failed to load image: %s\n", e.what().c_str());
-        return;
-    }
-
-    webcamWindow->maximize();
-
-    Gtk::Box* outerBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,0));
-
-    Gtk::Box* livestreamBox1 = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,0));
-    livestreamBox1->set_size_request(800, 600);
-    outerBox->add(*livestreamBox1);
-
-    auto webview = WEBKIT_WEB_VIEW(webkit_web_view_new());
-    webkit_web_view_load_uri(webview, "http://192.168.1.8/mjpeg/1");
-
-    Gtk::Widget* widget = Glib::wrap(GTK_WIDGET(webview));
-    widget->set_hexpand(true);
-    widget->set_vexpand(true);
-
-    livestreamBox1->pack_start(*widget, Gtk::PACK_EXPAND_WIDGET);
-
-    Gtk::Box* livestreamBox2 = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,0));
-    livestreamBox2->set_size_request(800, 600);
-    outerBox->add(*livestreamBox2);
-
-    auto webview2 = WEBKIT_WEB_VIEW(webkit_web_view_new());
-    webkit_web_view_load_uri(webview2, "http://192.168.1.9/mjpeg/1");
-
-    Gtk::Widget* widget2 = Glib::wrap(GTK_WIDGET(webview2));
-    widget2->set_hexpand(true);
-    widget2->set_vexpand(true);
-
-    livestreamBox2->pack_start(*widget2, Gtk::PACK_EXPAND_WIDGET);
-
-    webcamWindow->add(*outerBox);
-    webcamWindow->show_all();
-}
-
-
 int key = 0x2C;
 int checksum_decode(std::list<uint8_t>& byteList) {
     // Check if there is at least one byte (needed for checksum)
@@ -1762,7 +1714,7 @@ int checksum_decode(std::list<uint8_t>& byteList) {
 
 void initArena(){
     arenaWindow = new Gtk::Window();
-    arenaWindow->set_title("Arena Map");
+    arenaWindow->set_title("Arena Map/Cams");
 
     arenaWindow->maximize();
 
@@ -1774,9 +1726,82 @@ void initArena(){
         return;
     }
 
+    // Arena cams
+    // Add mainBox to window
+    Gtk::Box* mainBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,10));
+    arenaWindow->add(*mainBox);
+    
+    // Arena map left
     overlay_area = Gtk::manage(new ImageOverlay());
-    arenaWindow->add(*overlay_area);
-    overlay_area->show();
+    mainBox->pack_start(*overlay_area, Gtk::PACK_EXPAND_WIDGET);
+    
+    // Cameras box
+    Gtk::Box* camsBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
+    mainBox->pack_start(*camsBox, Gtk::PACK_SHRINK);
+    
+    // Awareness Cam
+    Gtk::Overlay* awareness_overlay = Gtk::manage(new Gtk::Overlay());
+    Gtk::Box* livestreamBox1 = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,0));
+    livestreamBox1->set_size_request(800, 600);
+    camsBox->pack_start(*awareness_overlay, Gtk::PACK_SHRINK);
+    
+    // Webview 1 (Awareness)
+    auto webview1 = WEBKIT_WEB_VIEW(webkit_web_view_new());
+    webkit_web_view_load_uri(webview1, "http://192.168.1.8/mjpeg/1");
+    Gtk::Widget* webview_widget1 = Glib::wrap(GTK_WIDGET(webview1));
+    livestreamBox1->pack_start(*webview_widget1, Gtk::PACK_EXPAND_WIDGET);
+    awareness_overlay->add(*livestreamBox1);
+
+    // Awareness cam label
+    Gtk::Label* awareness_label = Gtk::manage(new Gtk::Label("Awareness Camera:"));
+    //awareness_label->override_color(Gdk::RGBA("black"));
+    awareness_label->set_halign(Gtk::ALIGN_START);
+    awareness_label->set_valign(Gtk::ALIGN_START);
+    awareness_overlay->add_overlay(*awareness_label);
+    
+    // Back Cam
+    Gtk::Overlay* back_overlay = Gtk::manage(new Gtk::Overlay());
+    Gtk::Box* livestreamBox2 = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,0));
+    livestreamBox2->set_size_request(800, 600);
+    camsBox->pack_start(*back_overlay, Gtk::PACK_SHRINK);
+    
+    // Webview 2 (Back)
+    auto webview2 = WEBKIT_WEB_VIEW(webkit_web_view_new());
+    webkit_web_view_load_uri(webview2, "http://192.168.1.9/mjpeg/1");
+    Gtk::Widget* webview_widget2 = Glib::wrap(GTK_WIDGET(webview2));
+    livestreamBox2->pack_start(*webview_widget2, Gtk::PACK_EXPAND_WIDGET);
+    back_overlay->add(*livestreamBox2);
+
+    // Awareness cam label
+    Gtk::Label* back_label = Gtk::manage(new Gtk::Label("Back Camera:"));
+    //back_label->override_color(Gdk::RGBA("black"));
+    back_label->set_halign(Gtk::ALIGN_START);
+    back_label->set_valign(Gtk::ALIGN_START);
+    back_overlay->add_overlay(*back_label);
+
+    // Style the overlay label
+    auto css_provider = Gtk::CssProvider::create();
+    css_provider->load_from_data(R"(
+        * { font-family: 'Proxima Nova'; }
+        .overlay-text {
+            font-size: 30px;
+            background-color: #f0faf2;
+            padding: 5px;
+            margin: 10px;
+            border-radius: 3px;
+        }
+    )");
+    awareness_label->get_style_context()->add_provider(
+        css_provider,
+        GTK_STYLE_PROVIDER_PRIORITY_APPLICATION
+    );
+    awareness_label->get_style_context()->add_class("overlay-text");
+    back_label->get_style_context()->add_provider(
+        css_provider,
+        GTK_STYLE_PROVIDER_PRIORITY_APPLICATION
+    );
+    back_label->get_style_context()->add_class("overlay-text");
+
     arenaWindow->show_all();
 }
 
@@ -2017,7 +2042,6 @@ void initArena(){
 int main(int argc, char** argv) { 
     //Setup GUI
     Glib::RefPtr<Gtk::Application> application = Gtk::Application::create(argc, argv, "edu.uark.razorbotz");
-    initWebcam();
     initArena();
     setupGUI(application);
     initGUI();

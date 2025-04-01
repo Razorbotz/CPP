@@ -31,6 +31,9 @@
 #include "BinaryMessage.hpp"
 
 #define PORT 31337 
+#define ORIN_IP "192.168.1.109"
+#define NANO_IP "192.168.1.5"
+
 
 float parseFloat(const uint8_t* array){
     uint32_t axisYInteger=0;
@@ -949,6 +952,7 @@ void connectToServer(){
 
     serv_addr.sin_family = AF_INET; 
     serv_addr.sin_port = htons(PORT);
+    serv_addr.sin_addr.s_addr = inet_addr(ORIN_IP);
 
     char buffer[2048] = {0}; 
     //Create Socket
@@ -960,16 +964,16 @@ void connectToServer(){
         return; 
     } 
     //Set IP
-    if(inet_pton(AF_INET, ipAddressEntry->get_text().c_str(), &serv_addr.sin_addr)<=0)  { 
+    // if(inet_pton(AF_INET, ipAddressEntry->get_text().c_str(), &serv_addr.sin_addr)<=0)  { 
 
-        printf("\nInvalid address/ Address not supported \n");
+    //     printf("\nInvalid address/ Address not supported \n");
 
-        Gtk::MessageDialog dialog(*window,"Invalid Address",false,Gtk::MESSAGE_QUESTION,Gtk::BUTTONS_OK);
-        int result=dialog.run();
+    //     Gtk::MessageDialog dialog(*window,"Invalid Address",false,Gtk::MESSAGE_QUESTION,Gtk::BUTTONS_OK);
+    //     int result=dialog.run();
 
-        setDisconnectedState();
-        return;
-    } 
+    //     setDisconnectedState();
+    //     return;
+    // } 
     //Send Hello
 
     sendto(sock , hello.c_str() , strlen(hello.c_str()) , 0 ,(struct sockaddr *)&serv_addr, addr_len);
@@ -1358,63 +1362,63 @@ std::vector<std::string> getAddressList(){
 }
 
 
-void broadcastListen(){
-    int sd = socket(AF_INET, SOCK_DGRAM, 0);
-    if(sd < 0) {
-        perror("Opening datagram socket error");
-        return; 
-    }
+// void broadcastListen(){
+//     int sd = socket(AF_INET, SOCK_DGRAM, 0);
+//     if(sd < 0) {
+//         perror("Opening datagram socket error");
+//         return; 
+//     }
 
-    int reuse = 1;
-    if(setsockopt(sd, SOL_SOCKET, SO_REUSEADDR, (char *)&reuse, sizeof(reuse)) < 0) {
-        perror("Setting SO_REUSEADDR error");
-        close(sd);
-        return;
-    }
+//     int reuse = 1;
+//     if(setsockopt(sd, SOL_SOCKET, SO_REUSEADDR, (char *)&reuse, sizeof(reuse)) < 0) {
+//         perror("Setting SO_REUSEADDR error");
+//         close(sd);
+//         return;
+//     }
 
-    /* Bind to the proper port number with the IP address */
-    /* specified as INADDR_ANY. */
-    struct sockaddr_in localSock;
-    localSock.sin_family = AF_INET;
-    localSock.sin_port = htons(4321);
-    localSock.sin_addr.s_addr = INADDR_ANY;
-    if(bind(sd, (struct sockaddr*)&localSock, sizeof(localSock))) {
-        perror("Binding datagram socket error");
-        close(sd);
-        return;
-    }
+//     /* Bind to the proper port number with the IP address */
+//     /* specified as INADDR_ANY. */
+//     struct sockaddr_in localSock;
+//     localSock.sin_family = AF_INET;
+//     localSock.sin_port = htons(4321);
+//     localSock.sin_addr.s_addr = INADDR_ANY;
+//     if(bind(sd, (struct sockaddr*)&localSock, sizeof(localSock))) {
+//         perror("Binding datagram socket error");
+//         close(sd);
+//         return;
+//     }
 
-    /* Join the multicast group 226.1.1.1 on the local 203.106.93.94 */
-    /* interface. Note that this IP_ADD_MEMBERSHIP option must be */
-    /* called for each local interface over which the multicast */
-    /* datagrams are to be received. */
+//     /* Join the multicast group 226.1.1.1 on the local 203.106.93.94 */
+//     /* interface. Note that this IP_ADD_MEMBERSHIP option must be */
+//     /* called for each local interface over which the multicast */
+//     /* datagrams are to be received. */
 
-    std::vector<std::string> addressList=getAddressList(); 
-    for(std::string addressString:addressList){
-        std::cout << "got " << addressString << std::endl;
-        struct ip_mreq group;
-        group.imr_multiaddr.s_addr = inet_addr("226.1.1.1");
-        group.imr_interface.s_addr = inet_addr(addressString.c_str());
-        if(setsockopt(sd, IPPROTO_IP, IP_ADD_MEMBERSHIP, (char *)&group, sizeof(group)) < 0) {
-            perror("Adding multicast group error");
-        } 
-    }
+//     std::vector<std::string> addressList=getAddressList(); 
+//     for(std::string addressString:addressList){
+//         std::cout << "got " << addressString << std::endl;
+//         struct ip_mreq group;
+//         group.imr_multiaddr.s_addr = inet_addr("226.1.1.1");
+//         group.imr_interface.s_addr = inet_addr(addressString.c_str());
+//         if(setsockopt(sd, IPPROTO_IP, IP_ADD_MEMBERSHIP, (char *)&group, sizeof(group)) < 0) {
+//             perror("Adding multicast group error");
+//         } 
+//     }
 
-    char databuf[2048];
-    int datalen = sizeof(databuf);
-    while(true){
-        if(read(sd, databuf, datalen) >= 0) {
-            std::string message(databuf);
-            if(!contains(robotList,message)) {
-                RemoteRobot remoteRobot;
-                remoteRobot.tag=message; 
-                time(&remoteRobot.lastSeenTime);
-                robotList.push_back(remoteRobot);
-            }
-            update(robotList,message);
-        }
-    }
-}
+//     char databuf[2048];
+//     int datalen = sizeof(databuf);
+//     while(true){
+//         if(read(sd, databuf, datalen) >= 0) {
+//             std::string message(databuf);
+//             if(!contains(robotList,message)) {
+//                 RemoteRobot remoteRobot;
+//                 remoteRobot.tag=message; 
+//                 time(&remoteRobot.lastSeenTime);
+//                 robotList.push_back(remoteRobot);
+//             }
+//             update(robotList,message);
+//         }
+//     }
+// }
 
 
 void adjustRobotList(){
@@ -1670,46 +1674,47 @@ void initGUI(){
 }
 
 int key = 0x2C;
-int checksum_decode(std::list<uint8_t>& byteList) {
-    // Check if there is at least one byte (needed for checksum)
-    if (byteList.empty()) {
+int checksum_decode(std::list<uint8_t>& byteList){
+    //Checks last byte of data for the checksum
+    if (byteList.size() < 1) {
         std::cout << "Not enough data to decode checksum." << std::endl;
         return -1;
     }
 
-    // Extract checksum (last byte)
-    auto lastIt = byteList.end();
-    std::advance(lastIt, -1);
-    uint8_t storedChecksum = *lastIt;
+    // Extracts checksum (last byte)
+    auto it = byteList.end();
+    std::advance(it, -1);
+    uint8_t storedChecksum = *it;
 
-    // Calculate the sum of all bytes except the last one (the checksum)
+    // Sums byteList, excludes last byte (checksum) 
     uint32_t sum = 0;
-    for (auto it = byteList.begin(); it != lastIt; ++it) {
-        sum += *it;
+    auto dataEnd = byteList.end();
+    std::advance(dataEnd, -1);
+    std::cout << "Data: ";
+    for (auto dataIt = byteList.begin(); dataIt != dataEnd; ++dataIt) {
+        sum += *dataIt;
+        std::cout<<std::hex<<static_cast<int>(*dataIt)<<" ";
+        
     }
+    std::cout<<std::endl;
 
-    // Compute the checksum as sum modulo key
+    // Recalculate the checksum as sum modulo key.
     uint8_t computedChecksum = sum % key;
 
+    std::cout << "Computed checksum from data: 0x" << std::hex << static_cast<int>(computedChecksum) << std::endl;
+    std::cout << "Stored checksum: 0x" << std::hex << static_cast<int>(storedChecksum) << std::endl;
+
     if (computedChecksum == storedChecksum) {
+        std::cout << "Checksum is valid." << std::endl;
         return 1;
     } else {
         std::cout << "Checksum is invalid." << std::endl;
-        std::cout << "Computed checksum from data: 0x" 
-                  << std::hex << static_cast<int>(computedChecksum) << std::endl;
-        std::cout << "Stored checksum: 0x" 
-                  << std::hex << static_cast<int>(storedChecksum) << std::endl;
-        std::cout << "Data: ";
-        // Print all data bytes (excluding the stored checksum)
-        for (auto it = byteList.begin(); it != lastIt; ++it) {
-            std::cout << std::hex << static_cast<int>(*it) << " ";
-        }
-        std::cout << std::endl;
         byteList.clear();
         return 0;
-    }
-}
 
+    }
+
+}
 
 
 void initArena(){
@@ -2048,7 +2053,7 @@ int main(int argc, char** argv) {
 
     
     //Start a thread to listen to updates from the robot
-    std::thread broadcastListenThread(broadcastListen);
+    // std::thread broadcastListenThread(broadcastListen);
 
     //Initialize the controller and handle failure
     if (SDL_Init(SDL_INIT_GAMECONTROLLER) != 0) {
@@ -2110,7 +2115,9 @@ int main(int argc, char** argv) {
 
         std::cout << "Before Read" << std::endl;
 
-        bytesRead = read(sock, buffer, 16384);
+        //Receive messages from the robot, store in buffer of size 16384
+        bytesRead = recvfrom(sock, buffer, 16384, 0, (struct sockaddr *)&serv_addr, &addr_len);
+
         // if(bytesRead==0){
         //     //std::cout << "Lost Connection" << std::endl;
         //     setDisconnectedState();
@@ -2131,23 +2138,27 @@ int main(int argc, char** argv) {
 
         std::cout << "Before hasMessage check" << std::endl;
         while(BinaryMessage::hasMessage(messageBytesList)){
+            /****************CHECKSUM: Branch to process each message in messageBytesList in the case that the checksum is to be verified****************/
             if(encoding){
                 std::cout << "Before message create" << std::endl;
                 int checksum = checksum_decode(messageBytesList); 
                 if (checksum = 0){
                     break; 
                 }
+                else{
                     BinaryMessage message(messageBytesList);
                     std::cout << "Before GUI update" << std::endl;
-                    updateGUI(message);
+                    updateGUI(message); //Update the GUI with the message
                     std::cout << "Before size decode" << std::endl;
-                    uint64_t size=BinaryMessage::decodeSizeBytes(messageBytesList);
+                    uint64_t size=BinaryMessage::decodeSizeBytes(messageBytesList); //Decode the size of the message
                     for(int count=0; count < size; count++){
                         //std::cout << messageBytesList.front();
                         messageBytesList.pop_front();
+                    }
                     std::cout << std::endl;
                 }
             }
+            /****************NO CHECKSUM: Branch to process each message in messageBytesList in the case that the checksum is NOT to be verified****************/
             else{
                 BinaryMessage message(messageBytesList);
                 std::cout << "Before GUI update" << std::endl;
@@ -2163,7 +2174,7 @@ int main(int argc, char** argv) {
 
         }
 
-        //-------------------------------------------------------------------------Handle control events--------------------------------------------------------------------------
+        /******************************Handle control events******************************/
         while(SDL_PollEvent(&event)){
             const Uint8 *state = SDL_GetKeyboardState(NULL);
 

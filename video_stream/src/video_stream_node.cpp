@@ -29,6 +29,12 @@
 
 #include "InfoFrame.hpp"
 #include "BinaryMessage.hpp"
+#include <rclcpp/rclcpp.hpp>
+#include <sensor_msgs/msg/image.hpp>
+#include <cv_bridge/cv_bridge.h>
+#include <opencv2/opencv.hpp>
+
+rclcpp::Node::SharedPtr nodeHandle;
 
 #define PORT 31337 
 
@@ -1775,7 +1781,6 @@ int checksum_decode(std::list<uint8_t>& byteList) {
 }
 
 
-
 void initArena(){
     arenaWindow = new Gtk::Window();
     arenaWindow->set_title("Arena Map");
@@ -1795,6 +1800,20 @@ void initArena(){
     overlay_area->show();
     arenaWindow->show_all();
 }
+
+
+void zedImageCallback(const sensor_msgs::msg::Image::SharedPtr msg){
+    try{
+        cv_bridge::CvImagePtr cv_ptr = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::RGB8);
+
+        cv::imshow("Image Viewer", cv_ptr->image);
+        cv::waitKey(1);
+    }
+    catch (const cv_bridge::Exception &e){
+        RCLCPP_ERROR(nodeHandle->get_logger(), "CV Bridge exception: %s", e.what());
+    }
+}
+
 
 // int main(int argc, char** argv) { 
 //     Glib::RefPtr<Gtk::Application> application = Gtk::Application::create(argc, argv, "edu.uark.razorbotz");
@@ -2038,6 +2057,9 @@ int main(int argc, char** argv) {
     setupGUI(application);
     initGUI();
 
+    rclcpp::init(argc, argv);
+    nodeHandle = rclcpp::Node::make_shared("video_stream");
+    auto imageSubscriber = nodeHandle->create_subscription<sensor_msgs::msg::Image>("zed_image", 10, zedImageCallback);
     
     //Start a thread to listen to updates from the robot
     std::thread broadcastListenThread(broadcastListen);
@@ -2080,6 +2102,7 @@ int main(int argc, char** argv) {
     SDL_Event event;
     char buffer[16384] = {0}; 
     int bytesRead=0;
+    rclcpp::spin(nodeHandle);
 
     std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
     std::chrono::high_resolution_clock::time_point lastTransmitTime = std::chrono::high_resolution_clock::now();
@@ -2278,5 +2301,6 @@ int main(int argc, char** argv) {
             }
         }
     }
+    rclcpp::shutdown();
     return 0; 
 }

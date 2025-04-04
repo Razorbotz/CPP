@@ -7,6 +7,7 @@ project(control)
 set(CMAKE_CXX_STANDARD 17)
 
 
+find_package(OpenCV REQUIRED)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(GTKMM REQUIRED gtkmm-3.0)
 pkg_check_modules(CAIRO REQUIRED cairo)
@@ -70,8 +71,15 @@ include_directories(
   ${GTKMM_INCLUDE_DIRS}
   ${CAIRO_INCLUDE_DIRS}
   ${WEBKITGTK_INCLUDE_DIRS}
+  ${OpenCV_INCLUDE_DIRS}
 )
 
+link_directories(
+  include/
+  ${GTKMM_LIBRARY_DIRS}
+)
+
+add_definitions(${GTKMM_CFLAGS_OTHER})
 
 add_executable(control 
   src/control.cpp
@@ -102,5 +110,7 @@ target_link_libraries(control
   ${CAIRO_LIBRARIES}
   cairo
   ${WEBKITGTK_LIBRARIES}
+  ${OpenCV_LIBS}
+  pthread
 )
 

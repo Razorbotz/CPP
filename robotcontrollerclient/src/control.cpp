@@ -27,10 +27,14 @@
 #include <pangomm.h>
 //#include <gdk-pixbuf/gdk-pixbuf.h>
 
+#include <cstdlib>
+#include <opencv2/opencv.hpp>
+
 #include "InfoFrame.hpp"
 #include "BinaryMessage.hpp"
 
 #define PORT 31337 
+#define VIDEO_PORT 31338
 #define ORIN_IP "192.168.1.109"
 #define NANO_IP "192.168.1.5"
 
@@ -85,14 +89,24 @@ Gtk::Label* connectionStatusLabel;
 Gtk::Button* silentRunButton;
 Gtk::Button* connectButton;
 Gtk::Button* toggleModeButton;
-Gtk::Button* toggleEncodeButton;
+
+Gtk::ListBox* videoAddressListBox;
+Gtk::Entry* videoIPAddressEntry;
+Gtk::Label* videoConnectionStatusLabel;
+  
+Gtk::Button* videoStreamButton;
+Gtk::Button* videoConnectButton;
+bool isStreamingActive = false;
+bool isGray = true;
   
 Gtk::FlowBox* sensorBox;
 
 Gtk::Window* window;
 int sock = 0; 
 bool connected=false;
-bool encoding = false;
+
+int videoSock = 0; 
+bool videoConnected=false;
 
 Gtk::Window* webcamWindow;
 Gtk::Window* arenaWindow;
@@ -208,45 +222,68 @@ class ImageOverlay : public Gtk::DrawingArea {
         }
 
     protected:
-        bool on_draw(const Cairo::RefPtr<Cairo::Context>& cr) override {
-            if(!background || !overlay)return false;
-
-            cr->save();
-            Gdk::Cairo::set_source_pixbuf(cr, background, 0, 0);
-            cr->paint();
-            cr->restore();
-
-            cr->save();
-            cr->translate(0, 800 - overlay->get_height());
-            cr->translate(img_x + overlay->get_width() / 2, img_y + overlay->get_height() / 2);
-            cr->rotate(rotation_angle);
-            cr->translate(-overlay->get_width() / 2, -overlay->get_height() / 2);
-            Gdk::Cairo::set_source_pixbuf(cr, overlay, 0, 0);
-            cr->paint();
-            cr->restore();
-
-            for (const auto& data : rock_data) {
-                int new_width = rock->get_width() * data.scale_multiplier;
-                int new_height = rock->get_height() * data.scale_multiplier;
-                
-                auto scaled_pixbuf = rock->scale_simple(new_width, new_height, Gdk::INTERP_BILINEAR);
+    bool on_draw(const Cairo::RefPtr<Cairo::Context>& cr) override {
+        if (!background || !overlay) return false;
     
-                Gdk::Cairo::set_source_pixbuf(cr, scaled_pixbuf, data.x, data.y);
-                cr->paint();
-            }
-
-            for (const auto& data : hole_data) {
-                int new_width = hole->get_width() * data.scale_multiplier;
-                int new_height = hole->get_height() * data.scale_multiplier;
-                
-                auto scaled_pixbuf = hole->scale_simple(new_width, new_height, Gdk::INTERP_BILINEAR);
+        // Get widget and image sizes to scale the images correctly
+        int widget_width = get_allocation().get_width();
+        int widget_height = get_allocation().get_height();
     
-                Gdk::Cairo::set_source_pixbuf(cr, scaled_pixbuf, data.x, data.y);
-                cr->paint();
-            }
+        int img_width = background->get_width();
+        int img_height = background->get_height();
+    
+        double scale_x = static_cast<double>(widget_width) / img_width;
+        double scale_y = static_cast<double>(widget_height) / img_height;
+        double scale = std::min(scale_x, scale_y);
+    
+        double scaled_width = img_width * scale;
+        double scaled_height = img_height * scale;
+        double offset_x = (widget_width - scaled_width) / 2.0;
+        double offset_y = (widget_height - scaled_height) / 2.0;
+    
+        // Apply transformations for both background and overlay
+        cr->save();
+        cr->translate(offset_x, offset_y);
+        cr->scale(scale, scale);
+    
+        cr->save();
+        Gdk::Cairo::set_source_pixbuf(cr, background, 0, 0);
+        cr->paint();
+        cr->restore();
 
-            return true;
+        cr->save();
+        cr->translate(img_x + overlay->get_width() / 2, img_y + overlay->get_height() / 2);
+        cr->rotate(rotation_angle);
+        cr->translate(-overlay->get_width() / 2, -overlay->get_height() / 2);
+        Gdk::Cairo::set_source_pixbuf(cr, overlay, 0, 0);
+        cr->paint();
+        cr->restore();
+
+        cr->restore();
+    
+        // Draw rocks
+        for (const auto& data : rock_data) {
+            int new_width = rock->get_width() * data.scale_multiplier;
+            int new_height = rock->get_height() * data.scale_multiplier;
+            auto scaled_pixbuf = rock->scale_simple(new_width, new_height, Gdk::INTERP_BILINEAR);
+            Gdk::Cairo::set_source_pixbuf(cr, scaled_pixbuf, data.x, data.y);
+            cr->paint();
         }
+    
+        // Draw holes
+        for (const auto& data : hole_data) {
+            int new_width = hole->get_width() * data.scale_multiplier;
+            int new_height = hole->get_height() * data.scale_multiplier;
+            auto scaled_pixbuf = hole->scale_simple(new_width, new_height, Gdk::INTERP_BILINEAR);
+            Gdk::Cairo::set_source_pixbuf(cr, scaled_pixbuf, data.x, data.y);
+            cr->paint();
+        }
+
+        cr->reset_clip();
+    
+        return true;
+    }
+    
 
 
     private:
@@ -558,8 +595,34 @@ void toggleMode() {
     );
 } 
 
-void updateGUI (BinaryMessage& message){
 
+void updateBackgroundColor(InfoFrame* infoFrame, std::string label){
+    if(isLightMode){
+        infoFrame->setBackground(label, "rgb(#f0faf2)");
+        infoFrame->setTextColor(label, "#000000", false);
+    }
+    else{
+        infoFrame->setBackground(label, "#0b1a21");
+        infoFrame->setTextColor(label, "white", false);
+    }
+}
+
+
+void updateBackgroundColor(Gtk::Box* box, bool synced){
+    if(synced){
+        Gdk::RGBA red;
+        red.set_rgba(1.0,0,0,1.0);
+        box->override_background_color(red);
+    }
+    else{
+        Gdk::RGBA white;
+        white.set_rgba(1.0,1.0,1.0,1.0);
+        box->override_background_color(white);
+    }
+}
+
+
+void updateGUI (BinaryMessage& message){
     for(int frameIndex=0; frameIndex < infoFrameList.size(); frameIndex++){
 	    InfoFrame* infoFrame = infoFrameList[frameIndex]; 
         std::string label = message.getLabel();
@@ -579,12 +642,12 @@ void updateGUI (BinaryMessage& message){
                             pitch_image->set(newpitchpixbuf);
                         }
                         if(element.label == "pitch"){
-                            overlay_area->update_image_rotation(double(element.data.front().float32));
-                        }
-                        if(element.label == "X"){
-                            overlay_area->update_image_y(double(element.data.front().float32) * MULTIPLIER_Y);
+                            overlay_area->update_image_rotation(double(element.data.front().float32) - 90);
                         }
                         if(element.label == "Z"){
+                            overlay_area->update_image_y(double(element.data.front().float32) * MULTIPLIER_Y);
+                        }
+                        if(element.label == "X"){
                             overlay_area->update_image_x(double(element.data.front().float32) * MULTIPLIER_X);
                         }
                     }
@@ -597,16 +660,8 @@ void updateGUI (BinaryMessage& message){
                     	if(element.label == "Sensor Position"){
                     		left_arm_pos = element.data.front().uint16;
             				left_arm->set_height_ratio((920 - element.data.front().uint16) / 920.0);
-            				if(std::abs(left_arm_pos - right_arm_pos) > 50){
-            					Gdk::RGBA red;
-								red.set_rgba(1.0,0,0,1.0);
-								armBox->override_background_color(red);
-            				}
-            				else{
-            					Gdk::RGBA white;
-								white.set_rgba(1.0,1.0,1.0,1.0);
-								armBox->override_background_color(white);
-            				}
+            				bool synced = std::abs(left_arm_pos - right_arm_pos) > 50;
+                            updateBackgroundColor(armBox, synced);
         				}
     				}
             	}
@@ -616,16 +671,8 @@ void updateGUI (BinaryMessage& message){
                     	if(element.label == "Sensor Position"){
                     		right_arm_pos = element.data.front().uint16;
             				right_arm->set_height_ratio((920 - element.data.front().uint16) / 920.0);
-            				if(std::abs(left_arm_pos - right_arm_pos) > 50){
-            					Gdk::RGBA red;
-								red.set_rgba(1.0,0,0,1.0);
-								armBox->override_background_color(red);
-            				}
-            				else{
-            					Gdk::RGBA white;
-								white.set_rgba(1.0,1.0,1.0,1.0);
-								armBox->override_background_color(white);
-            				}
+            				bool synced = std::abs(left_arm_pos - right_arm_pos) > 50;
+                            updateBackgroundColor(armBox, synced);
         				}
     				}
             	}
@@ -635,16 +682,8 @@ void updateGUI (BinaryMessage& message){
                     	if(element.label == "Sensor Position"){
                     		left_bucket_pos = element.data.front().uint16;
             				left_bucket->set_height_ratio((700 - element.data.front().uint16) / 700.0);
-            				if(std::abs(left_bucket_pos - right_bucket_pos) > 50){
-            					Gdk::RGBA red;
-								red.set_rgba(1.0,0,0,1.0);
-								bucketBox->override_background_color(red);
-            				}
-            				else{
-            					Gdk::RGBA white;
-								white.set_rgba(1.0,1.0,1.0,1.0);
-								bucketBox->override_background_color(white);
-            				}
+            				bool synced = std::abs(left_bucket_pos - right_bucket_pos) > 50;
+                            updateBackgroundColor(bucketBox, synced);
         				}
     				}
             	}
@@ -654,16 +693,8 @@ void updateGUI (BinaryMessage& message){
                     	if(element.label == "Sensor Position"){
                     		right_bucket_pos = element.data.front().uint16;
             				right_bucket->set_height_ratio((700 - element.data.front().uint16) / 700.0);
-            				if(std::abs(left_bucket_pos - right_bucket_pos) > 50){
-            					Gdk::RGBA red;
-								red.set_rgba(1.0,0,0,1.0);
-								bucketBox->override_background_color(red);
-            				}
-            				else{
-            					Gdk::RGBA red;
-								red.set_rgba(1.0,1.0,1.0,1.0);
-								bucketBox->override_background_color(red);
-            				}
+            				bool synced = std::abs(left_bucket_pos - right_bucket_pos) > 50;
+                            updateBackgroundColor(bucketBox, synced);
         				}
     				}
             	}
@@ -671,24 +702,17 @@ void updateGUI (BinaryMessage& message){
             if(label == "Communication"){
                 for(int elementIndex=0; elementIndex<message.getObject().elementList.size(); elementIndex++){
                     Element element=message.getObject().elementList[elementIndex];
-                    if(element.label == "Wi-Fi" || element.label == "CAN BUS"){
+                    if(element.label == "Wi-Fi" || element.label == "CAN Bus"){
                         std::string theString= "";
                         for(auto iterator=element.data.begin(); iterator != element.data.end(); iterator++ ){
                             theString.push_back(iterator->character);
                         }
                         if(theString == "NON-FUNCTIONAL" || theString == "INTERFERENCE" || theString == "DOWN"){
                             infoFrame->setBackground(element.label, "#FF0000");
-                            infoFrame->setTextColor(element.label, "white");
+                            infoFrame->setTextColor(element.label, "white", true);
                         }
                         else{
-                            if(isLightMode){
-                                infoFrame->setBackground(element.label, "rgb(229, 252, 252)");
-                                infoFrame->setTextColor(element.label, "#000000");
-                            }
-                            else{
-                                infoFrame->setBackground(element.label, "#0b1a21");
-                                infoFrame->setTextColor(element.label, "white");
-                            }
+                            updateBackgroundColor(infoFrame, element.label);
                         }
                     }
                 }
@@ -697,7 +721,7 @@ void updateGUI (BinaryMessage& message){
                 Element element=message.getObject().elementList[elementIndex];
                 if(element.type == TYPE::BOOLEAN){
                     infoFrame->setItem(element.label, element.data.front().boolean );
-               }
+                }
                 if(element.type == TYPE::UINT8){
                 	infoFrame->setItem(element.label, element.data.front().uint8 );
                 }
@@ -705,11 +729,24 @@ void updateGUI (BinaryMessage& message){
                     infoFrame->setItem(element.label, element.data.front().int8 );
                 }
                 if(element.type == TYPE::UINT16){
-                	if(element.label == "Bus Voltage" || element.label == "Output Current"){
+                	if(element.label == "Bus Voltage"){
 						// Change this over to float
 						float voltage = (element.data.begin()->uint16 / 100.0);
+                        if(voltage < 15.0){
+                            infoFrame->setBackground(element.label, "#FF0000");
+                            infoFrame->setTextColor(element.label, "white", true);
+                        }
+                        else{
+                            updateBackgroundColor(infoFrame, element.label);
+                        }
 						infoFrame->setItem(element.label, voltage);
 		    		}
+                    else if(element.label == "Output Current"){
+                        // Change this over to float
+						float voltage = (element.data.begin()->uint16 / 100.0);
+                        updateBackgroundColor(infoFrame, element.label);
+						infoFrame->setItem(element.label, voltage);
+                    }
 		    		else{
 	                    infoFrame->setItem(element.label, element.data.front().uint16 );
 					}
@@ -788,20 +825,6 @@ void updateGUI (BinaryMessage& message){
                     // Change this over to float
                     infoFrame->addItem(element.label);
                     float voltage = (element.data.begin()->uint16 / 100.0);
-                    if(voltage < 15.0){
-                        infoFrame->setBackground(element.label, "#FF0000");
-                        infoFrame->setTextColor(element.label, "white");
-                    }
-                    else{
-                        if(isLightMode){
-                            infoFrame->setBackground(element.label, "rgb(229, 252, 252)");
-                            infoFrame->setTextColor(element.label, "#000000");
-                        }
-                        else{
-                            infoFrame->setBackground(element.label, "#0b1a21");
-                            infoFrame->setTextColor(element.label, "white");
-                        }
-                    }
                     infoFrame->setItem(element.label, voltage);
                 }
                 else{
@@ -860,18 +883,9 @@ void setDisconnectedState(){
     ipAddressEntry->set_editable(true);
     connected=false;
 
-    Glib::ListHandle<Gtk::Widget*> childList = sensorBox->get_children();
-    Glib::ListHandle<Gtk::Widget*>::iterator it = childList.begin();
-    while (it != childList.end()) {
-        sensorBox->remove(*(*it));
-        it++;
-    }
-
     arm_init = false;
     bucket_init = false;
     roll_init = false;
-
-    infoFrameList.clear();
 }
 
 
@@ -886,69 +900,159 @@ void setConnectedState(){
     connected=true;
 }
 
+void setVideoDisconnectedState(){
+    videoConnectButton->set_label("Connect");
+    videoConnectionStatusLabel->set_text("Not Connected");
+    videoStreamButton->set_label("Not Video Streaming");
+    Gdk::RGBA red;
+    red.set_rgba(1.0,0,0,1.0);
+    videoConnectionStatusLabel->override_background_color(red);
+    videoIPAddressEntry->set_can_focus(true);
+    videoIPAddressEntry->set_editable(true);
+    videoConnected=false;
 
-void enableEncoding(){
-    toggleEncodeButton->set_label("Stop Encoding");
-    encoding=true;
 }
 
 
-void disbleEncoding(){
-    toggleEncodeButton->set_label("Enable Encoding");
-    encoding=false;
+void setVideoConnectedState(){
+    videoConnectButton->set_label("Disconnect");
+    videoConnectionStatusLabel->set_text("Connected");
+    Gdk::RGBA green;
+    green.set_rgba(0,1.0,0,1.0);
+    videoConnectionStatusLabel->override_background_color(green);
+    videoIPAddressEntry->set_can_focus(false);
+    videoIPAddressEntry->set_editable(false);
+    videoConnected=true;
 }
 
 
-// void connectToServer(){
-//     if(connected==true)return;
-//     struct sockaddr_in address; 
-//     int bytesRead; 
-//     struct sockaddr_in serv_addr; 
-//     std::string hello("Hello Robot"); 
+void connectToVideoServer(){
+    if(videoConnected==true)return;
+    struct sockaddr_in address; 
+    int bytesRead; 
+    struct sockaddr_in serv_addr; 
+    std::string hello("Hello Robot"); 
 
-//     memset(&serv_addr, '0', sizeof(serv_addr)); 
+    memset(&serv_addr, '0', sizeof(serv_addr)); 
 
-//     serv_addr.sin_family = AF_INET; 
-//     serv_addr.sin_port = htons(PORT);
+    serv_addr.sin_family = AF_INET; 
+    serv_addr.sin_port = htons(VIDEO_PORT);
 
-//     char buffer[2048] = {0}; 
-//     //Create Socket
-//     if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) { 
+    char buffer[1024] = {0}; 
+    if ((videoSock = socket(AF_INET, SOCK_STREAM, 0)) < 0) { 
 
-//         printf("\n Socket creation error \n");
+        printf("\n Socket creation error \n");
 
-//         setDisconnectedState();
-//         return; 
-//     } 
-//     //Set IP
-//     if(inet_pton(AF_INET, ipAddressEntry->get_text().c_str(), &serv_addr.sin_addr)<=0)  { 
+        setVideoDisconnectedState();
+        return; 
+    } 
+    if(inet_pton(AF_INET, videoIPAddressEntry->get_text().c_str(), &serv_addr.sin_addr)<=0)  { 
 
-//         printf("\nInvalid address/ Address not supported \n");
+        printf("\nInvalid address/ Address not supported \n");
 
-//         Gtk::MessageDialog dialog(*window,"Invalid Address",false,Gtk::MESSAGE_QUESTION,Gtk::BUTTONS_OK);
-//         int result=dialog.run();
+        Gtk::MessageDialog dialog(*window,"Invalid Address",false,Gtk::MESSAGE_QUESTION,Gtk::BUTTONS_OK);
+        int result=dialog.run();
 
-//         setDisconnectedState();
-//         return;
-//     } 
-//     //Connect to socket
-//     if(connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
-//         printf("\nConnection Failed \n");
+        setVideoDisconnectedState();
+        return;
+    } 
+    if(connect(videoSock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
+        printf("\nConnection Failed \n");
 
-//         Gtk::MessageDialog dialog(*window,"Connection Failed",false,Gtk::MESSAGE_QUESTION,Gtk::BUTTONS_OK);
-//         int result=dialog.run();
+        Gtk::MessageDialog dialog(*window,"Connection Failed",false,Gtk::MESSAGE_QUESTION,Gtk::BUTTONS_OK);
+        int result=dialog.run();
 
-//         setDisconnectedState();
-//     }
-//     //Send Hello
-//     else{
-//         send(sock , hello.c_str() , strlen(hello.c_str()) , 0 );
-//         bytesRead = read( sock , buffer, 2048);
-//         fcntl(sock,F_SETFL, O_NONBLOCK);
+        setVideoDisconnectedState();
+    }
+    else{
+        send(videoSock , hello.c_str() , strlen(hello.c_str()) , 0 );
+        bytesRead = read( videoSock , buffer, 1024);
+        fcntl(videoSock,F_SETFL, O_NONBLOCK);
 
-//         setConnectedState();
-//     }
-// }
+        setVideoConnectedState();
+    }
+}
+
+
+void disconnectFromVideoServer(){
+    Gtk::MessageDialog dialog(*window,"Disconnect now?",false,Gtk::MESSAGE_QUESTION,Gtk::BUTTONS_OK_CANCEL);
+    //dialog.set_secondary_text("Do you want to shutdown now?");
+    int result=dialog.run();
+
+    switch(result) {
+        case (Gtk::RESPONSE_OK): 
+            if(shutdown(videoSock,SHUT_RDWR)==-1){
+                Gtk::MessageDialog dialog(*window,"Failed Shutdown",false,Gtk::MESSAGE_ERROR,Gtk::BUTTONS_OK);
+                int result=dialog.run();
+            }
+            if(close(videoSock)==0){
+                setVideoDisconnectedState();
+            }
+            else{
+                Gtk::MessageDialog dialog(*window,"Failed Close",false,Gtk::MESSAGE_ERROR,Gtk::BUTTONS_OK);
+                int result=dialog.run();
+            }
+            break;
+        case (Gtk::RESPONSE_CANCEL):
+        case (Gtk::RESPONSE_NONE):
+        default:
+            break;
+    }
+}
+
+
+void videoConnectOrDisconnect(){
+    Glib::ustring string=videoConnectButton->get_label();
+    //std::cout << "connect" << string << std::endl;
+    if(string=="Connect"){
+        connectToVideoServer();
+    }
+    else{
+        disconnectFromVideoServer();
+    }
+}
+
+
+void videoStream(){
+    if(!videoConnected)return;
+    std::string currentButtonState=videoStreamButton->get_label();
+    if(currentButtonState=="Not Video Streaming"){
+        int messageSize=3;
+        uint8_t command=1;// silence 
+        uint8_t message[messageSize];
+        message[0]=messageSize;
+        message[1]=command;
+        message[2]=1;
+        send(videoSock, message, messageSize, 0); 
+
+        videoStreamButton->set_label("Video Streaming");
+        isStreamingActive = true;
+    }
+    else{
+        int messageSize=3;
+        uint8_t command=1;// silence 
+        uint8_t message[messageSize];
+        message[0]=messageSize;
+        message[1]=command;
+        message[2]=0;
+        send(videoSock, message, messageSize, 0); 
+
+        videoStreamButton->set_label("Not Video Streaming");
+        isStreamingActive = true;
+    }
+}
+
+
+void videoRowActivated(Gtk::ListBoxRow* listBoxRow){
+    Gtk::Label* label=static_cast<Gtk::Label*>(listBoxRow->get_child());
+    Glib::ustring connectionString(label->get_text());
+    int index=connectionString.rfind('@');
+    if(index==-1)return;
+    ++index;
+    Glib::ustring addressString=connectionString.substr(index,connectionString.length()-index);
+    videoIPAddressEntry->set_text(addressString);
+}
+
 
 // Server address
 struct sockaddr_in serv_addr; 
@@ -977,6 +1081,7 @@ void connectToServer(){
         setDisconnectedState();
         return; 
     } 
+    fcntl(sock,F_SETFL, O_NONBLOCK);
     //Set IP
     // if(inet_pton(AF_INET, ipAddressEntry->get_text().c_str(), &serv_addr.sin_addr)<=0)  { 
 
@@ -992,43 +1097,14 @@ void connectToServer(){
 
     sendto(sock , hello.c_str() , strlen(hello.c_str()) , 0 ,(struct sockaddr *)&serv_addr, addr_len);
     std::cout << "Hello sent" << std::endl;
-
+    
     bytesRead = recvfrom( sock , buffer, 2048, 0, (struct sockaddr *)&serv_addr, &addr_len);
     std::cout << "Bytes read: " << bytesRead << std::endl;
-    if(bytesRead > 0){
-        setConnectedState();
-    }
+    setConnectedState();
+    std::string addressString = ORIN_IP;
+    ipAddressEntry->set_text(addressString);
 
 }
-
-// void disconnectFromServer(){
-//     Gtk::MessageDialog dialog(*window,"Disconnect now?",false,Gtk::MESSAGE_QUESTION,Gtk::BUTTONS_OK_CANCEL);
-//     //dialog.set_secondary_text("Do you want to shutdown now?");
-//     int result=dialog.run();
-
-//     switch(result) {
-//         case (Gtk::RESPONSE_OK): 
-//             if(shutdown(sock,SHUT_RDWR)==-1){
-//                 Gtk::MessageDialog dialog(*window,"Failed Shutdown",false,Gtk::MESSAGE_ERROR,Gtk::BUTTONS_OK);
-//                 int result=dialog.run();
-//             }
-//             if(close(sock)==0){
-//                 setDisconnectedState();
-//             }
-//             else{
-//                 Gtk::MessageDialog dialog(*window,"Failed Close",false,Gtk::MESSAGE_ERROR,Gtk::BUTTONS_OK);
-//                 int result=dialog.run();
-//             }
-
-
-
-//             break;
-//         case (Gtk::RESPONSE_CANCEL):
-//         case (Gtk::RESPONSE_NONE):
-//         default:
-//             break;
-//     }
-// }
 
 void disconnectFromServer(){
     Gtk::MessageDialog dialog(*window,"Disconnect now?",false,Gtk::MESSAGE_QUESTION,Gtk::BUTTONS_OK_CANCEL);
@@ -1061,16 +1137,6 @@ void connectOrDisconnect(){
     }
     else{
         disconnectFromServer();
-    }
-}
-
-void encodeOrNot(){
-    Glib::ustring string=toggleEncodeButton->get_label();
-    if(string=="Enable Encoding"){
-        enableEncoding();
-    }
-    else{
-        disbleEncoding();
     }
 }
 
@@ -1199,6 +1265,8 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
 
     // Create vertical box to hold top level widgets 
     Gtk::Box* topLevelBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
+    Gtk::Box* topControlsBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
+    Gtk::Box* videoTopLevelBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
 
     // Create horizontal box to hold control widgets
     Gtk::Box* controlsBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
@@ -1212,7 +1280,9 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
     Gtk::Box* controlsRightBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
 
     // Create box to hold connection information (IP, connect button, etc.)
+    Gtk::Box* parentConnectBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
     Gtk::Box* connectBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
+
 
     Gtk::Label* ipAddressLabel = Gtk::manage(new Gtk::Label(" IP Address "));
 
@@ -1234,10 +1304,6 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
     red.set_rgba(1.0, 0, 0, 1.0);
     connectionStatusLabel->override_background_color(red);
     connectionStatusLabel->set_name("dark_text");
-
-    toggleEncodeButton = Gtk::manage(new Gtk::Button("Enable Encoding"));
-    toggleEncodeButton->signal_clicked().connect(sigc::ptr_fun(&encodeOrNot));
-    toggleEncodeButton->set_name("dark_text");
 
     // Create horizontal box to hold silent run functionality
     Gtk::Box* stateBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 2));
@@ -1284,6 +1350,50 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
     } catch (const Glib::Error& e) {
         g_print("Failed to load font: %s\n", e.what().c_str());
     }
+    Gtk::Box* videoControlsBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,5));
+
+    Gtk::ScrolledWindow* videoScrolledList=Gtk::manage(new Gtk::ScrolledWindow());
+    videoAddressListBox=Gtk::manage(new Gtk::ListBox());
+    videoAddressListBox->signal_row_activated().connect(sigc::ptr_fun(&videoRowActivated));
+
+    Gtk::Box* videoControlsRightBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL,5));
+
+    Gtk::Box* videoConnectBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,5));
+    Gtk::Label* videoIPAddress=Gtk::manage(new Gtk::Label(" IP Address "));
+    videoIPAddressEntry=Gtk::manage(new Gtk::Entry());
+    videoIPAddressEntry->set_can_focus(true);
+    videoIPAddressEntry->set_editable(true);
+    videoIPAddressEntry->set_text("192.168.1.6");
+    videoConnectButton=Gtk::manage(new Gtk::Button("Connect"));
+    videoConnectButton->signal_clicked().connect(sigc::ptr_fun(&videoConnectOrDisconnect));
+    videoConnectionStatusLabel=Gtk::manage(new Gtk::Label("Not Connected"));
+    videoConnectionStatusLabel->override_background_color(red);
+    
+    Gtk::Box* videoStateBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,2));
+    videoStreamButton=Gtk::manage(new Gtk::Button("Not Video Streaming"));
+    videoStreamButton->signal_clicked().connect(sigc::ptr_fun(&videoStream));
+
+    videoAddressListBox->set_size_request(200,30);
+    videoScrolledList->set_size_request(200,100);
+
+    videoConnectBox->add(*videoIPAddress);
+    videoConnectBox->add(*videoIPAddressEntry);
+    videoConnectBox->add(*videoConnectButton);
+    videoConnectBox->add(*videoConnectionStatusLabel);
+
+    videoStateBox->add(*videoStreamButton);
+    videoControlsRightBox->add(*videoConnectBox);
+    videoScrolledList->add(*videoAddressListBox);
+
+    Gtk::Label* spacer = Gtk::manage(new Gtk::Label());
+    spacer->set_hexpand(true);
+
+    videoControlsBox->add(*videoScrolledList);
+    videoControlsBox->add(*videoControlsRightBox);
+    videoControlsBox->add(*spacer);
+    videoControlsBox->add(*toggleModeButton);
+    videoTopLevelBox->add(*videoControlsBox);
+
 
     // Create horizontal flow box to hold sensor widgets
     sensorBox = Gtk::manage(new Gtk::FlowBox());
@@ -1293,17 +1403,11 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
     addressListBox->set_size_request(200, 75);
     scrolledList->set_size_request(200, 75);
 
-    Gtk::Label* spacer = Gtk::manage(new Gtk::Label());
-    spacer->set_hexpand(true);
-
     // Add widgets to connect box
     connectBox->add(*ipAddressLabel);
     connectBox->add(*ipAddressEntry);
     connectBox->add(*connectButton);
     connectBox->add(*connectionStatusLabel);
-    connectBox->add(*spacer);
-    connectBox->add(*toggleEncodeButton);
-    connectBox->add(*toggleModeButton);
 
     // Add widgets to silent run box
     stateBox->add(*silentRunButton);
@@ -1321,7 +1425,9 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
     controlsBox->add(*controlsRightBox);
 
     // Add widgets to top level box
-    topLevelBox->add(*controlsBox);
+    topControlsBox->add(*controlsBox);
+    topControlsBox->add(*videoTopLevelBox);
+    topLevelBox->add(*topControlsBox);
     topLevelBox->add(*sensorBox);
     window->add(*topLevelBox);
 
@@ -1335,6 +1441,7 @@ struct RemoteRobot{
     time_t lastSeenTime;
 };
 std::vector<RemoteRobot> robotList;
+std::vector<RemoteRobot> videoRobotList;
 
 
 bool contains(std::vector<std::string>& list, std::string& value){
@@ -1382,14 +1489,14 @@ std::vector<std::string> getAddressList(){
 //         perror("Opening datagram socket error");
 //         return; 
 //     }
-
+//
 //     int reuse = 1;
 //     if(setsockopt(sd, SOL_SOCKET, SO_REUSEADDR, (char *)&reuse, sizeof(reuse)) < 0) {
 //         perror("Setting SO_REUSEADDR error");
 //         close(sd);
 //         return;
 //     }
-
+//
 //     /* Bind to the proper port number with the IP address */
 //     /* specified as INADDR_ANY. */
 //     struct sockaddr_in localSock;
@@ -1401,12 +1508,12 @@ std::vector<std::string> getAddressList(){
 //         close(sd);
 //         return;
 //     }
-
+//
 //     /* Join the multicast group 226.1.1.1 on the local 203.106.93.94 */
 //     /* interface. Note that this IP_ADD_MEMBERSHIP option must be */
 //     /* called for each local interface over which the multicast */
 //     /* datagrams are to be received. */
-
+//
 //     std::vector<std::string> addressList=getAddressList(); 
 //     for(std::string addressString:addressList){
 //         std::cout << "got " << addressString << std::endl;
@@ -1417,7 +1524,7 @@ std::vector<std::string> getAddressList(){
 //             perror("Adding multicast group error");
 //         } 
 //     }
-
+//
 //     char databuf[2048];
 //     int datalen = sizeof(databuf);
 //     while(true){
@@ -1433,6 +1540,65 @@ std::vector<std::string> getAddressList(){
 //         }
 //     }
 // }
+
+
+void videoBroadcastListen(){
+    int sd = socket(AF_INET, SOCK_DGRAM, 0);
+    if(sd < 0) {
+        perror("Opening datagram socket error");
+        return; 
+    }
+
+    int reuse = 1;
+    if(setsockopt(sd, SOL_SOCKET, SO_REUSEADDR, (char *)&reuse, sizeof(reuse)) < 0) {
+        perror("Setting SO_REUSEADDR error");
+        close(sd);
+        return;
+    }
+
+    /* Bind to the proper port number with the IP address */
+    /* specified as INADDR_ANY. */
+    struct sockaddr_in localSock;
+    localSock.sin_family = AF_INET;
+    localSock.sin_port = htons(4322);
+    localSock.sin_addr.s_addr = INADDR_ANY;
+    if(bind(sd, (struct sockaddr*)&localSock, sizeof(localSock))) {
+        perror("Binding datagram socket error");
+        close(sd);
+        return;
+    }
+
+    /* Join the multicast group 226.1.1.1 on the local 203.106.93.94 */
+    /* interface. Note that this IP_ADD_MEMBERSHIP option must be */
+    /* called for each local interface over which the multicast */
+    /* datagrams are to be received. */
+
+    std::vector<std::string> addressList=getAddressList(); 
+    for(std::string addressString:addressList){
+        std::cout << "got " << addressString << std::endl;
+        struct ip_mreq group;
+        group.imr_multiaddr.s_addr = inet_addr("226.1.1.1");
+        group.imr_interface.s_addr = inet_addr(addressString.c_str());
+        if(setsockopt(sd, IPPROTO_IP, IP_ADD_MEMBERSHIP, (char *)&group, sizeof(group)) < 0) {
+            perror("Adding multicast group error");
+        } 
+    }
+
+    char databuf[1024];
+    int datalen = sizeof(databuf);
+    while(true){
+        if(read(sd, databuf, datalen) >= 0) {
+            std::string message(databuf);
+            if(!contains(videoRobotList,message)) {
+                RemoteRobot remoteRobot;
+                remoteRobot.tag=message; 
+                time(&remoteRobot.lastSeenTime);
+                videoRobotList.push_back(remoteRobot);
+            }
+            update(videoRobotList,message);
+        }
+    }
+}
 
 
 void adjustRobotList(){
@@ -1483,180 +1649,99 @@ void adjustRobotList(){
     }
 }
 
+void adjustVideoRobotList(){
+    for(int index=0;index < videoRobotList.size() ; ++index){
+        time_t now;
+        time(&now);
+        if(now-videoRobotList[index].lastSeenTime>12){
+            videoRobotList.erase(videoRobotList.begin()+index--);
+        }
+    }
+    //add new elements
+    for(RemoteRobot remoteRobot:videoRobotList){
+        std::string robotID=remoteRobot.tag;
+        bool match=false;
+        int index=0;
+        for(Gtk::ListBoxRow* listBoxRow=videoAddressListBox->get_row_at_index(index); listBoxRow ; listBoxRow=videoAddressListBox->get_row_at_index(++index)){
+            Gtk::Label* label=static_cast<Gtk::Label*>(listBoxRow->get_child());
+            Glib::ustring addressString=label->get_text();
+            if(robotID==addressString.c_str()){
+                match=true;
+                break;
+            }
+        }
+        if(match==false){
+            Gtk::Label* label=Gtk::manage(new Gtk::Label(robotID));
+            label->set_visible(true);
+            videoAddressListBox->append(*label);
+        }
+    }
+
+    //remove old element
+    int index=0;
+    for(Gtk::ListBoxRow* listBoxRow=videoAddressListBox->get_row_at_index(index); listBoxRow ; listBoxRow=videoAddressListBox->get_row_at_index(++index)){
+        Gtk::Label* label=static_cast<Gtk::Label*>(listBoxRow->get_child());
+        Glib::ustring addressString=label->get_text();
+        bool match=false;
+        for(RemoteRobot remoteRobot:videoRobotList){
+            std::string robotID=remoteRobot.tag;
+            if(robotID==addressString.c_str()){
+                match=true;
+                break;
+            }
+        }
+        if(!match){
+            videoAddressListBox->remove(*listBoxRow);
+            --index;
+        }
+    }
+}
+
+
 void initGUI(){
  	BinaryMessage talonMessage1("Talon 1");
-    talonMessage1.addElementUInt8("Device ID",(uint8_t)0);
-    talonMessage1.addElementUInt16("Bus Voltage",0);
-    talonMessage1.addElementUInt16("Output Current",0);
-    talonMessage1.addElementFloat32("Output Percent",0.0);
-    talonMessage1.addElementUInt8("Temperature",(uint8_t)0);
-    talonMessage1.addElementUInt16("Sensor Position",(uint8_t)0);
-    talonMessage1.addElementInt8("Sensor Velocity",(uint8_t)0);
-    talonMessage1.addElementFloat32("Max Current", 0.0);
     updateGUI(talonMessage1);
     
     BinaryMessage talonMessage2("Talon 2");
-    talonMessage2.addElementUInt8("Device ID",(uint8_t)0);
-    talonMessage2.addElementUInt16("Bus Voltage",0);
-    talonMessage2.addElementUInt16("Output Current",0);
-    talonMessage2.addElementFloat32("Output Percent",0.0);
-    talonMessage2.addElementUInt8("Temperature",(uint8_t)0);
-    talonMessage2.addElementUInt16("Sensor Position",(uint8_t)0);
-    talonMessage2.addElementInt8("Sensor Velocity",(uint8_t)0);
-    talonMessage2.addElementFloat32("Max Current", 0.0);
     updateGUI(talonMessage2);
     
     BinaryMessage talonMessage3("Talon 3");
-    talonMessage3.addElementUInt8("Device ID",(uint8_t)0);
-    talonMessage3.addElementUInt16("Bus Voltage",0);
-    talonMessage3.addElementUInt16("Output Current",0);
-    talonMessage3.addElementFloat32("Output Percent",0.0);
-    talonMessage3.addElementUInt8("Temperature",(uint8_t)0);
-    talonMessage3.addElementUInt16("Sensor Position",(uint8_t)0);
-    talonMessage3.addElementInt8("Sensor Velocity",(uint8_t)0);
-    talonMessage3.addElementFloat32("Max Current", 0.0);
     updateGUI(talonMessage3);
     
     BinaryMessage talonMessage4("Talon 4");
-    talonMessage4.addElementUInt8("Device ID",(uint8_t)0);
-    talonMessage4.addElementUInt16("Bus Voltage",0);
-    talonMessage4.addElementUInt16("Output Current",0);
-    talonMessage4.addElementFloat32("Output Percent",0.0);
-    talonMessage4.addElementUInt8("Temperature",(uint8_t)0);
-    talonMessage4.addElementUInt16("Sensor Position",(uint8_t)0);
-    talonMessage4.addElementInt8("Sensor Velocity",(uint8_t)0);
-    talonMessage4.addElementFloat32("Max Current", 0.0);
     updateGUI(talonMessage4);
   
     BinaryMessage falconMessage1("Falcon 1");
-    falconMessage1.addElementUInt8("Device ID",(uint8_t)0);
-    falconMessage1.addElementUInt16("Bus Voltage",0);
-    falconMessage1.addElementUInt16("Output Current",0);
-    falconMessage1.addElementFloat32("Output Percent",0.0);
-    falconMessage1.addElementUInt8("Temperature",(uint8_t)0);
-    falconMessage1.addElementUInt16("Sensor Position",(uint8_t)0);
-    falconMessage1.addElementInt8("Sensor Velocity",(uint8_t)0);
-    falconMessage1.addElementFloat32("Max Current", 0.0);
     updateGUI(falconMessage1);
     
     BinaryMessage falconMessage2("Falcon 2");
-    falconMessage2.addElementUInt8("Device ID",(uint8_t)0);
-    falconMessage2.addElementUInt16("Bus Voltage",0);
-    falconMessage2.addElementUInt16("Output Current",0);
-    falconMessage2.addElementFloat32("Output Percent",0.0);
-    falconMessage2.addElementUInt8("Temperature",(uint8_t)0);
-    falconMessage2.addElementUInt16("Sensor Position",(uint8_t)0);
-    falconMessage2.addElementInt8("Sensor Velocity",(uint8_t)0);
-    falconMessage2.addElementFloat32("Max Current", 0.0);
     updateGUI(falconMessage2);
     
     BinaryMessage falconMessage3("Falcon 3");
-    falconMessage3.addElementUInt8("Device ID",(uint8_t)0);
-    falconMessage3.addElementUInt16("Bus Voltage",0);
-    falconMessage3.addElementUInt16("Output Current",0);
-    falconMessage3.addElementFloat32("Output Percent",0.0);
-    falconMessage3.addElementUInt8("Temperature",(uint8_t)0);
-    falconMessage3.addElementUInt16("Sensor Position",(uint8_t)0);
-    falconMessage3.addElementInt8("Sensor Velocity",(uint8_t)0);
-    falconMessage3.addElementFloat32("Max Current", 0.0);
     updateGUI(falconMessage3);
   
     BinaryMessage falconMessage4("Falcon 4");
-    falconMessage4.addElementUInt8("Device ID",(uint8_t)0);
-    falconMessage4.addElementUInt16("Bus Voltage",0);
-    falconMessage4.addElementUInt16("Output Current",0);
-    falconMessage4.addElementFloat32("Output Percent",0.0);
-    falconMessage4.addElementUInt8("Temperature",(uint8_t)0);
-    falconMessage4.addElementUInt16("Sensor Position",(uint8_t)0);
-    falconMessage4.addElementInt8("Sensor Velocity",(uint8_t)0);
-    falconMessage4.addElementFloat32("Max Current", 0.0);
     updateGUI(falconMessage4);
     
     BinaryMessage linearMessage1("Linear 1");
-    linearMessage1.addElementUInt8("Motor Number", (uint8_t)0);
-    linearMessage1.addElementFloat32("Speed", 0.0);
-    linearMessage1.addElementUInt16("Potentiometer", (uint16_t)0);
-    linearMessage1.addElementUInt8("Time Without Change", (uint8_t)0);
-    linearMessage1.addElementUInt16("Max", (uint16_t)0);
-    linearMessage1.addElementUInt16("Min", (uint16_t)0);
-    linearMessage1.addElementString("Error", "No Error");
-    linearMessage1.addElementBoolean("At Min", false);
-    linearMessage1.addElementBoolean("At Max", false);
-    linearMessage1.addElementFloat32("Distance", 0.0);
-    linearMessage1.addElementBoolean("Sensorless", false);
     updateGUI(linearMessage1);
     
     BinaryMessage linearMessage2("Linear 2");
-    linearMessage2.addElementUInt8("Motor Number", (uint8_t)0);
-    linearMessage2.addElementFloat32("Speed", 0.0);
-    linearMessage2.addElementUInt16("Potentiometer", (uint16_t)0);
-    linearMessage2.addElementUInt8("Time Without Change", (uint8_t)0);
-    linearMessage2.addElementUInt16("Max", (uint16_t)0);
-    linearMessage2.addElementUInt16("Min", (uint16_t)0);
-    linearMessage2.addElementString("Error", "No Error");
-    linearMessage2.addElementBoolean("At Min", false);
-    linearMessage2.addElementBoolean("At Max", false);
-    linearMessage2.addElementFloat32("Distance", 0.0);
-    linearMessage2.addElementBoolean("Sensorless", false);
     updateGUI(linearMessage2);
     
     BinaryMessage linearMessage3("Linear 3");
-    linearMessage3.addElementUInt8("Motor Number", (uint8_t)0);
-    linearMessage3.addElementFloat32("Speed", 0.0);
-    linearMessage3.addElementUInt16("Potentiometer", (uint16_t)0);
-    linearMessage3.addElementUInt8("Time Without Change", (uint8_t)0);
-    linearMessage3.addElementUInt16("Max", (uint16_t)0);
-    linearMessage3.addElementUInt16("Min", (uint16_t)0);
-    linearMessage3.addElementString("Error", "No Error");
-    linearMessage3.addElementBoolean("At Min", false);
-    linearMessage3.addElementBoolean("At Max", false);
-    linearMessage3.addElementFloat32("Distance", 0.0);
-    linearMessage3.addElementBoolean("Sensorless", false);
     updateGUI(linearMessage3);
     
     BinaryMessage linearMessage4("Linear 4");
-    linearMessage4.addElementUInt8("Motor Number", (uint8_t)0);
-    linearMessage4.addElementFloat32("Speed", 0.0);
-    linearMessage4.addElementUInt16("Potentiometer", (uint16_t)0);
-    linearMessage4.addElementUInt8("Time Without Change", (uint8_t)0);
-    linearMessage4.addElementUInt16("Max", (uint16_t)0);
-    linearMessage4.addElementUInt16("Min", (uint16_t)0);
-    linearMessage4.addElementString("Error", "No Error");
-    linearMessage4.addElementBoolean("At Min", false);
-    linearMessage4.addElementBoolean("At Max", false);
-    linearMessage4.addElementFloat32("Distance", 0.0);
-    linearMessage4.addElementBoolean("Sensorless", false);
     updateGUI(linearMessage4);
     
     BinaryMessage communicationMessage("Communication");
-    communicationMessage.addElementInt32("RSSI", 0);
-    communicationMessage.addElementString("Wi-Fi", "NORMAL");
-    communicationMessage.addElementString("CAN Bus", "DOWN");
-    communicationMessage.addElementInt32("RX packets", 0);
-    communicationMessage.addElementInt32("TX packets", 0);
     updateGUI(communicationMessage);
     
     BinaryMessage autonomyMessage("Autonomy");
-    autonomyMessage.addElementString("Robot State", "No");
-    autonomyMessage.addElementString("Excavation State", "No");
-    autonomyMessage.addElementString("Error State", "No");
-    autonomyMessage.addElementString("Diagnostics State", "No");
-    autonomyMessage.addElementString("Tilt State", "No");
-    autonomyMessage.addElementString("Level Bucket", "0");
-    autonomyMessage.addElementString("Level Arms", "0");
     updateGUI(autonomyMessage);
     
     BinaryMessage zedMessage("Zed");
-    zedMessage.addElementFloat32("X", 0.0);
-    zedMessage.addElementFloat32("Y", 0.0);
-    zedMessage.addElementFloat32("Z", 0.0);
-    zedMessage.addElementFloat32("Roll", 0.0);
-    zedMessage.addElementFloat32("Pitch", 0.0);
-    zedMessage.addElementFloat32("Yaw", 0.0);
-    zedMessage.addElementFloat32("ARUCO Roll", 0.0);
-    zedMessage.addElementFloat32("ARUCO Pitch", 0.0);
-    zedMessage.addElementFloat32("ARUCO Yaw", 0.0);
-    zedMessage.addElementBoolean("ARUCO", false);
     updateGUI(zedMessage);
     
     initRollPitch();
@@ -1664,27 +1749,9 @@ void initGUI(){
     initBucketPos();
 
     BinaryMessage powerMessage("Power");
-
-    powerMessage.addElementFloat32("Voltage",0.0);
-    powerMessage.addElementFloat32("Current 0",0.0);
-    powerMessage.addElementFloat32("Current 1",0.1);
-    powerMessage.addElementFloat32("Current 2",0.2);
-    powerMessage.addElementFloat32("Current 3",0.3);
-    powerMessage.addElementFloat32("Current 4",0.4);
-    powerMessage.addElementFloat32("Current 5",0.5);
-    powerMessage.addElementFloat32("Current 6",0.6);
-    powerMessage.addElementFloat32("Current 7",0.7);
+    updateGUI(powerMessage);
 
     BinaryMessage powerMessage2("Power2");
-    powerMessage2.addElementFloat32("Current 8",0.8);
-    powerMessage2.addElementFloat32("Current 9",0.9);
-    powerMessage2.addElementFloat32("Current 10",0.10);
-    powerMessage2.addElementFloat32("Current 11",0.11);
-    powerMessage2.addElementFloat32("Current 12",0.12);
-    powerMessage2.addElementFloat32("Current 13",0.13);
-    powerMessage2.addElementFloat32("Current 14",0.14);
-    powerMessage2.addElementFloat32("Current 15",0.15);
-    updateGUI(powerMessage);
     updateGUI(powerMessage2);
 
 }
@@ -1705,30 +1772,39 @@ int checksum_decode(std::list<uint8_t>& byteList){
     // Sums byteList, excludes last byte (checksum) 
     uint32_t sum = 0;
     auto dataEnd = byteList.end();
-    std::advance(dataEnd, -1);
-    std::cout << "Data: ";
+    std::advance(dataEnd, -2);
+    //std::cout << "Data: ";
     for (auto dataIt = byteList.begin(); dataIt != dataEnd; ++dataIt) {
         sum += *dataIt;
-        std::cout<<std::hex<<static_cast<int>(*dataIt)<<" ";
+        //std::cout<<std::hex<<static_cast<int>(*dataIt)<<" ";
         
     }
-    std::cout<<std::endl;
+    //std::cout<<std::endl;
 
     // Recalculate the checksum as sum modulo key.
     uint8_t computedChecksum = sum % key;
 
-    std::cout << "Computed checksum from data: 0x" << std::hex << static_cast<int>(computedChecksum) << std::endl;
-    std::cout << "Stored checksum: 0x" << std::hex << static_cast<int>(storedChecksum) << std::endl;
+    //std::cout << "Computed checksum from data: 0x" << std::hex << static_cast<int>(computedChecksum) << std::endl;
+    //std::cout << "Stored checksum: 0x" << std::hex << static_cast<int>(storedChecksum) << std::endl;
 
     if (computedChecksum == storedChecksum) {
-        std::cout << "Checksum is valid." << std::endl;
+        //std::cout << "Checksum is valid." << std::endl;
         return 1;
     } else {
-        std::cout << "Checksum is invalid." << std::endl;
+        //std::cout << "Checksum is invalid." << std::endl;
         byteList.clear();
         return 0;
 
     }
+
+}
+void print_data(std::list<uint8_t>& byteList){
+
+	    auto dataEnd = byteList.end();
+	    std::advance(dataEnd, -2);
+	for (auto dataIt = byteList.begin(); dataIt != dataEnd; ++dataIt){
+		std::cout<<std::hex<<static_cast<int>(*dataIt)<<" ";
+	}
 
 }
 
@@ -1826,238 +1902,129 @@ void initArena(){
     arenaWindow->show_all();
 }
 
-// int main(int argc, char** argv) { 
-//     Glib::RefPtr<Gtk::Application> application = Gtk::Application::create(argc, argv, "edu.uark.razorbotz");
-//     setupGUI(application);
-//     initGUI();
-//     initWebcam();
-//     initArena();
 
-//     std::thread broadcastListenThread(broadcastListen);
+void videoMain(){
+    std::thread broadcastListenThread(videoBroadcastListen);
 
-//     if (SDL_Init(SDL_INIT_GAMECONTROLLER) != 0) {
-//         SDL_Log("Unable to initialize SDL: %s", SDL_GetError());
-//         return 1;
-//     }
+    cv::Mat img = cv::Mat::zeros(376, 672, CV_8UC1);
+    int imgSize = img.total() * img.elemSize();
+    uchar sockData[imgSize];
+    int bytesRead=0, total = 0;
 
-//     int joystickCount=SDL_NumJoysticks();
-//     std::cout << "number of joysticks " << joystickCount << std::endl;
-//     SDL_Joystick* joystickList[joystickCount];
+    bool running=true;
+    while(running){
+        adjustVideoRobotList();
+    
+        while(Gtk::Main::events_pending()){
+            Gtk::Main::iteration();
+        }
+    
+        if(!videoConnected || !isStreamingActive) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            continue;
+        }
+    
+    
+        uint32_t network_frame_size = 0;
+        ssize_t bytesRead = 0;
+        size_t totalHeaderRead = 0;
+    
+        while (totalHeaderRead < sizeof(network_frame_size)) {
+            bytesRead = recv(videoSock, reinterpret_cast<char*>(&network_frame_size) + totalHeaderRead, sizeof(network_frame_size) - totalHeaderRead, 0);
+            if (bytesRead > 0) {
+                totalHeaderRead += bytesRead;
+            }
+            else if (bytesRead == 0) {
+                setVideoDisconnectedState();
+                isStreamingActive = false;
+                break;
+            }
+            else {
+                if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                     std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                     while(Gtk::Main::events_pending()) { Gtk::Main::iteration(); }
+                     continue;
+                }
+                else {
+                    perror("recv header error");
+                    setVideoDisconnectedState();
+                    isStreamingActive = false;
+                    break;
+                }
+            }
+        }
+    
+        if (!videoConnected || !isStreamingActive) {
+            continue;
+        }
+    
+    
+        uint32_t frameSize = ntohl(network_frame_size);
+    
+        if (frameSize == 0) {
+            std::cerr << "Invalid frame size received: " << frameSize << std::endl;
+            setVideoDisconnectedState();
+            isStreamingActive = false;
+            continue;
+        }
+    
+    
+        std::vector<uchar> frameDataBuffer(frameSize);
+        size_t totalFrameRead = 0;
+        while (totalFrameRead < frameSize) {
+            bytesRead = recv(videoSock, frameDataBuffer.data() + totalFrameRead, frameSize - totalFrameRead, 0);
+             if (bytesRead > 0) {
+                totalFrameRead += bytesRead;
+            }
+            else if (bytesRead == 0) {
+                setVideoDisconnectedState();
+                isStreamingActive = false;
+                break;
+            }
+            else {
+                 if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                     std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                     while(Gtk::Main::events_pending()) { Gtk::Main::iteration(); }
+                     continue;
+                 }
+                 else {
+                    perror("recv frame error");
+                    setVideoDisconnectedState();
+                    isStreamingActive = false;
+                    break;
+                }
+            }
+        }
+    
+    
+        if (!videoConnected || !isStreamingActive) {
+            continue;
+        }
+    
+    
+        if (totalFrameRead == (376 * 672 * 1) && isGray) {
+            cv::Mat received_img(376, 672, CV_8UC1, frameDataBuffer.data());
+            cv::Mat display_img;
+            cv::resize(received_img, display_img, cv::Size(1400, 800), cv::INTER_LINEAR);
+            cv::imshow("Video", display_img);
+            cv::waitKey(10); 
+        }
+        else if (totalFrameRead == (376 * 672 * 3) && !isGray) {
+            cv::Mat received_img(376, 672, CV_8UC3, frameDataBuffer.data());
+            cv::Mat display_img;
+            cv::resize(received_img, display_img, cv::Size(1400, 800), cv::INTER_LINEAR);
+            cv::imshow("Video", display_img);
+            cv::waitKey(10); 
+        }
+        else {
+            std::cerr << "Frame size mismatch. Expected " << (376*672*1) << ", Got " << totalFrameRead << std::endl;
+            setVideoDisconnectedState();
+            isStreamingActive = false;
+        }
+    }
+    return 0; 
 
-//     if(joystickCount>0){
-//         axisEventList = new std::vector<std::vector<AxisEvent*>*>(joystickCount);
-//         for(int joystickIndex=0;joystickIndex<joystickCount;joystickIndex++) {
-
-//             joystickList[joystickIndex]=SDL_JoystickOpen(joystickIndex);
-
-//             if (joystickList[joystickIndex]) {
-//                 axisEventList->at(joystickIndex) = new std::vector<AxisEvent*>(SDL_JoystickNumAxes(joystickList[joystickIndex]));
-//                 for(int axisIndex=0; axisIndex < SDL_JoystickNumAxes(joystickList[joystickIndex]); axisIndex++){
-//                     axisEventList->at(joystickIndex)->at(axisIndex) = new AxisEvent();
-//                 }
-//                 std::cout << "Opened Joystick " << joystickIndex << std::endl;
-//                 std::cout << "   Name: " << SDL_JoystickName(joystickList[joystickIndex]) << std::endl;
-//                 std::cout << "   Number of Axes: " << SDL_JoystickNumAxes(joystickList[joystickIndex]) << std::endl;
-//                 std::cout << "   Number of Buttons: " << SDL_JoystickNumButtons(joystickList[joystickIndex]) << std::endl;
-//                 std::cout << "   Number of Balls: " << SDL_JoystickNumBalls(joystickList[joystickIndex]) << std::endl;
-//             }
-//             else {
-//                 (*axisEventList)[joystickIndex] = new std::vector<AxisEvent*>(0);
-//                 std::cout << "Couldn't open Joystick " << joystickIndex << std::endl;
-//             }
-//         }
-//     }
-
-//     SDL_Event event;
-//     char buffer[2048] = {0}; 
-//     int bytesRead=0;
-
-//     std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
-//     std::chrono::high_resolution_clock::time_point lastTransmitTime = std::chrono::high_resolution_clock::now();
-//     std::list<uint8_t> messageBytesList;
-//     uint8_t message[256];
-//     bool running=true;
-//     while(running){
-//         adjustRobotList();
-
-//         while(Gtk::Main::events_pending()){
-//             Gtk::Main::iteration();
-//         }
-
-//         if(!connected){
-//             if(messageBytesList.size() > 0){
-//                 messageBytesList.clear();
-//             }
-//             continue;
-//         }
-
-//         std::cout << "Before Read" << std::endl;
-
-//         bytesRead = read(sock, buffer, 2048);
-//         if(bytesRead==0){
-//             //std::cout << "Lost Connection" << std::endl;
-//             setDisconnectedState();
-//             if(messageBytesList.size() > 0){
-//                 messageBytesList.clear();
-//             }
-//             continue;
-//         }
-
-//         std::cout << "After Read" << std::endl;
-
-//         for(int index=0;index<bytesRead;index++){
-//             messageBytesList.push_back(buffer[index]);
-//         }
-
-        
-
-//         std::cout << "Before hasMessage check" << std::endl;
-//         while(BinaryMessage::hasMessage(messageBytesList)){
-
-//             std::cout << "Before message create" << std::endl;
-//             int checksum = checksum_decode(messageBytesList); 
-//             if (checksum = 0){
-//                 break; 
-//             }
-//             else{
-
-//                 BinaryMessage message(messageBytesList);
-//                 std::cout << "Before GUI update" << std::endl;
-//                 updateGUI(message);
-//                 std::cout << "Before size decode" << std::endl;
-//                 uint64_t size=BinaryMessage::decodeSizeBytes(messageBytesList);
-//                 for(int count=0; count < size; count++){
-//                     //std::cout << messageBytesList.front();
-//                     messageBytesList.pop_front();
-//                 }
-//                 std::cout << std::endl;
-
-//             }
-
-//         }
-
-//         while(SDL_PollEvent(&event)){
-//             const Uint8 *state = SDL_GetKeyboardState(NULL);
-
-//             switch(event.type){
-
-//                 case SDL_MOUSEMOTION:{
-//                     int mouseX = event.motion.x;
-//                     int mouseY = event.motion.y;
-
-//                     std::cout << "X: " << mouseX << " Y: " << mouseY << std::endl;
-
-//                     break;
-//                 }
-
-//                 case SDL_KEYDOWN:{
-//                     std::cout << event.key.keysym.sym << std::endl;
-//                     std::cout << "key down" << std::endl;
-//                     break;
-//                 }
-
-//                 case SDL_KEYUP:{
-//                     std::cout << "key up" << std::endl;
-//                     break;
-//                 }
-
-//                 case SDL_JOYHATMOTION:{
-
-//                     uint8_t command=6;
-//                     int length=5;
-//                     uint8_t message[length];
-//                     message[0]=length;
-//                     message[1]=command;
-//                     message[2]=event.jhat.which;
-//                     message[3]=event.jhat.hat;
-//                     message[4]=event.jhat.value;
-
-//                     send(sock, message, length, 0);
-
-//                     break;
-//                 }
-//                 case SDL_JOYBUTTONDOWN:{
-//                     std::cout << "Joystick button down" << std::endl;
-//                     uint8_t command=5;
-//                     int length=5;
-//                     uint8_t message[length];
-//                     message[0]=length;
-//                     message[1]=command;
-//                     message[2]=event.jbutton.which;
-//                     message[3]=event.jbutton.button;
-//                     message[4]=event.jbutton.state;
-
-//                     send(sock, message, length, 0);
-
-//                     break;
-//                 }
-//                 case SDL_JOYBUTTONUP:{
-//                     std::cout << "Joystick button up" << std::endl;
-//                     uint8_t command=5;
-//                     int length=5;
-//                     uint8_t message[length];
-//                     message[0]=length;
-//                     message[1]=command;
-//                     message[2]=event.jbutton.which;
-//                     message[3]=event.jbutton.button;
-//                     message[4]=event.jbutton.state;
-
-//                     send(sock, message, length, 0);
-
-//                     break;
-//                 }
-//                 case SDL_JOYAXISMOTION: {
-//                     std::cout << "Joystick axis motion" << std::endl;
-//                     int deadZone=4000;
-//                     if(event.jaxis.value < -deadZone || deadZone < event.jaxis.value ) {
-//                         axisEventList->at(event.jaxis.which)->at(event.jaxis.axis)->isSet = true;
-//                         axisEventList->at(event.jaxis.which)->at(event.jaxis.axis)->which = event.jaxis.which;
-//                         axisEventList->at(event.jaxis.which)->at(event.jaxis.axis)->axis  = event.jaxis.axis;
-
-//                         int value = event.jaxis.value;
-//                         if(value < -deadZone)   value+=deadZone;
-//                         if(deadZone < value) value-=deadZone;
-
-//                         axisEventList->at(event.jaxis.which)->at(event.jaxis.axis)->value = value;
-//                     }
-
-//                     break;
-//                 }
-
-//                 default:
-//                     break;
-//             }
-//         }
-
-//         now = std::chrono::high_resolution_clock::now();
-//         std::chrono::duration<double> time_span = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastTransmitTime);
-//         double deltaTime = time_span.count();
-//         if(deltaTime > 0.05 ){
-//             lastTransmitTime = std::chrono::high_resolution_clock::now();
-//             for(int joystickIndex=0; joystickIndex < axisEventList->size(); joystickIndex++){
-//                 for(int axisIndex=0; axisIndex < axisEventList->at(joystickIndex)->size(); axisIndex++){
-//                     if(axisEventList->at(joystickIndex)->at(axisIndex)->isSet){
-//                         std::cout << joystickIndex << " " << axisIndex << " " << axisEventList->at(joystickIndex)->at(axisIndex)->value << std::endl;
-//                         axisEventList->at(joystickIndex)->at(axisIndex)->isSet = false;
-
-//                         uint8_t command = 1;
-//                         int length = 8;
-//                         float value = ((float)axisEventList->at(joystickIndex)->at(axisIndex)->value) / -32768.0;
-//                         uint8_t message[length];
-//                         message[0] = length;
-//                         message[1] = command;
-//                         message[2] = axisEventList->at(joystickIndex)->at(axisIndex)->which;
-//                         message[3] = axisEventList->at(joystickIndex)->at(axisIndex)->axis;//0-roll 1-pitch 2-throttle 3-yaw
-//                         insert(value, &message[4]);
-
-//                         send(sock, message, length, 0);
-//                     }
-//                 }
-//             }
-//         }
-//     }
-//     return 0; 
-// }
+}
 
 //UDP Version
 int main(int argc, char** argv) { 
@@ -2070,6 +2037,7 @@ int main(int argc, char** argv) {
     
     //Start a thread to listen to updates from the robot
     // std::thread broadcastListenThread(broadcastListen);
+    std::thread broadcastListenThread(videoMain);
 
     //Initialize the controller and handle failure
     if (SDL_Init(SDL_INIT_GAMECONTROLLER) != 0) {
@@ -2129,11 +2097,22 @@ int main(int argc, char** argv) {
             continue;
         }
 
-        std::cout << "Before Read" << std::endl;
+        //std::cout << "Before Read" << std::endl;
 
+        //Avoid blocking if we hear nothing
+        fcntl(sock,F_SETFL, O_NONBLOCK);
         //Receive messages from the robot, store in buffer of size 16384
         bytesRead = recvfrom(sock, buffer, 16384, 0, (struct sockaddr *)&serv_addr, &addr_len);
 
+        if(bytesRead == 17){
+            std::cout << bytesRead << std::endl;
+            for(int index=0;index<bytesRead;index++){
+                std::cout << buffer[index];
+                buffer[index] = 0;
+            }
+            std::cout << std::endl;
+            continue;
+        }
         // if(bytesRead==0){
         //     //std::cout << "Lost Connection" << std::endl;
         //     setDisconnectedState();
@@ -2143,53 +2122,43 @@ int main(int argc, char** argv) {
         //     continue;
         // }
 
-        std::cout << "After Read" << std::endl;
+        //std::cout << "After Read" << std::endl;
         
         //Fill the messageBytesList with the bytes read from the socket
-        for(int index=0;index<bytesRead;index++){
-            messageBytesList.push_back(buffer[index]);
+        if(bytesRead != -1){
+        	std::cout << bytesRead << std::endl;
+		for(int index=0;index<bytesRead;index++){
+		    messageBytesList.push_back(buffer[index]);
+		}
+        }
+        else{
+        	continue;
         }
 
         
 
-        std::cout << "Before hasMessage check" << std::endl;
+        //std::cout << "Before hasMessage check" << std::endl;
         while(BinaryMessage::hasMessage(messageBytesList)){
+	    //print_data(messageBytesList);
             /****************CHECKSUM: Branch to process each message in messageBytesList in the case that the checksum is to be verified****************/
-            if(encoding){
-                std::cout << "Before message create" << std::endl;
-                int checksum = checksum_decode(messageBytesList); 
-                if (checksum = 0){
-                    break; 
-                }
-                else{
-                    BinaryMessage message(messageBytesList);
-                    std::cout << "Before GUI update" << std::endl;
-                    updateGUI(message); //Update the GUI with the message
-                    std::cout << "Before size decode" << std::endl;
-                    uint64_t size=BinaryMessage::decodeSizeBytes(messageBytesList); //Decode the size of the message
-                    for(int count=0; count < size; count++){
-                        //std::cout << messageBytesList.front();
-                        messageBytesList.pop_front();
-                    }
-                    std::cout << std::endl;
-                }
+            //std::cout << "Before message create" << std::endl;
+            int checksum = checksum_decode(messageBytesList); 
+            if (checksum = 0){
+                break; 
             }
-            /****************NO CHECKSUM: Branch to process each message in messageBytesList in the case that the checksum is NOT to be verified****************/
             else{
                 BinaryMessage message(messageBytesList);
-                std::cout << "Before GUI update" << std::endl;
-                updateGUI(message);
-                std::cout << "Before size decode" << std::endl;
-                uint64_t size=BinaryMessage::decodeSizeBytes(messageBytesList);
-                for(int count=0; count < size; count++){
+                //std::cout << "Before GUI update" << std::endl;
+                updateGUI(message); //Update the GUI with the message
+                //std::cout << "Before size decode" << std::endl;
+                uint64_t size=BinaryMessage::decodeSizeBytes(messageBytesList); //Decode the size of the message
+                for(int count=0; count < size + 1; count++){
                     //std::cout << messageBytesList.front();
                     messageBytesList.pop_front();
                 }
-                std::cout << std::endl;
             }
 
         }
-
         /******************************Handle control events******************************/
         while(SDL_PollEvent(&event)){
             const Uint8 *state = SDL_GetKeyboardState(NULL);

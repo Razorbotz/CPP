@@ -23,16 +23,30 @@ void InfoFrame::setItem(std::string itemName, std::string itemValue){
     for(std::shared_ptr<InfoItem> infoItem:itemList){
         if(infoItem->getName()==itemName){
             infoItem->setValue(itemValue);
-            break;
+            return;
         }
     }    
+    addItem(itemName);
+    for(std::shared_ptr<InfoItem> infoItem:itemList){
+        if(infoItem->getName()==itemName){
+            infoItem->setValue(itemValue);
+            return;
+        }
+    }   
 }
 
 void InfoFrame::setItem(std::string itemName, bool itemValue){
     for(std::shared_ptr<InfoItem> infoItem:itemList){
         if(infoItem->getName()==itemName){
             infoItem->setValue(itemValue);
-            break;
+            return;
+        }
+    }
+    addItem(itemName);
+    for(std::shared_ptr<InfoItem> infoItem:itemList){
+        if(infoItem->getName()==itemName){
+            infoItem->setValue(itemValue);
+            return;
         }
     }
 }
@@ -41,7 +55,14 @@ void InfoFrame::setItem(std::string itemName, int itemValue){
     for(std::shared_ptr<InfoItem> infoItem:itemList){
         if(infoItem->getName()==itemName){
             infoItem->setValue(itemValue);
-            break;
+            return;
+        }
+    }
+    addItem(itemName);
+    for(std::shared_ptr<InfoItem> infoItem:itemList){
+        if(infoItem->getName()==itemName){
+            infoItem->setValue(itemValue);
+            return;
         }
     }
 }
@@ -50,18 +71,30 @@ void InfoFrame::setItem(std::string itemName, long itemValue){
     for(std::shared_ptr<InfoItem> infoItem:itemList){
         if(infoItem->getName()==itemName){
             infoItem->setValue(itemValue);
-            break;
+            return;
+        }
+    }
+    addItem(itemName);
+    for(std::shared_ptr<InfoItem> infoItem:itemList){
+        if(infoItem->getName()==itemName){
+            infoItem->setValue(itemValue);
+            return;
         }
     }
 }
 
 void InfoFrame::setItem(std::string itemName, float itemValue){
-//    std::cout << "InfoFrame::setItem " <<  itemName << "  " << itemValue << std::endl;		
     for(std::shared_ptr<InfoItem> infoItem:itemList){
         if(infoItem->getName()==itemName){
-//            std::cout << "infoItem name " << infoItem->getName() << std::endl;		
             infoItem->setValue(itemValue);
-            break;
+            return;
+        }
+    }
+    addItem(itemName);
+    for(std::shared_ptr<InfoItem> infoItem:itemList){
+        if(infoItem->getName()==itemName){
+            infoItem->setValue(itemValue);
+            return;
         }
     }
 }
@@ -70,7 +103,14 @@ void InfoFrame::setItem(std::string itemName, double itemValue){
     for(std::shared_ptr<InfoItem> infoItem:itemList){
         if(infoItem->getName()==itemName){
             infoItem->setValue(itemValue);
-            break;
+            return;
+        }
+    }
+    addItem(itemName);
+    for(std::shared_ptr<InfoItem> infoItem:itemList){
+        if(infoItem->getName()==itemName){
+            infoItem->setValue(itemValue);
+            return;
         }
     }
 }
@@ -79,7 +119,14 @@ void InfoFrame::setItem(std::string itemName, uint32_t itemValue){
     for(std::shared_ptr<InfoItem> infoItem:itemList){
         if(infoItem->getName()==itemName){
             infoItem->setValue(itemValue);
-            break;
+            return;
+        }
+    }
+    addItem(itemName);
+    for(std::shared_ptr<InfoItem> infoItem:itemList){
+        if(infoItem->getName()==itemName){
+            infoItem->setValue(itemValue);
+            return;
         }
     }
 }
@@ -89,7 +136,14 @@ void InfoFrame::setItem(std::string itemName, uint64_t itemValue){
     for(std::shared_ptr<InfoItem> infoItem:itemList){
         if(infoItem->getName()==itemName){
             infoItem->setValue(itemValue);
-            break;
+            return;
+        }
+    }
+    addItem(itemName);
+    for(std::shared_ptr<InfoItem> infoItem:itemList){
+        if(infoItem->getName()==itemName){
+            infoItem->setValue(itemValue);
+            return;
         }
     }
 }
@@ -98,7 +152,14 @@ void InfoFrame::setItem(std::string itemName, uint8_t itemValue){
     for(std::shared_ptr<InfoItem> infoItem:itemList){
         if(infoItem->getName()==itemName){
             infoItem->setValue(itemValue);
-            break;
+            return;
+        }
+    }
+    addItem(itemName);
+    for(std::shared_ptr<InfoItem> infoItem:itemList){
+        if(infoItem->getName()==itemName){
+            infoItem->setValue(itemValue);
+            return;
         }
     }
 }
@@ -107,7 +168,14 @@ void InfoFrame::setItem(std::string itemName, uint16_t itemValue){
     for(std::shared_ptr<InfoItem> infoItem:itemList){
         if(infoItem->getName()==itemName){
             infoItem->setValue(itemValue);
-            break;
+            return;
+        }
+    }
+    addItem(itemName);
+    for(std::shared_ptr<InfoItem> infoItem:itemList){
+        if(infoItem->getName()==itemName){
+            infoItem->setValue(itemValue);
+            return;
         }
     }
 }
@@ -116,16 +184,30 @@ void InfoFrame::setBackground(std::string itemName, std::string color){
     for(std::shared_ptr<InfoItem> infoItem:itemList){
         if(infoItem->getName()==itemName){
             infoItem->setBackground(color);
-            break;
+            return;
+        }
+    }
+    addItem(itemName);
+    for(std::shared_ptr<InfoItem> infoItem:itemList){
+        if(infoItem->getName()==itemName){
+            infoItem->setBackground(color);
+            return;
         }
     }
 }
 
-void InfoFrame::setTextColor(std::string itemName, std::string color){
+void InfoFrame::setTextColor(std::string itemName, std::string color, bool bold){
     for(std::shared_ptr<InfoItem> infoItem:itemList){
         if(infoItem->getName()==itemName){
-            infoItem->setTextColor(color);
-            break;
+            infoItem->setTextColor(color, bold);
+            return;
+        }
+    }
+    addItem(itemName);
+    for(std::shared_ptr<InfoItem> infoItem:itemList){
+        if(infoItem->getName()==itemName){
+            infoItem->setTextColor(color, bold);
+            return;
         }
     }
 }

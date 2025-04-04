@@ -32,5 +32,5 @@ class InfoItem:public Gtk::Box{
     double getValueAsDouble();
     std::string getValue();
     void setBackground(std::string color);
-    void setTextColor(std::string color);
+    void setTextColor(std::string color, bool bold);
 };

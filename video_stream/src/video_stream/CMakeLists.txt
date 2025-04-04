@@ -11,18 +11,16 @@ find_package(sensor_msgs REQUIRED)
 find_package(cv_bridge REQUIRED)
 find_package(OpenCV REQUIRED)
 
-# Include directories
-include_directories(include)
-
 # Add executable
 add_executable(video_stream_node src/video_stream_node.cpp)
 
 # Link libraries
-target_link_libraries(video_stream_node
-    ${rclcpp_LIBRARIES}
-    ${sensor_msgs_LIBRARIES}
-    ${cv_bridge_LIBRARIES}
-    ${OpenCV_LIBRARIES})
+ament_target_dependencies(video_stream_node
+    rclcpp
+    sensor_msgs
+    cv_bridge
+    image_transport
+    OpenCV)
 
 # Install the executable
 install(TARGETS

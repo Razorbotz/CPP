@@ -995,40 +995,11 @@ void connectToServer(){
 
     bytesRead = recvfrom( sock , buffer, 2048, 0, (struct sockaddr *)&serv_addr, &addr_len);
     std::cout << "Bytes read: " << bytesRead << std::endl;
-    if(bytesRead > 0){
-        setConnectedState();
-    }
+    setConnectedState();
+    addressString = ORIN_IP;
+    ipAddressEntry->set_text(addressString);
 
 }
-
-// void disconnectFromServer(){
-//     Gtk::MessageDialog dialog(*window,"Disconnect now?",false,Gtk::MESSAGE_QUESTION,Gtk::BUTTONS_OK_CANCEL);
-//     //dialog.set_secondary_text("Do you want to shutdown now?");
-//     int result=dialog.run();
-
-//     switch(result) {
-//         case (Gtk::RESPONSE_OK): 
-//             if(shutdown(sock,SHUT_RDWR)==-1){
-//                 Gtk::MessageDialog dialog(*window,"Failed Shutdown",false,Gtk::MESSAGE_ERROR,Gtk::BUTTONS_OK);
-//                 int result=dialog.run();
-//             }
-//             if(close(sock)==0){
-//                 setDisconnectedState();
-//             }
-//             else{
-//                 Gtk::MessageDialog dialog(*window,"Failed Close",false,Gtk::MESSAGE_ERROR,Gtk::BUTTONS_OK);
-//                 int result=dialog.run();
-//             }
-
-
-
-//             break;
-//         case (Gtk::RESPONSE_CANCEL):
-//         case (Gtk::RESPONSE_NONE):
-//         default:
-//             break;
-//     }
-// }
 
 void disconnectFromServer(){
     Gtk::MessageDialog dialog(*window,"Disconnect now?",false,Gtk::MESSAGE_QUESTION,Gtk::BUTTONS_OK_CANCEL);
@@ -1358,22 +1329,22 @@ void update(std::vector<RemoteRobot>& list, std::string& robotTag){
 }
 
 
-std::vector<std::string> getAddressList(){
-    std::vector<std::string> addressList;
-    ifaddrs* interfaceAddresses = nullptr;
-    for(int failed=getifaddrs(&interfaceAddresses); !failed && interfaceAddresses; interfaceAddresses=interfaceAddresses->ifa_next){
-        if(interfaceAddresses->ifa_addr != NULL && interfaceAddresses->ifa_addr->sa_family == AF_INET){
-            std::cout << "address" << std::endl;
-            sockaddr_in* socketAddress=reinterpret_cast<sockaddr_in*>(interfaceAddresses->ifa_addr);
-            std::string addressString(inet_ntoa(socketAddress->sin_addr));
-            if(addressString=="0.0.0.0") continue;
-            if(addressString=="127.0.0.1") continue;
-            if(contains(addressList,addressString)) continue;
-            addressList.push_back(addressString);
-        }
-    }
-    return addressList;
-}
+// std::vector<std::string> getAddressList(){
+//     std::vector<std::string> addressList;
+//     ifaddrs* interfaceAddresses = nullptr;
+//     for(int failed=getifaddrs(&interfaceAddresses); !failed && interfaceAddresses; interfaceAddresses=interfaceAddresses->ifa_next){
+//         if(interfaceAddresses->ifa_addr != NULL && interfaceAddresses->ifa_addr->sa_family == AF_INET){
+//             std::cout << "address" << std::endl;
+//             sockaddr_in* socketAddress=reinterpret_cast<sockaddr_in*>(interfaceAddresses->ifa_addr);
+//             std::string addressString(inet_ntoa(socketAddress->sin_addr));
+//             if(addressString=="0.0.0.0") continue;
+//             if(addressString=="127.0.0.1") continue;
+//             if(contains(addressList,addressString)) continue;
+//             addressList.push_back(addressString);
+//         }
+//     }
+//     return addressList;
+// }
 
 
 // void broadcastListen(){
@@ -1382,14 +1353,14 @@ std::vector<std::string> getAddressList(){
 //         perror("Opening datagram socket error");
 //         return; 
 //     }
-
+//
 //     int reuse = 1;
 //     if(setsockopt(sd, SOL_SOCKET, SO_REUSEADDR, (char *)&reuse, sizeof(reuse)) < 0) {
 //         perror("Setting SO_REUSEADDR error");
 //         close(sd);
 //         return;
 //     }
-
+//
 //     /* Bind to the proper port number with the IP address */
 //     /* specified as INADDR_ANY. */
 //     struct sockaddr_in localSock;
@@ -1401,12 +1372,12 @@ std::vector<std::string> getAddressList(){
 //         close(sd);
 //         return;
 //     }
-
+//
 //     /* Join the multicast group 226.1.1.1 on the local 203.106.93.94 */
 //     /* interface. Note that this IP_ADD_MEMBERSHIP option must be */
 //     /* called for each local interface over which the multicast */
 //     /* datagrams are to be received. */
-
+//
 //     std::vector<std::string> addressList=getAddressList(); 
 //     for(std::string addressString:addressList){
 //         std::cout << "got " << addressString << std::endl;
@@ -1417,7 +1388,7 @@ std::vector<std::string> getAddressList(){
 //             perror("Adding multicast group error");
 //         } 
 //     }
-
+//
 //     char databuf[2048];
 //     int datalen = sizeof(databuf);
 //     while(true){
@@ -2148,6 +2119,7 @@ int main(int argc, char** argv) {
         //Fill the messageBytesList with the bytes read from the socket
         for(int index=0;index<bytesRead;index++){
             messageBytesList.push_back(buffer[index]);
+            std::cout << "Byte Received:" << buffer[index];
         }
 
         

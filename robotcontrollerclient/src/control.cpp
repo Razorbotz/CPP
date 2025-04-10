@@ -2102,6 +2102,8 @@ int main(int argc, char** argv) {
 
         std::cout << "Before Read" << std::endl;
 
+        //Avoid blocking if we hear nothing
+        fcntl(sock,F_SETFL, O_NONBLOCK);
         //Receive messages from the robot, store in buffer of size 16384
         bytesRead = recvfrom(sock, buffer, 16384, 0, (struct sockaddr *)&serv_addr, &addr_len);
 

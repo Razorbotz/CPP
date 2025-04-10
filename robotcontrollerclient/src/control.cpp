@@ -977,6 +977,7 @@ void connectToServer(){
         setDisconnectedState();
         return; 
     } 
+    fcntl(sock,F_SETFL, O_NONBLOCK);
     //Set IP
     // if(inet_pton(AF_INET, ipAddressEntry->get_text().c_str(), &serv_addr.sin_addr)<=0)  { 
 
@@ -992,7 +993,7 @@ void connectToServer(){
 
     sendto(sock , hello.c_str() , strlen(hello.c_str()) , 0 ,(struct sockaddr *)&serv_addr, addr_len);
     std::cout << "Hello sent" << std::endl;
-
+    
     bytesRead = recvfrom( sock , buffer, 2048, 0, (struct sockaddr *)&serv_addr, &addr_len);
     std::cout << "Bytes read: " << bytesRead << std::endl;
     setConnectedState();

@@ -996,7 +996,7 @@ void connectToServer(){
     bytesRead = recvfrom( sock , buffer, 2048, 0, (struct sockaddr *)&serv_addr, &addr_len);
     std::cout << "Bytes read: " << bytesRead << std::endl;
     setConnectedState();
-    addressString = ORIN_IP;
+    std::string addressString = ORIN_IP;
     ipAddressEntry->set_text(addressString);
 
 }

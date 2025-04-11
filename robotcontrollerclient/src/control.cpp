@@ -1677,7 +1677,7 @@ int checksum_decode(std::list<uint8_t>& byteList){
     // Sums byteList, excludes last byte (checksum) 
     uint32_t sum = 0;
     auto dataEnd = byteList.end();
-    std::advance(dataEnd, -1);
+    std::advance(dataEnd, -2);
     std::cout << "Data: ";
     for (auto dataIt = byteList.begin(); dataIt != dataEnd; ++dataIt) {
         sum += *dataIt;
@@ -1701,6 +1701,15 @@ int checksum_decode(std::list<uint8_t>& byteList){
         return 0;
 
     }
+
+}
+void print_data(std::list<uint8_t>& byteList){
+
+	    auto dataEnd = byteList.end();
+	    std::advance(dataEnd, -2);
+	for (auto dataIt = byteList.begin(); dataIt != dataEnd; ++dataIt){
+		std::cout<<std::hex<<static_cast<int>(*dataIt)<<" ";
+	}
 
 }
 
@@ -2101,13 +2110,22 @@ int main(int argc, char** argv) {
             continue;
         }
 
-        std::cout << "Before Read" << std::endl;
+        //std::cout << "Before Read" << std::endl;
 
         //Avoid blocking if we hear nothing
         fcntl(sock,F_SETFL, O_NONBLOCK);
         //Receive messages from the robot, store in buffer of size 16384
         bytesRead = recvfrom(sock, buffer, 16384, 0, (struct sockaddr *)&serv_addr, &addr_len);
 
+	if(bytesRead == 17){
+		std::cout << bytesRead << std::endl;
+		for(int index=0;index<bytesRead;index++){
+		    std::cout << buffer[index];
+		    buffer[index] = 0;
+		}
+		std::cout << std::endl;
+		continue;
+	}
         // if(bytesRead==0){
         //     //std::cout << "Lost Connection" << std::endl;
         //     setDisconnectedState();
@@ -2117,21 +2135,29 @@ int main(int argc, char** argv) {
         //     continue;
         // }
 
-        std::cout << "After Read" << std::endl;
+        //std::cout << "After Read" << std::endl;
         
         //Fill the messageBytesList with the bytes read from the socket
-        for(int index=0;index<bytesRead;index++){
-            messageBytesList.push_back(buffer[index]);
-            std::cout << "Byte Received:" << buffer[index];
+        if(bytesRead != -1){
+        	std::cout << bytesRead << std::endl;
+		for(int index=0;index<bytesRead;index++){
+		    messageBytesList.push_back(buffer[index]);
+		}
+		std::cout << buffer;
+		std::cout << std::endl;
+        }
+        else{
+        	continue;
         }
 
         
 
-        std::cout << "Before hasMessage check" << std::endl;
+        //std::cout << "Before hasMessage check" << std::endl;
         while(BinaryMessage::hasMessage(messageBytesList)){
+	    //print_data(messageBytesList);
             /****************CHECKSUM: Branch to process each message in messageBytesList in the case that the checksum is to be verified****************/
             if(encoding){
-                std::cout << "Before message create" << std::endl;
+                //std::cout << "Before message create" << std::endl;
                 int checksum = checksum_decode(messageBytesList); 
                 if (checksum = 0){
                     break; 
@@ -2140,9 +2166,10 @@ int main(int argc, char** argv) {
                     BinaryMessage message(messageBytesList);
                     std::cout << "Before GUI update" << std::endl;
                     updateGUI(message); //Update the GUI with the message
-                    std::cout << "Before size decode" << std::endl;
+                    //std::cout << "Before size decode" << std::endl;
                     uint64_t size=BinaryMessage::decodeSizeBytes(messageBytesList); //Decode the size of the message
-                    for(int count=0; count < size; count++){
+                    std::cout << size << std::endl;
+                    for(int count=0; count < size + 1; count++){
                         //std::cout << messageBytesList.front();
                         messageBytesList.pop_front();
                     }
@@ -2152,9 +2179,9 @@ int main(int argc, char** argv) {
             /****************NO CHECKSUM: Branch to process each message in messageBytesList in the case that the checksum is NOT to be verified****************/
             else{
                 BinaryMessage message(messageBytesList);
-                std::cout << "Before GUI update" << std::endl;
+                //std::cout << "Before GUI update" << std::endl;
                 updateGUI(message);
-                std::cout << "Before size decode" << std::endl;
+                //std::cout << "Before size decode" << std::endl;
                 uint64_t size=BinaryMessage::decodeSizeBytes(messageBytesList);
                 for(int count=0; count < size; count++){
                     //std::cout << messageBytesList.front();
@@ -2164,9 +2191,9 @@ int main(int argc, char** argv) {
             }
 
         }
-
         /******************************Handle control events******************************/
         while(SDL_PollEvent(&event)){
+        	std::cout << "here" << std::endl;
             const Uint8 *state = SDL_GetKeyboardState(NULL);
 
             switch(event.type){

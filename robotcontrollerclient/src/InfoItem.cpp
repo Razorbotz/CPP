@@ -103,8 +103,8 @@ void InfoItem::setBackground(std::string color){
     this->valueLabel->override_background_color(Gdk::RGBA(color));
 }
 
-void InfoItem::setTextColor(std::string color){
-    if(color == "white"){
+void InfoItem::setTextColor(std::string color, bool bold){
+    if(bold){
         Pango::FontDescription font;
         font.set_weight(Pango::WEIGHT_BOLD);
         this->valueLabel->override_font(font);

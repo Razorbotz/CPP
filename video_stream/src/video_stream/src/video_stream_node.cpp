@@ -38,7 +38,7 @@ T getParameter(std::string parameterName, int initialValue){
 
 void image_callback(const sensor_msgs::msg::Image::SharedPtr msg){
     try{
-        cv_bridge::CvImagePtr cv_ptr = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::RGB8);
+        cv_bridge::CvImagePtr cv_ptr = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::rgb8);
 
         cv::imshow("Image Viewer", cv_ptr->image);
         cv::waitKey(1);

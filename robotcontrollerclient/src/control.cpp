@@ -225,22 +225,24 @@ class ImageOverlay : public Gtk::DrawingArea {
         double offset_x = (widget_width - scaled_width) / 2.0;
         double offset_y = (widget_height - scaled_height) / 2.0;
     
-        cr->translate(offset_x, offset_y + scaled_height);
-        cr->scale(scale, -scale);
+        // Apply transformations for both background and overlay
+        cr->save();
+        cr->translate(offset_x, offset_y);
+        cr->scale(scale, scale);
     
-        // Draw background image
         cr->save();
         Gdk::Cairo::set_source_pixbuf(cr, background, 0, 0);
         cr->paint();
         cr->restore();
-    
-        // Draw overlay image
+
         cr->save();
         cr->translate(img_x + overlay->get_width() / 2, img_y + overlay->get_height() / 2);
         cr->rotate(rotation_angle);
         cr->translate(-overlay->get_width() / 2, -overlay->get_height() / 2);
         Gdk::Cairo::set_source_pixbuf(cr, overlay, 0, 0);
         cr->paint();
+        cr->restore();
+
         cr->restore();
     
         // Draw rocks
@@ -260,6 +262,8 @@ class ImageOverlay : public Gtk::DrawingArea {
             Gdk::Cairo::set_source_pixbuf(cr, scaled_pixbuf, data.x, data.y);
             cr->paint();
         }
+
+        cr->reset_clip();
     
         return true;
     }
@@ -575,6 +579,33 @@ void toggleMode() {
     );
 } 
 
+
+void updateBackgroundColor(InfoFrame* infoFrame, std::string label){
+    if(isLightMode){
+        infoFrame->setBackground(label, "rgb(#f0faf2)");
+        infoFrame->setTextColor(label, "#000000", false);
+    }
+    else{
+        infoFrame->setBackground(label, "#0b1a21");
+        infoFrame->setTextColor(label, "white", false);
+    }
+}
+
+
+void updateBackgroundColor(Gtk::Box* box, bool synced){
+    if(synced){
+        Gdk::RGBA red;
+        red.set_rgba(1.0,0,0,1.0);
+        box->override_background_color(red);
+    }
+    else{
+        Gdk::RGBA white;
+        white.set_rgba(1.0,1.0,1.0,1.0);
+        box->override_background_color(white);
+    }
+}
+
+
 /*
 Don't think labels will get updated if they aren't in the init function
 */
@@ -616,16 +647,8 @@ void updateGUI (BinaryMessage& message){
                     	if(element.label == "Sensor Position"){
                     		left_arm_pos = element.data.front().uint16;
             				left_arm->set_height_ratio((920 - element.data.front().uint16) / 920.0);
-            				if(std::abs(left_arm_pos - right_arm_pos) > 50){
-            					Gdk::RGBA red;
-								red.set_rgba(1.0,0,0,1.0);
-								armBox->override_background_color(red);
-            				}
-            				else{
-            					Gdk::RGBA white;
-								white.set_rgba(1.0,1.0,1.0,1.0);
-								armBox->override_background_color(white);
-            				}
+            				bool synced = std::abs(left_arm_pos - right_arm_pos) > 50;
+                            updateBackgroundColor(armBox, synced);
         				}
     				}
             	}
@@ -635,16 +658,8 @@ void updateGUI (BinaryMessage& message){
                     	if(element.label == "Sensor Position"){
                     		right_arm_pos = element.data.front().uint16;
             				right_arm->set_height_ratio((920 - element.data.front().uint16) / 920.0);
-            				if(std::abs(left_arm_pos - right_arm_pos) > 50){
-            					Gdk::RGBA red;
-								red.set_rgba(1.0,0,0,1.0);
-								armBox->override_background_color(red);
-            				}
-            				else{
-            					Gdk::RGBA white;
-								white.set_rgba(1.0,1.0,1.0,1.0);
-								armBox->override_background_color(white);
-            				}
+            				bool synced = std::abs(left_arm_pos - right_arm_pos) > 50;
+                            updateBackgroundColor(armBox, synced);
         				}
     				}
             	}
@@ -654,16 +669,8 @@ void updateGUI (BinaryMessage& message){
                     	if(element.label == "Sensor Position"){
                     		left_bucket_pos = element.data.front().uint16;
             				left_bucket->set_height_ratio((700 - element.data.front().uint16) / 700.0);
-            				if(std::abs(left_bucket_pos - right_bucket_pos) > 50){
-            					Gdk::RGBA red;
-								red.set_rgba(1.0,0,0,1.0);
-								bucketBox->override_background_color(red);
-            				}
-            				else{
-            					Gdk::RGBA white;
-								white.set_rgba(1.0,1.0,1.0,1.0);
-								bucketBox->override_background_color(white);
-            				}
+            				bool synced = std::abs(left_bucket_pos - right_bucket_pos) > 50;
+                            updateBackgroundColor(bucketBox, synced);
         				}
     				}
             	}
@@ -673,16 +680,8 @@ void updateGUI (BinaryMessage& message){
                     	if(element.label == "Sensor Position"){
                     		right_bucket_pos = element.data.front().uint16;
             				right_bucket->set_height_ratio((700 - element.data.front().uint16) / 700.0);
-            				if(std::abs(left_bucket_pos - right_bucket_pos) > 50){
-            					Gdk::RGBA red;
-								red.set_rgba(1.0,0,0,1.0);
-								bucketBox->override_background_color(red);
-            				}
-            				else{
-            					Gdk::RGBA red;
-								red.set_rgba(1.0,1.0,1.0,1.0);
-								bucketBox->override_background_color(red);
-            				}
+            				bool synced = std::abs(left_bucket_pos - right_bucket_pos) > 50;
+                            updateBackgroundColor(bucketBox, synced);
         				}
     				}
             	}
@@ -700,14 +699,7 @@ void updateGUI (BinaryMessage& message){
                             infoFrame->setTextColor(element.label, "white", true);
                         }
                         else{
-                            if(isLightMode){
-                                infoFrame->setBackground(element.label, "rgb(229, 252, 252)");
-                                infoFrame->setTextColor(element.label, "#000000", false);
-                            }
-                            else{
-                                infoFrame->setBackground(element.label, "#0b1a21");
-                                infoFrame->setTextColor(element.label, "white", false);
-                            }
+                            updateBackgroundColor(infoFrame, element.label);
                         }
                     }
                 }
@@ -724,7 +716,7 @@ void updateGUI (BinaryMessage& message){
                     infoFrame->setItem(element.label, element.data.front().int8 );
                 }
                 if(element.type == TYPE::UINT16){
-                	if(element.label == "Bus Voltage" || element.label == "Output Current"){
+                	if(element.label == "Bus Voltage"){
 						// Change this over to float
 						float voltage = (element.data.begin()->uint16 / 100.0);
                         if(voltage < 15.0){
@@ -732,17 +724,16 @@ void updateGUI (BinaryMessage& message){
                             infoFrame->setTextColor(element.label, "white", true);
                         }
                         else{
-                            if(isLightMode){
-                                infoFrame->setBackground(element.label, "rgb(229, 252, 252)");
-                                infoFrame->setTextColor(element.label, "#000000", false);
-                            }
-                            else{
-                                infoFrame->setBackground(element.label, "#0b1a21");
-                                infoFrame->setTextColor(element.label, "white", false);
-                            }
+                            updateBackgroundColor(infoFrame, element.label);
                         }
 						infoFrame->setItem(element.label, voltage);
 		    		}
+                    else if(element.label == "Output Current"){
+                        // Change this over to float
+						float voltage = (element.data.begin()->uint16 / 100.0);
+                        updateBackgroundColor(infoFrame, element.label);
+						infoFrame->setItem(element.label, voltage);
+                    }
 		    		else{
 	                    infoFrame->setItem(element.label, element.data.front().uint16 );
 					}
@@ -879,18 +870,9 @@ void setDisconnectedState(){
     ipAddressEntry->set_editable(true);
     connected=false;
 
-    Glib::ListHandle<Gtk::Widget*> childList = sensorBox->get_children();
-    Glib::ListHandle<Gtk::Widget*>::iterator it = childList.begin();
-    while (it != childList.end()) {
-        sensorBox->remove(*(*it));
-        it++;
-    }
-
     arm_init = false;
     bucket_init = false;
     roll_init = false;
-
-    infoFrameList.clear();
 }
 
 
@@ -1398,178 +1380,48 @@ void adjustRobotList(){
 
 void initGUI(){
  	BinaryMessage talonMessage1("Talon 1");
-    talonMessage1.addElementUInt8("Device ID",(uint8_t)0);
-    talonMessage1.addElementUInt16("Bus Voltage",0);
-    talonMessage1.addElementUInt16("Output Current",0);
-    talonMessage1.addElementFloat32("Output Percent",0.0);
-    talonMessage1.addElementUInt8("Temperature",(uint8_t)0);
-    talonMessage1.addElementUInt16("Sensor Position",(uint8_t)0);
-    talonMessage1.addElementInt8("Sensor Velocity",(uint8_t)0);
-    talonMessage1.addElementFloat32("Max Current", 0.0);
     updateGUI(talonMessage1);
     
     BinaryMessage talonMessage2("Talon 2");
-    talonMessage2.addElementUInt8("Device ID",(uint8_t)0);
-    talonMessage2.addElementUInt16("Bus Voltage",0);
-    talonMessage2.addElementUInt16("Output Current",0);
-    talonMessage2.addElementFloat32("Output Percent",0.0);
-    talonMessage2.addElementUInt8("Temperature",(uint8_t)0);
-    talonMessage2.addElementUInt16("Sensor Position",(uint8_t)0);
-    talonMessage2.addElementInt8("Sensor Velocity",(uint8_t)0);
-    talonMessage2.addElementFloat32("Max Current", 0.0);
     updateGUI(talonMessage2);
     
     BinaryMessage talonMessage3("Talon 3");
-    talonMessage3.addElementUInt8("Device ID",(uint8_t)0);
-    talonMessage3.addElementUInt16("Bus Voltage",0);
-    talonMessage3.addElementUInt16("Output Current",0);
-    talonMessage3.addElementFloat32("Output Percent",0.0);
-    talonMessage3.addElementUInt8("Temperature",(uint8_t)0);
-    talonMessage3.addElementUInt16("Sensor Position",(uint8_t)0);
-    talonMessage3.addElementInt8("Sensor Velocity",(uint8_t)0);
-    talonMessage3.addElementFloat32("Max Current", 0.0);
     updateGUI(talonMessage3);
     
     BinaryMessage talonMessage4("Talon 4");
-    talonMessage4.addElementUInt8("Device ID",(uint8_t)0);
-    talonMessage4.addElementUInt16("Bus Voltage",0);
-    talonMessage4.addElementUInt16("Output Current",0);
-    talonMessage4.addElementFloat32("Output Percent",0.0);
-    talonMessage4.addElementUInt8("Temperature",(uint8_t)0);
-    talonMessage4.addElementUInt16("Sensor Position",(uint8_t)0);
-    talonMessage4.addElementInt8("Sensor Velocity",(uint8_t)0);
-    talonMessage4.addElementFloat32("Max Current", 0.0);
     updateGUI(talonMessage4);
   
     BinaryMessage falconMessage1("Falcon 1");
-    falconMessage1.addElementUInt8("Device ID",(uint8_t)0);
-    falconMessage1.addElementUInt16("Bus Voltage",0);
-    falconMessage1.addElementUInt16("Output Current",0);
-    falconMessage1.addElementFloat32("Output Percent",0.0);
-    falconMessage1.addElementUInt8("Temperature",(uint8_t)0);
-    falconMessage1.addElementUInt16("Sensor Position",(uint8_t)0);
-    falconMessage1.addElementInt8("Sensor Velocity",(uint8_t)0);
-    falconMessage1.addElementFloat32("Max Current", 0.0);
     updateGUI(falconMessage1);
     
     BinaryMessage falconMessage2("Falcon 2");
-    falconMessage2.addElementUInt8("Device ID",(uint8_t)0);
-    falconMessage2.addElementUInt16("Bus Voltage",0);
-    falconMessage2.addElementUInt16("Output Current",0);
-    falconMessage2.addElementFloat32("Output Percent",0.0);
-    falconMessage2.addElementUInt8("Temperature",(uint8_t)0);
-    falconMessage2.addElementUInt16("Sensor Position",(uint8_t)0);
-    falconMessage2.addElementInt8("Sensor Velocity",(uint8_t)0);
-    falconMessage2.addElementFloat32("Max Current", 0.0);
     updateGUI(falconMessage2);
     
     BinaryMessage falconMessage3("Falcon 3");
-    falconMessage3.addElementUInt8("Device ID",(uint8_t)0);
-    falconMessage3.addElementUInt16("Bus Voltage",0);
-    falconMessage3.addElementUInt16("Output Current",0);
-    falconMessage3.addElementFloat32("Output Percent",0.0);
-    falconMessage3.addElementUInt8("Temperature",(uint8_t)0);
-    falconMessage3.addElementUInt16("Sensor Position",(uint8_t)0);
-    falconMessage3.addElementInt8("Sensor Velocity",(uint8_t)0);
-    falconMessage3.addElementFloat32("Max Current", 0.0);
     updateGUI(falconMessage3);
   
     BinaryMessage falconMessage4("Falcon 4");
-    falconMessage4.addElementUInt8("Device ID",(uint8_t)0);
-    falconMessage4.addElementUInt16("Bus Voltage",0);
-    falconMessage4.addElementUInt16("Output Current",0);
-    falconMessage4.addElementFloat32("Output Percent",0.0);
-    falconMessage4.addElementUInt8("Temperature",(uint8_t)0);
-    falconMessage4.addElementUInt16("Sensor Position",(uint8_t)0);
-    falconMessage4.addElementInt8("Sensor Velocity",(uint8_t)0);
-    falconMessage4.addElementFloat32("Max Current", 0.0);
     updateGUI(falconMessage4);
     
     BinaryMessage linearMessage1("Linear 1");
-    linearMessage1.addElementUInt8("Motor Number", (uint8_t)0);
-    linearMessage1.addElementFloat32("Speed", 0.0);
-    linearMessage1.addElementUInt16("Potentiometer", (uint16_t)0);
-    linearMessage1.addElementUInt8("Time Without Change", (uint8_t)0);
-    linearMessage1.addElementUInt16("Max", (uint16_t)0);
-    linearMessage1.addElementUInt16("Min", (uint16_t)0);
-    linearMessage1.addElementString("Error", "No Error");
-    linearMessage1.addElementBoolean("At Min", false);
-    linearMessage1.addElementBoolean("At Max", false);
-    linearMessage1.addElementFloat32("Distance", 0.0);
-    linearMessage1.addElementBoolean("Sensorless", false);
     updateGUI(linearMessage1);
     
     BinaryMessage linearMessage2("Linear 2");
-    linearMessage2.addElementUInt8("Motor Number", (uint8_t)0);
-    linearMessage2.addElementFloat32("Speed", 0.0);
-    linearMessage2.addElementUInt16("Potentiometer", (uint16_t)0);
-    linearMessage2.addElementUInt8("Time Without Change", (uint8_t)0);
-    linearMessage2.addElementUInt16("Max", (uint16_t)0);
-    linearMessage2.addElementUInt16("Min", (uint16_t)0);
-    linearMessage2.addElementString("Error", "No Error");
-    linearMessage2.addElementBoolean("At Min", false);
-    linearMessage2.addElementBoolean("At Max", false);
-    linearMessage2.addElementFloat32("Distance", 0.0);
-    linearMessage2.addElementBoolean("Sensorless", false);
     updateGUI(linearMessage2);
     
     BinaryMessage linearMessage3("Linear 3");
-    linearMessage3.addElementUInt8("Motor Number", (uint8_t)0);
-    linearMessage3.addElementFloat32("Speed", 0.0);
-    linearMessage3.addElementUInt16("Potentiometer", (uint16_t)0);
-    linearMessage3.addElementUInt8("Time Without Change", (uint8_t)0);
-    linearMessage3.addElementUInt16("Max", (uint16_t)0);
-    linearMessage3.addElementUInt16("Min", (uint16_t)0);
-    linearMessage3.addElementString("Error", "No Error");
-    linearMessage3.addElementBoolean("At Min", false);
-    linearMessage3.addElementBoolean("At Max", false);
-    linearMessage3.addElementFloat32("Distance", 0.0);
-    linearMessage3.addElementBoolean("Sensorless", false);
     updateGUI(linearMessage3);
     
     BinaryMessage linearMessage4("Linear 4");
-    linearMessage4.addElementUInt8("Motor Number", (uint8_t)0);
-    linearMessage4.addElementFloat32("Speed", 0.0);
-    linearMessage4.addElementUInt16("Potentiometer", (uint16_t)0);
-    linearMessage4.addElementUInt8("Time Without Change", (uint8_t)0);
-    linearMessage4.addElementUInt16("Max", (uint16_t)0);
-    linearMessage4.addElementUInt16("Min", (uint16_t)0);
-    linearMessage4.addElementString("Error", "No Error");
-    linearMessage4.addElementBoolean("At Min", false);
-    linearMessage4.addElementBoolean("At Max", false);
-    linearMessage4.addElementFloat32("Distance", 0.0);
-    linearMessage4.addElementBoolean("Sensorless", false);
     updateGUI(linearMessage4);
     
     BinaryMessage communicationMessage("Communication");
-    communicationMessage.addElementInt32("RSSI", 0);
-    communicationMessage.addElementString("Wi-Fi", "NORMAL");
-    communicationMessage.addElementString("CAN Bus", "DOWN");
-    communicationMessage.addElementInt32("RX packets", 0);
-    communicationMessage.addElementInt32("TX packets", 0);
     updateGUI(communicationMessage);
     
     BinaryMessage autonomyMessage("Autonomy");
-    autonomyMessage.addElementString("Robot State", "No");
-    autonomyMessage.addElementString("Excavation State", "No");
-    autonomyMessage.addElementString("Error State", "No");
-    autonomyMessage.addElementString("Diagnostics State", "No");
-    autonomyMessage.addElementString("Tilt State", "No");
-    autonomyMessage.addElementString("Level Bucket", "0");
-    autonomyMessage.addElementString("Level Arms", "0");
     updateGUI(autonomyMessage);
     
     BinaryMessage zedMessage("Zed");
-    zedMessage.addElementFloat32("X", 0.0);
-    zedMessage.addElementFloat32("Y", 0.0);
-    zedMessage.addElementFloat32("Z", 0.0);
-    zedMessage.addElementFloat32("Roll", 0.0);
-    zedMessage.addElementFloat32("Pitch", 0.0);
-    zedMessage.addElementFloat32("Yaw", 0.0);
-    zedMessage.addElementFloat32("Aruco Roll", 0.0);
-    zedMessage.addElementFloat32("Aruco Pitch", 0.0);
-    zedMessage.addElementFloat32("Aruco Yaw", 0.0);
-    zedMessage.addElementBoolean("Aruco", false);
     updateGUI(zedMessage);
     
     initRollPitch();
@@ -1577,27 +1429,9 @@ void initGUI(){
     initBucketPos();
 
     BinaryMessage powerMessage("Power");
-
-    powerMessage.addElementFloat32("Voltage",0.0);
-    powerMessage.addElementFloat32("Current 0",0.0);
-    powerMessage.addElementFloat32("Current 1",0.1);
-    powerMessage.addElementFloat32("Current 2",0.2);
-    powerMessage.addElementFloat32("Current 3",0.3);
-    powerMessage.addElementFloat32("Current 4",0.4);
-    powerMessage.addElementFloat32("Current 5",0.5);
-    powerMessage.addElementFloat32("Current 6",0.6);
-    powerMessage.addElementFloat32("Current 7",0.7);
+    updateGUI(powerMessage);
 
     BinaryMessage powerMessage2("Power2");
-    powerMessage2.addElementFloat32("Current 8",0.8);
-    powerMessage2.addElementFloat32("Current 9",0.9);
-    powerMessage2.addElementFloat32("Current 10",0.10);
-    powerMessage2.addElementFloat32("Current 11",0.11);
-    powerMessage2.addElementFloat32("Current 12",0.12);
-    powerMessage2.addElementFloat32("Current 13",0.13);
-    powerMessage2.addElementFloat32("Current 14",0.14);
-    powerMessage2.addElementFloat32("Current 15",0.15);
-    updateGUI(powerMessage);
     updateGUI(powerMessage2);
 
 }

@@ -53,13 +53,6 @@ void setDisconnectedState(){
     ipAddressEntry->set_editable(true);
     connected=false;
 
-    Glib::ListHandle<Gtk::Widget*> childList = sensorBox->get_children();
-    Glib::ListHandle<Gtk::Widget*>::iterator it = childList.begin();
-    while (it != childList.end()) {
-        sensorBox->remove(*(*it));
-        it++;
-    }
-
 }
 
 

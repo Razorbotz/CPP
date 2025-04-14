@@ -35,6 +35,8 @@ Gtk::Label* connectionStatusLabel;
   
 Gtk::Button* videoStreamButton;
 Gtk::Button* connectButton;
+bool isStreamingActive = false;
+bool isGray = true;
   
 Gtk::FlowBox* sensorBox;
 
@@ -171,6 +173,7 @@ void videoStream(){
         send(sock, message, messageSize, 0); 
 
         videoStreamButton->set_label("Video Streaming");
+        isStreamingActive = true;
     }
     else{
         int messageSize=3;
@@ -182,6 +185,7 @@ void videoStream(){
         send(sock, message, messageSize, 0); 
 
         videoStreamButton->set_label("Not Video Streaming");
+        isStreamingActive = true;
     }
 }
 
@@ -430,32 +434,116 @@ int main(int argc, char** argv) {
     bool running=true;
     while(running){
         adjustRobotList();
-
+    
         while(Gtk::Main::events_pending()){
             Gtk::Main::iteration();
         }
-
-        if(!connected)continue;
-        if(!videoStream)continue;
-        total = 0;
-        while(total < imgSize){
-            bytesRead = recv(sock, &sockData[total], imgSize-total, 0);
-            if(bytesRead==0){
-                //std::cout << "Lost Connection" << std::endl;
-                setDisconnectedState();
-                continue;
+    
+        if(!connected || !isStreamingActive) {
+             std::this_thread::sleep_for(std::chrono::milliseconds(10));
+             continue;
+        }
+    
+    
+        uint32_t network_frame_size = 0;
+        ssize_t bytesRead = 0;
+        size_t totalHeaderRead = 0;
+    
+        while (totalHeaderRead < sizeof(network_frame_size)) {
+            bytesRead = recv(sock, reinterpret_cast<char*>(&network_frame_size) + totalHeaderRead, sizeof(network_frame_size) - totalHeaderRead, 0);
+            if (bytesRead > 0) {
+                totalHeaderRead += bytesRead;
             }
-            if(bytesRead != -1){
-                total += bytesRead;
+            else if (bytesRead == 0) {
+                setDisconnectedState();
+                isStreamingActive = false;
+                break;
+            }
+            else {
+                if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                     std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                     while(Gtk::Main::events_pending()) { Gtk::Main::iteration(); }
+                     continue;
+                }
+                else {
+                    perror("recv header error");
+                    setDisconnectedState();
+                    isStreamingActive = false;
+                    break;
+                }
             }
         }
-        
-        cv::Mat img(376, 672, CV_8UC1, sockData);
-        cv::resize(img, img, cv::Size(1400, 800), cv::INTER_LINEAR);
-        cv::imshow("Video", img);
-        cv::waitKey(10);
-
-
+    
+        if (!connected || !isStreamingActive) {
+            continue;
+        }
+    
+    
+        uint32_t frameSize = ntohl(network_frame_size);
+    
+        if (frameSize == 0 || frameSize > 10 * 1024 * 1024) {
+            std::cerr << "Invalid frame size received: " << frameSize << std::endl;
+            setDisconnectedState();
+            isStreamingActive = false;
+            continue;
+        }
+    
+    
+        std::vector<uchar> frameDataBuffer(frameSize);
+        size_t totalFrameRead = 0;
+        while (totalFrameRead < frameSize) {
+            bytesRead = recv(sock, frameDataBuffer.data() + totalFrameRead, frameSize - totalFrameRead, 0);
+             if (bytesRead > 0) {
+                totalFrameRead += bytesRead;
+            }
+            else if (bytesRead == 0) {
+                setDisconnectedState();
+                isStreamingActive = false;
+                break;
+            }
+            else {
+                 if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                     std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                     while(Gtk::Main::events_pending()) { Gtk::Main::iteration(); }
+                     continue;
+                 }
+                 else {
+                    perror("recv frame error");
+                    setDisconnectedState();
+                    isStreamingActive = false;
+                    break;
+                }
+            }
+        }
+    
+    
+        if (!connected || !isStreamingActive) {
+            continue;
+        }
+    
+    
+        if (totalFrameRead == (376 * 672 * 1) && isGray) {
+            cv::Mat received_img(376, 672, CV_8UC1, frameDataBuffer.data());
+            cv::Mat display_img;
+            cv::resize(received_img, display_img, cv::Size(1400, 800), cv::INTER_LINEAR);
+            cv::imshow("Video", display_img);
+            cv::waitKey(10); 
+        }
+        else if (totalFrameRead == (376 * 672 * 3) && !isGray) {
+            cv::Mat received_img(376, 672, CV_8UC3, frameDataBuffer.data());
+            cv::Mat display_img;
+            cv::resize(received_img, display_img, cv::Size(1400, 800), cv::INTER_LINEAR);
+            cv::imshow("Video", display_img);
+            cv::waitKey(10); 
+        }
+        else {
+             std::cerr << "Frame size mismatch. Expected " << (376*672*1)
+                       << ", Got " << totalFrameRead << std::endl;
+             // Handle mismatch - maybe dimensions changed? Maybe sync lost?
+             // Consider disconnecting if this happens unexpectedly.
+             // setDisconnectedState();
+             // isStreamingActive = false;
+        }
     }
     return 0; 
 }

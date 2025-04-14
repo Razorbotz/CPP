@@ -606,9 +606,6 @@ void updateBackgroundColor(Gtk::Box* box, bool synced){
 }
 
 
-/*
-Don't think labels will get updated if they aren't in the init function
-*/
 void updateGUI (BinaryMessage& message){
     for(int frameIndex=0; frameIndex < infoFrameList.size(); frameIndex++){
 	    InfoFrame* infoFrame = infoFrameList[frameIndex]; 
@@ -629,12 +626,12 @@ void updateGUI (BinaryMessage& message){
                             pitch_image->set(newpitchpixbuf);
                         }
                         if(element.label == "pitch"){
-                            overlay_area->update_image_rotation(double(element.data.front().float32));
-                        }
-                        if(element.label == "X"){
-                            overlay_area->update_image_y(double(element.data.front().float32) * MULTIPLIER_Y);
+                            overlay_area->update_image_rotation(double(element.data.front().float32) - 90);
                         }
                         if(element.label == "Z"){
+                            overlay_area->update_image_y(double(element.data.front().float32) * MULTIPLIER_Y);
+                        }
+                        if(element.label == "X"){
                             overlay_area->update_image_x(double(element.data.front().float32) * MULTIPLIER_X);
                         }
                     }
@@ -1453,25 +1450,25 @@ int checksum_decode(std::list<uint8_t>& byteList){
     uint32_t sum = 0;
     auto dataEnd = byteList.end();
     std::advance(dataEnd, -2);
-    std::cout << "Data: ";
+    //std::cout << "Data: ";
     for (auto dataIt = byteList.begin(); dataIt != dataEnd; ++dataIt) {
         sum += *dataIt;
-        std::cout<<std::hex<<static_cast<int>(*dataIt)<<" ";
+        //std::cout<<std::hex<<static_cast<int>(*dataIt)<<" ";
         
     }
-    std::cout<<std::endl;
+    //std::cout<<std::endl;
 
     // Recalculate the checksum as sum modulo key.
     uint8_t computedChecksum = sum % key;
 
-    std::cout << "Computed checksum from data: 0x" << std::hex << static_cast<int>(computedChecksum) << std::endl;
-    std::cout << "Stored checksum: 0x" << std::hex << static_cast<int>(storedChecksum) << std::endl;
+    //std::cout << "Computed checksum from data: 0x" << std::hex << static_cast<int>(computedChecksum) << std::endl;
+    //std::cout << "Stored checksum: 0x" << std::hex << static_cast<int>(storedChecksum) << std::endl;
 
     if (computedChecksum == storedChecksum) {
-        std::cout << "Checksum is valid." << std::endl;
+        //std::cout << "Checksum is valid." << std::endl;
         return 1;
     } else {
-        std::cout << "Checksum is invalid." << std::endl;
+        //std::cout << "Checksum is invalid." << std::endl;
         byteList.clear();
         return 0;
 
@@ -1686,8 +1683,6 @@ int main(int argc, char** argv) {
 		for(int index=0;index<bytesRead;index++){
 		    messageBytesList.push_back(buffer[index]);
 		}
-		std::cout << buffer;
-		std::cout << std::endl;
         }
         else{
         	continue;
@@ -1706,22 +1701,19 @@ int main(int argc, char** argv) {
             }
             else{
                 BinaryMessage message(messageBytesList);
-                std::cout << "Before GUI update" << std::endl;
+                //std::cout << "Before GUI update" << std::endl;
                 updateGUI(message); //Update the GUI with the message
                 //std::cout << "Before size decode" << std::endl;
                 uint64_t size=BinaryMessage::decodeSizeBytes(messageBytesList); //Decode the size of the message
-                std::cout << size << std::endl;
                 for(int count=0; count < size + 1; count++){
                     //std::cout << messageBytesList.front();
                     messageBytesList.pop_front();
                 }
-                std::cout << std::endl;
             }
 
         }
         /******************************Handle control events******************************/
         while(SDL_PollEvent(&event)){
-        	std::cout << "here" << std::endl;
             const Uint8 *state = SDL_GetKeyboardState(NULL);
 
             switch(event.type){

@@ -22,56 +22,54 @@
 #include <gdkmm.h>
 #include <opencv2/opencv.hpp>
 
-#define PORT 31338
+#define VIDEO_PORT 31338
 
 
 bool quit(GdkEventAny* event){
     exit(0);
 }
 
-Gtk::ListBox* addressListBox;
-Gtk::Entry* ipAddressEntry;
-Gtk::Label* connectionStatusLabel;
+Gtk::ListBox* videoAddressListBox;
+Gtk::Entry* videoIPAddressEntry;
+Gtk::Label* videoConnectionStatusLabel;
   
 Gtk::Button* videoStreamButton;
-Gtk::Button* connectButton;
+Gtk::Button* videoConnectButton;
 bool isStreamingActive = false;
 bool isGray = true;
   
-Gtk::FlowBox* sensorBox;
-
 Gtk::Window* window;
-int sock = 0; 
-bool connected=false;
+int videoSock = 0; 
+bool videoConnected=false;
 
-void setDisconnectedState(){
-    connectButton->set_label("Connect");
-    connectionStatusLabel->set_text("Not Connected");
+void setVideoDisconnectedState(){
+    videoConnectButton->set_label("Connect");
+    videoConnectionStatusLabel->set_text("Not Connected");
     videoStreamButton->set_label("Not Video Streaming");
     Gdk::RGBA red;
     red.set_rgba(1.0,0,0,1.0);
-    connectionStatusLabel->override_background_color(red);
-    ipAddressEntry->set_can_focus(true);
-    ipAddressEntry->set_editable(true);
-    connected=false;
+    videoConnectionStatusLabel->override_background_color(red);
+    videoIPAddressEntry->set_can_focus(true);
+    videoIPAddressEntry->set_editable(true);
+    videoConnected=false;
 
 }
 
 
-void setConnectedState(){
-    connectButton->set_label("Disconnect");
-    connectionStatusLabel->set_text("Connected");
+void setVideoConnectedState(){
+    videoConnectButton->set_label("Disconnect");
+    videoConnectionStatusLabel->set_text("Connected");
     Gdk::RGBA green;
     green.set_rgba(0,1.0,0,1.0);
-    connectionStatusLabel->override_background_color(green);
-    ipAddressEntry->set_can_focus(false);
-    ipAddressEntry->set_editable(false);
-    connected=true;
+    videoConnectionStatusLabel->override_background_color(green);
+    videoIPAddressEntry->set_can_focus(false);
+    videoIPAddressEntry->set_editable(false);
+    videoConnected=true;
 }
 
 
-void connectToServer(){
-    if(connected==true)return;
+void connectToVideoServer(){
+    if(videoConnected==true)return;
     struct sockaddr_in address; 
     int bytesRead; 
     struct sockaddr_in serv_addr; 
@@ -80,65 +78,62 @@ void connectToServer(){
     memset(&serv_addr, '0', sizeof(serv_addr)); 
 
     serv_addr.sin_family = AF_INET; 
-    serv_addr.sin_port = htons(PORT);
+    serv_addr.sin_port = htons(VIDEO_PORT);
 
     char buffer[1024] = {0}; 
-    if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) { 
+    if ((videoSock = socket(AF_INET, SOCK_STREAM, 0)) < 0) { 
 
         printf("\n Socket creation error \n");
 
-        setDisconnectedState();
+        setVideoDisconnectedState();
         return; 
     } 
-    if(inet_pton(AF_INET, ipAddressEntry->get_text().c_str(), &serv_addr.sin_addr)<=0)  { 
+    if(inet_pton(AF_INET, videoIPAddressEntry->get_text().c_str(), &serv_addr.sin_addr)<=0)  { 
 
         printf("\nInvalid address/ Address not supported \n");
 
         Gtk::MessageDialog dialog(*window,"Invalid Address",false,Gtk::MESSAGE_QUESTION,Gtk::BUTTONS_OK);
         int result=dialog.run();
 
-        setDisconnectedState();
+        setVideoDisconnectedState();
         return;
     } 
-    if(connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
+    if(connect(videoSock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
         printf("\nConnection Failed \n");
 
         Gtk::MessageDialog dialog(*window,"Connection Failed",false,Gtk::MESSAGE_QUESTION,Gtk::BUTTONS_OK);
         int result=dialog.run();
 
-        setDisconnectedState();
+        setVideoDisconnectedState();
     }
     else{
-        send(sock , hello.c_str() , strlen(hello.c_str()) , 0 );
-        bytesRead = read( sock , buffer, 1024);
-        fcntl(sock,F_SETFL, O_NONBLOCK);
+        send(videoSock , hello.c_str() , strlen(hello.c_str()) , 0 );
+        bytesRead = read( videoSock , buffer, 1024);
+        fcntl(videoSock,F_SETFL, O_NONBLOCK);
 
-        setConnectedState();
+        setVideoConnectedState();
     }
 }
 
 
-void disconnectFromServer(){
+void disconnectFromVideoServer(){
     Gtk::MessageDialog dialog(*window,"Disconnect now?",false,Gtk::MESSAGE_QUESTION,Gtk::BUTTONS_OK_CANCEL);
     //dialog.set_secondary_text("Do you want to shutdown now?");
     int result=dialog.run();
 
     switch(result) {
         case (Gtk::RESPONSE_OK): 
-            if(shutdown(sock,SHUT_RDWR)==-1){
+            if(shutdown(videoSock,SHUT_RDWR)==-1){
                 Gtk::MessageDialog dialog(*window,"Failed Shutdown",false,Gtk::MESSAGE_ERROR,Gtk::BUTTONS_OK);
                 int result=dialog.run();
             }
-            if(close(sock)==0){
-                setDisconnectedState();
+            if(close(videoSock)==0){
+                setVideoDisconnectedState();
             }
             else{
                 Gtk::MessageDialog dialog(*window,"Failed Close",false,Gtk::MESSAGE_ERROR,Gtk::BUTTONS_OK);
                 int result=dialog.run();
             }
-
-
-
             break;
         case (Gtk::RESPONSE_CANCEL):
         case (Gtk::RESPONSE_NONE):
@@ -148,20 +143,20 @@ void disconnectFromServer(){
 }
 
 
-void connectOrDisconnect(){
-    Glib::ustring string=connectButton->get_label();
+void videoConnectOrDisconnect(){
+    Glib::ustring string=videoConnectButton->get_label();
     //std::cout << "connect" << string << std::endl;
     if(string=="Connect"){
-        connectToServer();
+        connectToVideoServer();
     }
     else{
-        disconnectFromServer();
+        disconnectFromVideoServer();
     }
 }
 
 
 void videoStream(){
-    if(!connected)return;
+    if(!videoConnected)return;
     std::string currentButtonState=videoStreamButton->get_label();
     if(currentButtonState=="Not Video Streaming"){
         int messageSize=3;
@@ -170,7 +165,7 @@ void videoStream(){
         message[0]=messageSize;
         message[1]=command;
         message[2]=1;
-        send(sock, message, messageSize, 0); 
+        send(videoSock, message, messageSize, 0); 
 
         videoStreamButton->set_label("Video Streaming");
         isStreamingActive = true;
@@ -182,7 +177,7 @@ void videoStream(){
         message[0]=messageSize;
         message[1]=command;
         message[2]=0;
-        send(sock, message, messageSize, 0); 
+        send(videoSock, message, messageSize, 0); 
 
         videoStreamButton->set_label("Not Video Streaming");
         isStreamingActive = true;
@@ -190,14 +185,14 @@ void videoStream(){
 }
 
 
-void rowActivated(Gtk::ListBoxRow* listBoxRow){
+void videoRowActivated(Gtk::ListBoxRow* listBoxRow){
     Gtk::Label* label=static_cast<Gtk::Label*>(listBoxRow->get_child());
     Glib::ustring connectionString(label->get_text());
     int index=connectionString.rfind('@');
     if(index==-1)return;
     ++index;
     Glib::ustring addressString=connectionString.substr(index,connectionString.length()-index);
-    ipAddressEntry->set_text(addressString);
+    videoIPAddressEntry->set_text(addressString);
 }
 
 
@@ -208,57 +203,53 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application){
     window->add_events(Gdk::KEY_PRESS_MASK);
     window->add_events(Gdk::KEY_RELEASE_MASK);
 
-    Gtk::Box* topLevelBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL,5));
+    Gtk::Box* videoTopLevelBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL,5));
 
-    Gtk::Box* controlsBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,5));
+    Gtk::Box* videoControlsBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,5));
 
-    Gtk::ScrolledWindow* scrolledList=Gtk::manage(new Gtk::ScrolledWindow());
-    addressListBox=Gtk::manage(new Gtk::ListBox());
-    addressListBox->signal_row_activated().connect(sigc::ptr_fun(&rowActivated));
+    Gtk::ScrolledWindow* videoScrolledList=Gtk::manage(new Gtk::ScrolledWindow());
+    videoAddressListBox=Gtk::manage(new Gtk::ListBox());
+    videoAddressListBox->signal_row_activated().connect(sigc::ptr_fun(&videoRowActivated));
 
-    Gtk::Box* controlsRightBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL,5));
+    Gtk::Box* videoControlsRightBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL,5));
 
-    Gtk::Box* connectBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,5));
-    Gtk::Label* ipAddressLabel=Gtk::manage(new Gtk::Label(" IP Address "));
-    ipAddressEntry=Gtk::manage(new Gtk::Entry());
-    ipAddressEntry->set_can_focus(true);
-    ipAddressEntry->set_editable(true);
-    ipAddressEntry->set_text("192.168.1.6");
-    connectButton=Gtk::manage(new Gtk::Button("Connect"));
-    connectButton->signal_clicked().connect(sigc::ptr_fun(&connectOrDisconnect));
-    connectionStatusLabel=Gtk::manage(new Gtk::Label("Not Connected"));
+    Gtk::Box* videoConnectBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,5));
+    Gtk::Label* videoIPAddress=Gtk::manage(new Gtk::Label(" IP Address "));
+    videoIPAddressEntry=Gtk::manage(new Gtk::Entry());
+    videoIPAddressEntry->set_can_focus(true);
+    videoIPAddressEntry->set_editable(true);
+    videoIPAddressEntry->set_text("192.168.1.6");
+    videoConnectButton=Gtk::manage(new Gtk::Button("Connect"));
+    videoConnectButton->signal_clicked().connect(sigc::ptr_fun(&videoConnectOrDisconnect));
+    videoConnectionStatusLabel=Gtk::manage(new Gtk::Label("Not Connected"));
     Gdk::RGBA red;
     red.set_rgba(1.0,0,0,1.0);
-    connectionStatusLabel->override_background_color(red);
+    videoConnectionStatusLabel->override_background_color(red);
     
-    Gtk::Box* stateBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,2));
+    Gtk::Box* videoStateBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,2));
     videoStreamButton=Gtk::manage(new Gtk::Button("Not Video Streaming"));
     videoStreamButton->signal_clicked().connect(sigc::ptr_fun(&videoStream));
 
-    sensorBox=Gtk::manage(new Gtk::FlowBox());
-    sensorBox->set_orientation(Gtk::ORIENTATION_HORIZONTAL);
+    videoAddressListBox->set_size_request(200,100);
+    videoScrolledList->set_size_request(200,100);
 
-    addressListBox->set_size_request(200,100);
-    scrolledList->set_size_request(200,100);
+    videoConnectBox->add(*videoIPAddress);
+    videoConnectBox->add(*videoIPAddressEntry);
+    videoConnectBox->add(*videoConnectButton);
+    videoConnectBox->add(*videoConnectionStatusLabel);
 
-    connectBox->add(*ipAddressLabel);
-    connectBox->add(*ipAddressEntry);
-    connectBox->add(*connectButton);
-    connectBox->add(*connectionStatusLabel);
+    videoStateBox->add(*videoStreamButton);
 
-    stateBox->add(*videoStreamButton);
+    videoControlsRightBox->add(*videoConnectBox);
+    videoControlsRightBox->add(*videoStateBox);
 
-    controlsRightBox->add(*connectBox);
-    controlsRightBox->add(*stateBox);
+    videoScrolledList->add(*videoAddressListBox);
 
-    scrolledList->add(*addressListBox);
+    videoControlsBox->add(*videoScrolledList);
+    videoControlsBox->add(*videoControlsRightBox);
 
-    controlsBox->add(*scrolledList);
-    controlsBox->add(*controlsRightBox);
-
-    topLevelBox->add(*controlsBox);
-    topLevelBox->add(*sensorBox);
-    window->add(*topLevelBox);
+    videoTopLevelBox->add(*videoControlsBox);
+    window->add(*videoTopLevelBox);
 
     window->signal_delete_event().connect(sigc::ptr_fun(quit));
     window->show_all();
@@ -270,7 +261,7 @@ struct RemoteRobot{
     std::string tag;
     time_t lastSeenTime;
 };
-std::vector<RemoteRobot> robotList;
+std::vector<RemoteRobot> videoRobotList;
 
 
 bool contains(std::vector<std::string>& list, std::string& value){
@@ -312,7 +303,7 @@ std::vector<std::string> getAddressList(){
 }
 
 
-void broadcastListen(){
+void videoBroadcastListen(){
     int sd = socket(AF_INET, SOCK_DGRAM, 0);
     if(sd < 0) {
         perror("Opening datagram socket error");
@@ -359,32 +350,32 @@ void broadcastListen(){
     while(true){
         if(read(sd, databuf, datalen) >= 0) {
             std::string message(databuf);
-            if(!contains(robotList,message)) {
+            if(!contains(videoRobotList,message)) {
                 RemoteRobot remoteRobot;
                 remoteRobot.tag=message; 
                 time(&remoteRobot.lastSeenTime);
-                robotList.push_back(remoteRobot);
+                videoRobotList.push_back(remoteRobot);
             }
-            update(robotList,message);
+            update(videoRobotList,message);
         }
     }
 }
 
 
-void adjustRobotList(){
-    for(int index=0;index < robotList.size() ; ++index){
+void adjustVideoRobotList(){
+    for(int index=0;index < videoRobotList.size() ; ++index){
         time_t now;
         time(&now);
-        if(now-robotList[index].lastSeenTime>12){
-            robotList.erase(robotList.begin()+index--);
+        if(now-videoRobotList[index].lastSeenTime>12){
+            videoRobotList.erase(videoRobotList.begin()+index--);
         }
     }
     //add new elements
-    for(RemoteRobot remoteRobot:robotList){
+    for(RemoteRobot remoteRobot:videoRobotList){
         std::string robotID=remoteRobot.tag;
         bool match=false;
         int index=0;
-        for(Gtk::ListBoxRow* listBoxRow=addressListBox->get_row_at_index(index); listBoxRow ; listBoxRow=addressListBox->get_row_at_index(++index)){
+        for(Gtk::ListBoxRow* listBoxRow=videoAddressListBox->get_row_at_index(index); listBoxRow ; listBoxRow=videoAddressListBox->get_row_at_index(++index)){
             Gtk::Label* label=static_cast<Gtk::Label*>(listBoxRow->get_child());
             Glib::ustring addressString=label->get_text();
             if(robotID==addressString.c_str()){
@@ -395,17 +386,17 @@ void adjustRobotList(){
         if(match==false){
             Gtk::Label* label=Gtk::manage(new Gtk::Label(robotID));
             label->set_visible(true);
-            addressListBox->append(*label);
+            videoAddressListBox->append(*label);
         }
     }
 
     //remove old element
     int index=0;
-    for(Gtk::ListBoxRow* listBoxRow=addressListBox->get_row_at_index(index); listBoxRow ; listBoxRow=addressListBox->get_row_at_index(++index)){
+    for(Gtk::ListBoxRow* listBoxRow=videoAddressListBox->get_row_at_index(index); listBoxRow ; listBoxRow=videoAddressListBox->get_row_at_index(++index)){
         Gtk::Label* label=static_cast<Gtk::Label*>(listBoxRow->get_child());
         Glib::ustring addressString=label->get_text();
         bool match=false;
-        for(RemoteRobot remoteRobot:robotList){
+        for(RemoteRobot remoteRobot:videoRobotList){
             std::string robotID=remoteRobot.tag;
             if(robotID==addressString.c_str()){
                 match=true;
@@ -413,7 +404,7 @@ void adjustRobotList(){
             }
         }
         if(!match){
-            addressListBox->remove(*listBoxRow);
+            videoAddressListBox->remove(*listBoxRow);
             --index;
         }
     }
@@ -424,7 +415,7 @@ int main(int argc, char** argv) {
     Glib::RefPtr<Gtk::Application> application = Gtk::Application::create(argc, argv, "edu.uark.razorbotz");
     setupGUI(application);
 
-    std::thread broadcastListenThread(broadcastListen);
+    std::thread broadcastListenThread(videoBroadcastListen);
 
     cv::Mat img = cv::Mat::zeros(376, 672, CV_8UC1);
     int imgSize = img.total() * img.elemSize();
@@ -433,15 +424,15 @@ int main(int argc, char** argv) {
 
     bool running=true;
     while(running){
-        adjustRobotList();
+        adjustVideoRobotList();
     
         while(Gtk::Main::events_pending()){
             Gtk::Main::iteration();
         }
     
-        if(!connected || !isStreamingActive) {
-             std::this_thread::sleep_for(std::chrono::milliseconds(10));
-             continue;
+        if(!videoConnected || !isStreamingActive) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            continue;
         }
     
     
@@ -450,12 +441,12 @@ int main(int argc, char** argv) {
         size_t totalHeaderRead = 0;
     
         while (totalHeaderRead < sizeof(network_frame_size)) {
-            bytesRead = recv(sock, reinterpret_cast<char*>(&network_frame_size) + totalHeaderRead, sizeof(network_frame_size) - totalHeaderRead, 0);
+            bytesRead = recv(videoSock, reinterpret_cast<char*>(&network_frame_size) + totalHeaderRead, sizeof(network_frame_size) - totalHeaderRead, 0);
             if (bytesRead > 0) {
                 totalHeaderRead += bytesRead;
             }
             else if (bytesRead == 0) {
-                setDisconnectedState();
+                setVideoDisconnectedState();
                 isStreamingActive = false;
                 break;
             }
@@ -467,23 +458,23 @@ int main(int argc, char** argv) {
                 }
                 else {
                     perror("recv header error");
-                    setDisconnectedState();
+                    setVideoDisconnectedState();
                     isStreamingActive = false;
                     break;
                 }
             }
         }
     
-        if (!connected || !isStreamingActive) {
+        if (!videoConnected || !isStreamingActive) {
             continue;
         }
     
     
         uint32_t frameSize = ntohl(network_frame_size);
     
-        if (frameSize == 0 || frameSize > 10 * 1024 * 1024) {
+        if (frameSize == 0) {
             std::cerr << "Invalid frame size received: " << frameSize << std::endl;
-            setDisconnectedState();
+            setVideoDisconnectedState();
             isStreamingActive = false;
             continue;
         }
@@ -492,12 +483,12 @@ int main(int argc, char** argv) {
         std::vector<uchar> frameDataBuffer(frameSize);
         size_t totalFrameRead = 0;
         while (totalFrameRead < frameSize) {
-            bytesRead = recv(sock, frameDataBuffer.data() + totalFrameRead, frameSize - totalFrameRead, 0);
+            bytesRead = recv(videoSock, frameDataBuffer.data() + totalFrameRead, frameSize - totalFrameRead, 0);
              if (bytesRead > 0) {
                 totalFrameRead += bytesRead;
             }
             else if (bytesRead == 0) {
-                setDisconnectedState();
+                setVideoDisconnectedState();
                 isStreamingActive = false;
                 break;
             }
@@ -509,7 +500,7 @@ int main(int argc, char** argv) {
                  }
                  else {
                     perror("recv frame error");
-                    setDisconnectedState();
+                    setVideoDisconnectedState();
                     isStreamingActive = false;
                     break;
                 }
@@ -517,7 +508,7 @@ int main(int argc, char** argv) {
         }
     
     
-        if (!connected || !isStreamingActive) {
+        if (!videoConnected || !isStreamingActive) {
             continue;
         }
     
@@ -537,12 +528,9 @@ int main(int argc, char** argv) {
             cv::waitKey(10); 
         }
         else {
-             std::cerr << "Frame size mismatch. Expected " << (376*672*1)
-                       << ", Got " << totalFrameRead << std::endl;
-             // Handle mismatch - maybe dimensions changed? Maybe sync lost?
-             // Consider disconnecting if this happens unexpectedly.
-             // setDisconnectedState();
-             // isStreamingActive = false;
+            std::cerr << "Frame size mismatch. Expected " << (376*672*1) << ", Got " << totalFrameRead << std::endl;
+            setVideoDisconnectedState();
+            isStreamingActive = false;
         }
     }
     return 0; 

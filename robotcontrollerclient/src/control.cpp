@@ -98,6 +98,9 @@ Gtk::Button* videoStreamButton;
 Gtk::Button* videoConnectButton;
 bool isStreamingActive = false;
 bool isGray = true;
+std::mutex frameMutex;
+cv::Mat latestFrame;
+bool newFrameAvailable;
   
 Gtk::FlowBox* sensorBox;
 
@@ -1383,6 +1386,7 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
 
     videoStateBox->add(*videoStreamButton);
     videoControlsRightBox->add(*videoConnectBox);
+    videoControlsRightBox->add(*videoStateBox);    
     videoScrolledList->add(*videoAddressListBox);
 
     Gtk::Label* spacer = Gtk::manage(new Gtk::Label());
@@ -1904,7 +1908,7 @@ void initArena(){
 
 
 void videoMain(){
-    std::thread broadcastListenThread(videoBroadcastListen);
+    std::thread broadcastListenThread2(videoBroadcastListen);
 
     cv::Mat img = cv::Mat::zeros(376, 672, CV_8UC1);
     int imgSize = img.total() * img.elemSize();
@@ -1914,10 +1918,6 @@ void videoMain(){
     bool running=true;
     while(running){
         adjustVideoRobotList();
-    
-        while(Gtk::Main::events_pending()){
-            Gtk::Main::iteration();
-        }
     
         if(!videoConnected || !isStreamingActive) {
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -1942,7 +1942,6 @@ void videoMain(){
             else {
                 if (errno == EAGAIN || errno == EWOULDBLOCK) {
                      std::this_thread::sleep_for(std::chrono::milliseconds(1));
-                     while(Gtk::Main::events_pending()) { Gtk::Main::iteration(); }
                      continue;
                 }
                 else {
@@ -1984,7 +1983,6 @@ void videoMain(){
             else {
                  if (errno == EAGAIN || errno == EWOULDBLOCK) {
                      std::this_thread::sleep_for(std::chrono::milliseconds(1));
-                     while(Gtk::Main::events_pending()) { Gtk::Main::iteration(); }
                      continue;
                  }
                  else {
@@ -2006,15 +2004,17 @@ void videoMain(){
             cv::Mat received_img(376, 672, CV_8UC1, frameDataBuffer.data());
             cv::Mat display_img;
             cv::resize(received_img, display_img, cv::Size(1400, 800), cv::INTER_LINEAR);
-            cv::imshow("Video", display_img);
-            cv::waitKey(10); 
+            std::lock_guard<std::mutex> lock(frameMutex);
+            latestFrame = display_img.clone();
+            newFrameAvailable = true;
         }
         else if (totalFrameRead == (376 * 672 * 3) && !isGray) {
             cv::Mat received_img(376, 672, CV_8UC3, frameDataBuffer.data());
             cv::Mat display_img;
             cv::resize(received_img, display_img, cv::Size(1400, 800), cv::INTER_LINEAR);
-            cv::imshow("Video", display_img);
-            cv::waitKey(10); 
+            std::lock_guard<std::mutex> lock(frameMutex);
+            latestFrame = display_img.clone();
+            newFrameAvailable = true;
         }
         else {
             std::cerr << "Frame size mismatch. Expected " << (376*672*1) << ", Got " << totalFrameRead << std::endl;
@@ -2022,7 +2022,7 @@ void videoMain(){
             isStreamingActive = false;
         }
     }
-    return 0; 
+    return; 
 
 }
 
@@ -2038,6 +2038,7 @@ int main(int argc, char** argv) {
     //Start a thread to listen to updates from the robot
     // std::thread broadcastListenThread(broadcastListen);
     std::thread broadcastListenThread(videoMain);
+    broadcastListenThread.detach();
 
     //Initialize the controller and handle failure
     if (SDL_Init(SDL_INIT_GAMECONTROLLER) != 0) {
@@ -2088,6 +2089,13 @@ int main(int argc, char** argv) {
 
         while(Gtk::Main::events_pending()){
             Gtk::Main::iteration();
+        }
+
+        std::lock_guard<std::mutex> lock(frameMutex);
+        if(newFrameAvailable){
+            cv::imshow("Video", latestFrame);
+            cv::waitKey(1);
+            newFrameAvailable = false;
         }
 
         if(!connected){

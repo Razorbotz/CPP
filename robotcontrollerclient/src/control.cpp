@@ -27,6 +27,9 @@
 #include <pangomm.h>
 //#include <gdk-pixbuf/gdk-pixbuf.h>
 
+#include <cstdlib>
+#include <opencv2/opencv.hpp>
+
 #include "InfoFrame.hpp"
 #include "BinaryMessage.hpp"
 
@@ -1425,6 +1428,7 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
     topControlsBox->add(*controlsBox);
     topControlsBox->add(*videoTopLevelBox);
     topLevelBox->add(*topControlsBox);
+    topLevelBox->add(*sensorBox);
     window->add(*topLevelBox);
 
     window->signal_delete_event().connect(sigc::ptr_fun(quit));
@@ -1899,6 +1903,129 @@ void initArena(){
 }
 
 
+void videoMain(){
+    std::thread broadcastListenThread(videoBroadcastListen);
+
+    cv::Mat img = cv::Mat::zeros(376, 672, CV_8UC1);
+    int imgSize = img.total() * img.elemSize();
+    uchar sockData[imgSize];
+    int bytesRead=0, total = 0;
+
+    bool running=true;
+    while(running){
+        adjustVideoRobotList();
+    
+        while(Gtk::Main::events_pending()){
+            Gtk::Main::iteration();
+        }
+    
+        if(!videoConnected || !isStreamingActive) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            continue;
+        }
+    
+    
+        uint32_t network_frame_size = 0;
+        ssize_t bytesRead = 0;
+        size_t totalHeaderRead = 0;
+    
+        while (totalHeaderRead < sizeof(network_frame_size)) {
+            bytesRead = recv(videoSock, reinterpret_cast<char*>(&network_frame_size) + totalHeaderRead, sizeof(network_frame_size) - totalHeaderRead, 0);
+            if (bytesRead > 0) {
+                totalHeaderRead += bytesRead;
+            }
+            else if (bytesRead == 0) {
+                setVideoDisconnectedState();
+                isStreamingActive = false;
+                break;
+            }
+            else {
+                if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                     std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                     while(Gtk::Main::events_pending()) { Gtk::Main::iteration(); }
+                     continue;
+                }
+                else {
+                    perror("recv header error");
+                    setVideoDisconnectedState();
+                    isStreamingActive = false;
+                    break;
+                }
+            }
+        }
+    
+        if (!videoConnected || !isStreamingActive) {
+            continue;
+        }
+    
+    
+        uint32_t frameSize = ntohl(network_frame_size);
+    
+        if (frameSize == 0) {
+            std::cerr << "Invalid frame size received: " << frameSize << std::endl;
+            setVideoDisconnectedState();
+            isStreamingActive = false;
+            continue;
+        }
+    
+    
+        std::vector<uchar> frameDataBuffer(frameSize);
+        size_t totalFrameRead = 0;
+        while (totalFrameRead < frameSize) {
+            bytesRead = recv(videoSock, frameDataBuffer.data() + totalFrameRead, frameSize - totalFrameRead, 0);
+             if (bytesRead > 0) {
+                totalFrameRead += bytesRead;
+            }
+            else if (bytesRead == 0) {
+                setVideoDisconnectedState();
+                isStreamingActive = false;
+                break;
+            }
+            else {
+                 if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                     std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                     while(Gtk::Main::events_pending()) { Gtk::Main::iteration(); }
+                     continue;
+                 }
+                 else {
+                    perror("recv frame error");
+                    setVideoDisconnectedState();
+                    isStreamingActive = false;
+                    break;
+                }
+            }
+        }
+    
+    
+        if (!videoConnected || !isStreamingActive) {
+            continue;
+        }
+    
+    
+        if (totalFrameRead == (376 * 672 * 1) && isGray) {
+            cv::Mat received_img(376, 672, CV_8UC1, frameDataBuffer.data());
+            cv::Mat display_img;
+            cv::resize(received_img, display_img, cv::Size(1400, 800), cv::INTER_LINEAR);
+            cv::imshow("Video", display_img);
+            cv::waitKey(10); 
+        }
+        else if (totalFrameRead == (376 * 672 * 3) && !isGray) {
+            cv::Mat received_img(376, 672, CV_8UC3, frameDataBuffer.data());
+            cv::Mat display_img;
+            cv::resize(received_img, display_img, cv::Size(1400, 800), cv::INTER_LINEAR);
+            cv::imshow("Video", display_img);
+            cv::waitKey(10); 
+        }
+        else {
+            std::cerr << "Frame size mismatch. Expected " << (376*672*1) << ", Got " << totalFrameRead << std::endl;
+            setVideoDisconnectedState();
+            isStreamingActive = false;
+        }
+    }
+    return 0; 
+
+}
+
 //UDP Version
 int main(int argc, char** argv) { 
     //Setup GUI
@@ -1910,6 +2037,7 @@ int main(int argc, char** argv) {
     
     //Start a thread to listen to updates from the robot
     // std::thread broadcastListenThread(broadcastListen);
+    std::thread broadcastListenThread(videoMain);
 
     //Initialize the controller and handle failure
     if (SDL_Init(SDL_INIT_GAMECONTROLLER) != 0) {

@@ -1,0 +1,14 @@
+****When testing client on a new machine, dependencies need to be installed so that the project will build.****
+>>Run the following commands:
+1. cd ~/CPP/robotcontrollerclient
+2. mkdir build
+3. sudo apt update 
+4. sudo apt install libgtkmm-3.0-dev
+5. sudo apt install libwebkit2gtk-4.0-dev
+6. cd build
+7. cmake ..
+8. make
+9. ./control
+Step 9 you are done, the client program should run
+
+ 

@@ -215,6 +215,8 @@ class ImageOverlay : public Gtk::DrawingArea {
             return true;
         }
 
+        // Scale factor of map means 1m = 160px, so scale multiplier sets
+        // the size of the rock and hole to scale multiplier meters in radius
         void add_rock_image(int x, int y, double scale_multiplier) {
             rock_data.emplace_back(x, y, scale_multiplier);
             queue_draw();
@@ -263,14 +265,12 @@ class ImageOverlay : public Gtk::DrawingArea {
         cr->paint();
         cr->restore();
 
-        cr->restore();
-    
         // Draw rocks
         for (const auto& data : rock_data) {
             int new_width = rock->get_width() * data.scale_multiplier;
             int new_height = rock->get_height() * data.scale_multiplier;
             auto scaled_pixbuf = rock->scale_simple(new_width, new_height, Gdk::INTERP_BILINEAR);
-            Gdk::Cairo::set_source_pixbuf(cr, scaled_pixbuf, data.x, data.y);
+            Gdk::Cairo::set_source_pixbuf(cr, scaled_pixbuf, data.x - (new_width / 2), 800 - (data.y - new_height / 2));
             cr->paint();
         }
     
@@ -279,10 +279,11 @@ class ImageOverlay : public Gtk::DrawingArea {
             int new_width = hole->get_width() * data.scale_multiplier;
             int new_height = hole->get_height() * data.scale_multiplier;
             auto scaled_pixbuf = hole->scale_simple(new_width, new_height, Gdk::INTERP_BILINEAR);
-            Gdk::Cairo::set_source_pixbuf(cr, scaled_pixbuf, data.x, data.y);
+            Gdk::Cairo::set_source_pixbuf(cr, scaled_pixbuf, data.x - (new_width / 2), 800 - (data.y - new_height / 2));
             cr->paint();
         }
 
+        cr->restore();
         cr->reset_clip();
     
         return true;

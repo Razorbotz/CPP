@@ -107,6 +107,7 @@ Gtk::FlowBox* sensorBox;
 Gtk::Window* window;
 int sock = 0; 
 bool connected=false;
+bool silentRunning=false;
 
 int videoSock = 0; 
 bool videoConnected=false;
@@ -255,7 +256,7 @@ class ImageOverlay : public Gtk::DrawingArea {
         cr->restore();
 
         cr->save();
-        cr->translate(img_x + overlay->get_width() / 2, img_y + overlay->get_height() / 2);
+        cr->translate(img_x + overlay->get_width() / 2, 800 - (img_y + overlay->get_height() / 2));
         cr->rotate(rotation_angle);
         cr->translate(-overlay->get_width() / 2, -overlay->get_height() / 2);
         Gdk::Cairo::set_source_pixbuf(cr, overlay, 0, 0);
@@ -885,6 +886,7 @@ void setDisconnectedState(){
     ipAddressEntry->set_can_focus(true);
     ipAddressEntry->set_editable(true);
     connected=false;
+    silentRunning = true;
 
     arm_init = false;
     bucket_init = false;
@@ -1159,6 +1161,7 @@ void silentRun(){
 
 
         silentRunButton->set_label("Not Silent Running");
+        silentRunning = false;
     }
     else{
         int messageSize=3;
@@ -1171,6 +1174,7 @@ void silentRun(){
         sendto(sock , message , messageSize , 0 ,(struct sockaddr *)&serv_addr, addr_len);
 
         silentRunButton->set_label("Silent Running");
+        silentRunning = true;
     }
 }
 
@@ -2081,6 +2085,11 @@ int main(int argc, char** argv) {
 
     std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
     std::chrono::high_resolution_clock::time_point lastTransmitTime = std::chrono::high_resolution_clock::now();
+    std::chrono::high_resolution_clock::time_point lastReceiveTime = std::chrono::high_resolution_clock::now();
+    now = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> time_span = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastTransmitTime);
+    double deltaTime = time_span.count();
+    
     std::list<uint8_t> messageBytesList; //List to store incoming bytes
     uint8_t message[256];
     bool running=true;
@@ -2135,16 +2144,24 @@ int main(int argc, char** argv) {
         //Fill the messageBytesList with the bytes read from the socket
         if(bytesRead != -1){
         	std::cout << bytesRead << std::endl;
-		for(int index=0;index<bytesRead;index++){
-		    messageBytesList.push_back(buffer[index]);
-		}
+            for(int index=0;index<bytesRead;index++){
+                messageBytesList.push_back(buffer[index]);
+            }
+            lastReceiveTime = std::chrono::high_resolution_clock::now();
+        }
+
+        if(silentRunning){
+            lastReceiveTime = std::chrono::high_resolution_clock::now();
         }
         else{
-        	continue;
+            now = std::chrono::high_resolution_clock::now();
+            time_span = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastReceiveTime);
+            deltaTime = time_span.count();
+            if(deltaTime > 5.0 && connected){
+                setDisconnectedState();
+            }
         }
-
         
-
         //std::cout << "Before hasMessage check" << std::endl;
         while(BinaryMessage::hasMessage(messageBytesList)){
 	    //print_data(messageBytesList);
@@ -2262,8 +2279,8 @@ int main(int argc, char** argv) {
         }
 
         now = std::chrono::high_resolution_clock::now();
-        std::chrono::duration<double> time_span = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastTransmitTime);
-        double deltaTime = time_span.count();
+        time_span = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastTransmitTime);
+        deltaTime = time_span.count();
         if(deltaTime > 0.05 ){
             lastTransmitTime = std::chrono::high_resolution_clock::now();
             for(int joystickIndex=0; joystickIndex < axisEventList->size(); joystickIndex++){

@@ -109,11 +109,15 @@ int sock = 0;
 bool connected=false;
 bool silentRunning=false;
 
+bool initVals = false;
+bool threeMonitors = false;
+bool smallLaptop = false;
+
 int videoSock = 0; 
 bool videoConnected=false;
 
-Gtk::Window* webcamWindow;
 Gtk::Window* arenaWindow;
+Gtk::Window* sensorsWindow;
 
 double roll_rotation_angle = 0.0;
 Glib::RefPtr<Gdk::Pixbuf> roll_pixbuf;
@@ -888,6 +892,15 @@ void setDisconnectedState(){
     ipAddressEntry->set_editable(true);
     connected=false;
     silentRunning = true;
+
+    if (connected) {
+        if (sock > 0) {
+            if (close(sock) != 0) {
+                perror("Failed to close socket");
+            }
+            sock = 0;
+        }
+    }
 
     arm_init = false;
     bucket_init = false;
@@ -1706,20 +1719,47 @@ void adjustVideoRobotList(){
     }
 }
 
+void createTalonMessage(std::string name){
+    BinaryMessage talonMessage(name);
+    if(initVals){
+        talonMessage.addElementUInt8("Device ID",(uint8_t)0);
+        talonMessage.addElementUInt16("Bus Voltage",0);
+        talonMessage.addElementUInt16("Output Current",0);
+        talonMessage.addElementFloat32("Output Percent",0.0);
+        talonMessage.addElementUInt8("Temperature",(uint8_t)0);
+        talonMessage.addElementUInt16("Sensor Position",(uint8_t)0);
+        talonMessage.addElementInt8("Sensor Velocity",(uint8_t)0);
+        talonMessage.addElementFloat32("Max Current", 0.0);
+    }
+    updateGUI(talonMessage);
+}
+
+
+void createLinearMessage(std::string name){
+    BinaryMessage linearMessage(name);
+    if(initVals){
+        linearMessage.addElementUInt8("Motor Number", (uint8_t)0);
+        linearMessage.addElementFloat32("Speed", 0.0);
+        linearMessage.addElementUInt16("Potentiometer", (uint16_t)0);
+        linearMessage.addElementUInt8("Time Without Change", (uint8_t)0);
+        linearMessage.addElementUInt16("Max", (uint16_t)0);
+        linearMessage.addElementUInt16("Min", (uint16_t)0);
+        linearMessage.addElementString("Error", "No Error");
+        linearMessage.addElementBoolean("At Min", false);
+        linearMessage.addElementBoolean("At Max", false);
+        linearMessage.addElementFloat32("Distance", 0.0);
+        linearMessage.addElementBoolean("Sensorless", false);
+    }
+    updateGUI(linearMessage);
+}
+
 
 void initGUI() {
     // Initialize all the BinaryMessage components first
-    BinaryMessage talonMessage1("Talon 1");
-    updateGUI(talonMessage1);
-    
-    BinaryMessage talonMessage2("Talon 2");
-    updateGUI(talonMessage2);
-    
-    BinaryMessage talonMessage3("Talon 3");
-    updateGUI(talonMessage3);
-    
-    BinaryMessage talonMessage4("Talon 4");
-    updateGUI(talonMessage4);
+    createTalonMessage("Talon 1");
+    createTalonMessage("Talon 2");
+    createTalonMessage("Talon 3");
+    createTalonMessage("Talon 4");
 
     // Main container for visual elements
     Gtk::Box* mainContainer = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 10));
@@ -1786,29 +1826,15 @@ void initGUI() {
     // Add visual elements to sensorBox
     sensorBox->add(*mainContainer);
 
-        BinaryMessage falconMessage1("Falcon 1");
-    updateGUI(falconMessage1);
+    createTalonMessage("Falcon 1");
+    createTalonMessage("Falcon 2");
+    createTalonMessage("Falcon 3");
+    createTalonMessage("Falcon 4");
     
-    BinaryMessage falconMessage2("Falcon 2");
-    updateGUI(falconMessage2);
-    
-    BinaryMessage falconMessage3("Falcon 3");
-    updateGUI(falconMessage3);
-  
-    BinaryMessage falconMessage4("Falcon 4");
-    updateGUI(falconMessage4);
-    
-    BinaryMessage linearMessage1("Linear 1");
-    updateGUI(linearMessage1);
-    
-    BinaryMessage linearMessage2("Linear 2");
-    updateGUI(linearMessage2);
-    
-    BinaryMessage linearMessage3("Linear 3");
-    updateGUI(linearMessage3);
-    
-    BinaryMessage linearMessage4("Linear 4");
-    updateGUI(linearMessage4);
+    createLinearMessage("Linear 1");
+    createLinearMessage("Linear 2");
+    createLinearMessage("Linear 3");
+    createLinearMessage("Linear 4");
     
     BinaryMessage communicationMessage("Communication");
     updateGUI(communicationMessage);
@@ -1883,7 +1909,7 @@ void print_data(std::list<uint8_t>& byteList){
 }
 
 
-void initArena(){
+void initArenaWindow(){
     arenaWindow = new Gtk::Window();
     arenaWindow->set_title("Arena Map/Cams");
 
@@ -1977,6 +2003,15 @@ void initArena(){
 }
 
 
+void initsensorsWindow(){
+    sensorsWindow = new Gtk::Window();
+    sensorsWindow->set_title("Sensor Window");
+
+    sensorsWindow->maximize();
+}
+
+
+/* Main function to receive the video stream and display it*/
 void videoMain(){
     std::thread broadcastListenThread2(videoBroadcastListen);
 
@@ -2096,13 +2131,81 @@ void videoMain(){
 
 }
 
+
+/* Function to check whether the old laptop is running the control program */
+void checkSize(){
+    auto display = Gdk::Display::get_default();
+    auto primary_monitor = display->get_monitor(0);
+    if (primary_monitor) {
+        Gdk::Rectangle geometry;
+        primary_monitor->get_geometry(geometry);
+        int x = geometry.get_x();
+        int y = geometry.get_y();
+        int width = geometry.get_width();
+        int height = geometry.get_height();
+        std::cout << "Height: " << height << std::endl << "Width: " << width << std::endl;
+        if(width < 1200){
+            smallLaptop = true;
+        }
+    }
+}
+
+
+void processArguments(int argc, char** argv){
+    if(argc > 1){
+        for(int i = 1; i < argc; ++i){
+            if(!strcmp("--help", argv[i])){
+
+            }
+            if(!strcmp("--init", argv[i])){
+                initVals = true;
+            }
+            if(!strcmp("--testing", argv[i])){
+                
+            }
+        }
+    }
+    checkSize();
+}
+
+
+void moveWindows(){
+    auto display = Gdk::Display::get_default();
+    int monitor_count = display->get_n_monitors();
+    if(monitor_count == 1){
+        auto primary_monitor = display->get_monitor(0);
+        Gdk::Rectangle primary_monitor_geometry;
+        primary_monitor->get_geometry(primary_monitor_geometry);
+        window->move(primary_monitor_geometry.get_x(), primary_monitor_geometry.get_y());
+        window->show();
+        window->raise();
+    }
+    if(monitor_count == 3){
+        auto second_monitor = display->get_monitor(1);
+        Gdk::Rectangle second_monitor_geometry;
+        second_monitor->get_geometry(second_monitor_geometry);
+        arenaWindow->move(second_monitor_geometry.get_x(), second_monitor_geometry.get_y());
+        arenaWindow->show();
+
+        auto third_monitor = display->get_monitor(2);
+        Gdk::Rectangle third_monitor_geometry;
+        third_monitor->get_geometry(third_monitor_geometry);
+        sensorsWindow->move(third_monitor_geometry.get_x(), third_monitor_geometry.get_y());
+        sensorsWindow->show();
+    }
+}
+
+
 //UDP Version
 int main(int argc, char** argv) { 
     //Setup GUI
     Glib::RefPtr<Gtk::Application> application = Gtk::Application::create(argc, argv, "edu.uark.razorbotz");
-    initArena();
     setupGUI(application);
+    processArguments(argc, argv);
+    initArenaWindow();
+    initsensorsWindow();
     initGUI();
+    moveWindows();
 
     
     //Start a thread to listen to updates from the robot

@@ -1707,8 +1707,9 @@ void adjustVideoRobotList(){
 }
 
 
-void initGUI(){
- 	BinaryMessage talonMessage1("Talon 1");
+void initGUI() {
+    // Initialize all the BinaryMessage components first
+    BinaryMessage talonMessage1("Talon 1");
     updateGUI(talonMessage1);
     
     BinaryMessage talonMessage2("Talon 2");
@@ -1719,8 +1720,73 @@ void initGUI(){
     
     BinaryMessage talonMessage4("Talon 4");
     updateGUI(talonMessage4);
-  
-    BinaryMessage falconMessage1("Falcon 1");
+
+    // Main container for visual elements
+    Gtk::Box* mainContainer = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 10));
+    mainContainer->set_halign(Gtk::ALIGN_CENTER);
+    mainContainer->set_valign(Gtk::ALIGN_CENTER);
+    mainContainer->set_margin_top(10);
+    mainContainer->set_margin_bottom(10);
+    mainContainer->set_margin_start(10);
+    mainContainer->set_margin_end(10);
+
+    // First row: Arm positions and camera placeholder
+    Gtk::Box* topRow = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 10));
+    topRow->set_halign(Gtk::ALIGN_CENTER);
+
+    // Initialize and add arm positions (left side)
+    initArmPos();
+    Gtk::Frame* armFrame = Gtk::manage(new Gtk::Frame("Arm Positions"));
+    armFrame->add(*armBox);
+    armFrame->set_size_request(150, 250);
+    topRow->add(*armFrame);
+
+    // Create centered transparent outlined rectangle (800x600)
+    Gtk::Frame* cameraPlaceholder = Gtk::manage(new Gtk::Frame());
+    cameraPlaceholder->set_shadow_type(Gtk::SHADOW_ETCHED_IN);
+    cameraPlaceholder->set_size_request(800, 600);
+    // Make content area transparent while keeping border
+    Gtk::Box* placeholderContent = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 0));
+    auto style_context = placeholderContent->get_style_context();
+    auto bg_color = style_context->get_background_color(Gtk::STATE_FLAG_NORMAL);
+    bg_color.set_alpha(0); // Fully transparent
+    placeholderContent->override_background_color(bg_color);
+    cameraPlaceholder->add(*placeholderContent);
+    topRow->add(*cameraPlaceholder);
+
+    // Initialize and add bucket positions (right side)
+    initBucketPos();
+    Gtk::Frame* bucketFrame = Gtk::manage(new Gtk::Frame("Bucket Positions"));
+    bucketFrame->add(*bucketBox);
+    bucketFrame->set_size_request(150, 250);
+    topRow->add(*bucketFrame);
+
+    mainContainer->add(*topRow);
+
+    // Second row: Roll and pitch indicators
+    initRollPitch();
+    Gtk::Box* orientationContainer = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 20));
+    orientationContainer->set_halign(Gtk::ALIGN_CENTER);
+    orientationContainer->set_margin_top(20);
+
+    // Roll indicator
+    Gtk::Frame* rollFrame = Gtk::manage(new Gtk::Frame("Roll"));
+    rollFrame->add(*roll_image);
+    rollFrame->set_size_request(200, 200);
+
+    // Pitch indicator
+    Gtk::Frame* pitchFrame = Gtk::manage(new Gtk::Frame("Pitch"));
+    pitchFrame->add(*pitch_image);
+    pitchFrame->set_size_request(200, 200);
+
+    orientationContainer->add(*rollFrame);
+    orientationContainer->add(*pitchFrame);
+    mainContainer->add(*orientationContainer);
+
+    // Add visual elements to sensorBox
+    sensorBox->add(*mainContainer);
+
+        BinaryMessage falconMessage1("Falcon 1");
     updateGUI(falconMessage1);
     
     BinaryMessage falconMessage2("Falcon 2");
@@ -1752,10 +1818,6 @@ void initGUI(){
     
     BinaryMessage zedMessage("Zed");
     updateGUI(zedMessage);
-    
-    initRollPitch();
-    initArmPos();
-    initBucketPos();
 
     BinaryMessage powerMessage("Power");
     updateGUI(powerMessage);
@@ -1763,6 +1825,9 @@ void initGUI(){
     BinaryMessage powerMessage2("Power2");
     updateGUI(powerMessage2);
 
+    // Ensure proper initial display
+    window->set_default_size(1200, 900);
+    window->show_all();
 }
 
 int key = 0x2C;

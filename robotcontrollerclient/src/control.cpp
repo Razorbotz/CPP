@@ -116,6 +116,7 @@ bool initVals = false;
 bool threeMonitors = false;
 bool smallLaptop = false;
 bool noVideo = false;
+bool noArena = false;
 
 int videoSock = 0; 
 bool videoConnected=false;
@@ -450,7 +451,7 @@ class BorderedBox : public Gtk::Box {
             double width = allocation.get_width();
             double height = allocation.get_height();
     
-            cr->set_line_width(2.0);
+            cr->set_line_width(1.0);
             cr->set_source_rgb(0, 0, 0);
     
             cr->rectangle(1, 1, width - 2, height - 2);
@@ -459,6 +460,57 @@ class BorderedBox : public Gtk::Box {
             return true;
         }
     };
+
+class CircleDrawingArea : public Gtk::DrawingArea{
+    public:
+        CircleDrawingArea()
+        {
+            color_.set_rgba(1.0, 0.0, 0.0, 1.0);
+            background_color_.set_rgba(1.0, 1.0, 1.0, 1.0);
+        }
+    
+        void set_color(const Gdk::RGBA& color)
+        {
+            color_ = color;
+            queue_draw();
+        }
+
+        void set_background_color(const Gdk::RGBA& color){
+            background_color_ = color;
+            queue_draw();
+        }
+    
+    protected:
+        bool on_draw(const Cairo::RefPtr<Cairo::Context>& cr) override
+        {
+            cr->set_source_rgba(background_color_.get_red(), background_color_.get_green(), background_color_.get_blue(), background_color_.get_alpha());
+            cr->paint();
+    
+            cr->set_source_rgba(color_.get_red(), color_.get_green(), color_.get_blue(), color_.get_alpha());
+    
+            double width = get_width();
+            double height = get_height();
+            double radius = std::min(width, height) / 4;
+    
+            cr->arc(width/2, height/2, radius, 0, 2*M_PI);
+            cr->fill();
+    
+            return true;
+        }
+    private:
+        Gdk::RGBA color_;
+        Gdk::RGBA background_color_;
+    };
+
+CircleDrawingArea* talon1Circle;
+CircleDrawingArea* talon2Circle;
+CircleDrawingArea* talon3Circle;
+CircleDrawingArea* talon4Circle;
+CircleDrawingArea* falcon1Circle;
+CircleDrawingArea* falcon2Circle;
+CircleDrawingArea* falcon3Circle;
+CircleDrawingArea* falcon4Circle;
+
 
 
 void initRollPitch(){
@@ -595,6 +647,19 @@ void initBucketPos(){
     }
 }
 
+void setBackgroundColors(Gdk::RGBA color){
+    talon1Circle->set_background_color(color);
+    talon2Circle->set_background_color(color);
+    talon3Circle->set_background_color(color);
+    talon4Circle->set_background_color(color);
+
+    falcon1Circle->set_background_color(color);
+    falcon2Circle->set_background_color(color);
+    falcon3Circle->set_background_color(color);
+    falcon4Circle->set_background_color(color);
+}
+
+
 // Dark mode
 const std::string darkMode = R"(
     * { font-family: 'Proxima Nova'; 
@@ -635,14 +700,19 @@ const std::string lightMode = R"(
 bool isLightMode = true;
 void toggleMode() {
     auto css_provider = Gtk::CssProvider::create();
+    Gdk::RGBA background;
 
     if (isLightMode) {
         css_provider->load_from_data(darkMode);
         isLightMode = false;
+        background.set("#f0faf2");
     } else {
         css_provider->load_from_data(lightMode);
         isLightMode = true;
+        background.set("#0b1a21");
     }
+    setBackgroundColors(background);
+
 
     auto screen = Gdk::Screen::get_default();
     Gtk::StyleContext::add_provider_for_screen(
@@ -697,13 +767,16 @@ void updateGUI (BinaryMessage& message){
                             pitch_image->set(newpitchpixbuf);
                         }
                         if(element.label == "pitch"){
-                            overlay_area->update_image_rotation(double(element.data.front().float32) - 90);
+                            if(!noArena)
+                                overlay_area->update_image_rotation(double(element.data.front().float32) - 90);
                         }
                         if(element.label == "Z"){
-                            overlay_area->update_image_y(double(element.data.front().float32) * MULTIPLIER_Y);
+                            if(!noArena)
+                                overlay_area->update_image_y(double(element.data.front().float32) * MULTIPLIER_Y);
                         }
                         if(element.label == "X"){
-                            overlay_area->update_image_x(double(element.data.front().float32) * MULTIPLIER_X);
+                            if(!noArena)
+                                overlay_area->update_image_x(double(element.data.front().float32) * MULTIPLIER_X);
                         }
                     }
                 }
@@ -718,6 +791,21 @@ void updateGUI (BinaryMessage& message){
             				bool synced = std::abs(left_arm_pos - right_arm_pos) > 50;
                             updateBackgroundColor(armBox, synced);
         				}
+                        if(element.label == "Bus Voltage"){
+                            float voltage = (element.data.begin()->uint16 / 100.0);
+                            if(voltage < 15.0){
+                                Gdk::RGBA red;
+                                red.set_rgba(1.0,0,0,1.0);
+                                if(!noVideo)
+                                    talon1Circle->set_color(red);
+                            }
+                            else{
+                                Gdk::RGBA green;
+                                green.set_rgba(0.0,1.0,0,1.0);
+                                if(!noVideo)
+                                    talon1Circle->set_color(green);
+                            }
+                        }
     				}
             	}
             	if(label == "Talon 2"){
@@ -729,6 +817,21 @@ void updateGUI (BinaryMessage& message){
             				bool synced = std::abs(left_arm_pos - right_arm_pos) > 50;
                             updateBackgroundColor(armBox, synced);
         				}
+                        if(element.label == "Bus Voltage"){
+                            float voltage = (element.data.begin()->uint16 / 100.0);
+                            if(voltage < 15.0){
+                                Gdk::RGBA red;
+                                red.set_rgba(1.0,0,0,1.0);
+                                if(!noVideo)
+                                    talon2Circle->set_color(red);
+                            }
+                            else{
+                                Gdk::RGBA green;
+                                green.set_rgba(0.0,1.0,0,1.0);
+                                if(!noVideo)
+                                    talon2Circle->set_color(green);
+                            }
+                        }
     				}
             	}
             	if(label == "Talon 3"){
@@ -740,6 +843,21 @@ void updateGUI (BinaryMessage& message){
             				bool synced = std::abs(left_bucket_pos - right_bucket_pos) > 50;
                             updateBackgroundColor(bucketBox, synced);
         				}
+                        if(element.label == "Bus Voltage"){
+                            float voltage = (element.data.begin()->uint16 / 100.0);
+                            if(voltage < 15.0){
+                                Gdk::RGBA red;
+                                red.set_rgba(1.0,0,0,1.0);
+                                if(!noVideo)
+                                    talon3Circle->set_color(red);
+                            }
+                            else{
+                                Gdk::RGBA green;
+                                green.set_rgba(0.0,1.0,0,1.0);
+                                if(!noVideo)
+                                    talon3Circle->set_color(green);
+                            }
+                        }
     				}
             	}
             	if(label == "Talon 4"){
@@ -751,6 +869,103 @@ void updateGUI (BinaryMessage& message){
             				bool synced = std::abs(left_bucket_pos - right_bucket_pos) > 50;
                             updateBackgroundColor(bucketBox, synced);
         				}
+                        if(element.label == "Bus Voltage"){
+                            float voltage = (element.data.begin()->uint16 / 100.0);
+                            if(voltage < 15.0){
+                                Gdk::RGBA red;
+                                red.set_rgba(1.0,0,0,1.0);
+                                if(!noVideo)
+                                    talon4Circle->set_color(red);
+                            }
+                            else{
+                                Gdk::RGBA green;
+                                green.set_rgba(0.0,1.0,0,1.0);
+                                if(!noVideo)
+                                    talon4Circle->set_color(green);
+                            }
+                        }
+    				}
+            	}
+            }
+            if(label.find("Falcon ") != std::string::npos){
+            	if(label == "Falcon 1"){
+            		for(int elementIndex=0; elementIndex<message.getObject().elementList.size(); elementIndex++){
+                    	Element element=message.getObject().elementList[elementIndex];
+                        if(element.label == "Bus Voltage"){
+                            float voltage = (element.data.begin()->uint16 / 100.0);
+                            if(voltage < 15.0){
+                                Gdk::RGBA red;
+                                red.set_rgba(1.0,0,0,1.0);
+                                if(!noVideo)
+                                    falcon1Circle->set_color(red);
+                            }
+                            else{
+                                Gdk::RGBA green;
+                                green.set_rgba(0.0,1.0,0,1.0);
+                                if(!noVideo)
+                                    falcon1Circle->set_color(green);
+                            }
+                        }
+    				}
+            	}
+            	if(label == "Falcon 2"){
+            		for(int elementIndex=0; elementIndex<message.getObject().elementList.size(); elementIndex++){
+                    	Element element=message.getObject().elementList[elementIndex];
+                        if(element.label == "Bus Voltage"){
+                            float voltage = (element.data.begin()->uint16 / 100.0);
+                            if(voltage < 15.0){
+                                Gdk::RGBA red;
+                                red.set_rgba(1.0,0,0,1.0);
+                                if(!noVideo)
+                                    falcon2Circle->set_color(red);
+                            }
+                            else{
+                                Gdk::RGBA green;
+                                green.set_rgba(0.0,1.0,0,1.0);
+                                if(!noVideo)
+                                    falcon2Circle->set_color(green);
+                            }
+                        }
+    				}
+            	}
+            	if(label == "Falcon 3"){
+            		for(int elementIndex=0; elementIndex<message.getObject().elementList.size(); elementIndex++){
+                    	Element element=message.getObject().elementList[elementIndex];
+                        if(element.label == "Bus Voltage"){
+                            float voltage = (element.data.begin()->uint16 / 100.0);
+                            if(voltage < 15.0){
+                                Gdk::RGBA red;
+                                red.set_rgba(1.0,0,0,1.0);
+                                if(!noVideo)
+                                    falcon3Circle->set_color(red);
+                            }
+                            else{
+                                Gdk::RGBA green;
+                                green.set_rgba(0.0,1.0,0,1.0);
+                                if(!noVideo)
+                                    falcon3Circle->set_color(green);
+                            }
+                        }
+    				}
+            	}
+            	if(label == "Falcon 4"){
+            		for(int elementIndex=0; elementIndex<message.getObject().elementList.size(); elementIndex++){
+                    	Element element=message.getObject().elementList[elementIndex];
+                        if(element.label == "Bus Voltage"){
+                            float voltage = (element.data.begin()->uint16 / 100.0);
+                            if(voltage < 15.0){
+                                Gdk::RGBA red;
+                                red.set_rgba(1.0,0,0,1.0);
+                                if(!noVideo)
+                                    falcon4Circle->set_color(red);
+                            }
+                            else{
+                                Gdk::RGBA green;
+                                green.set_rgba(0.0,1.0,0,1.0);
+                                if(!noVideo)
+                                    falcon4Circle->set_color(green);
+                            }
+                        }
     				}
             	}
             }
@@ -1492,79 +1707,155 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
     topControlsBox->add(*videoTopLevelBox);
     topLevelBox->add(*topControlsBox);
 
-    Gtk::Box* bottomBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
-    Gtk::Box* bottomInnerBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
-    innerLeftBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
-    Gtk::Box* innerMiddleBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
-    innerRightBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
-    bottomLowerBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
+    if(!noVideo){
+        Gtk::Box* bottomBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
+        Gtk::Box* bottomInnerBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
+        innerLeftBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
+        Gtk::Box* innerMiddleBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
+        innerRightBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
+        bottomLowerBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
 
-    Gtk::Box* talon1Box = Gtk::manage(new BorderedBox(Gtk::ORIENTATION_HORIZONTAL, 5));
-    Gtk::Box* talon2Box = Gtk::manage(new BorderedBox(Gtk::ORIENTATION_HORIZONTAL, 5));
-    Gtk::Box* talon3Box = Gtk::manage(new BorderedBox(Gtk::ORIENTATION_HORIZONTAL, 5));
-    Gtk::Box* talon4Box = Gtk::manage(new BorderedBox(Gtk::ORIENTATION_HORIZONTAL, 5));
+        Gtk::Box* talon1Box = Gtk::manage(new BorderedBox(Gtk::ORIENTATION_HORIZONTAL, 5));
+        Gtk::Box* talon2Box = Gtk::manage(new BorderedBox(Gtk::ORIENTATION_HORIZONTAL, 5));
+        Gtk::Box* talon3Box = Gtk::manage(new BorderedBox(Gtk::ORIENTATION_HORIZONTAL, 5));
+        Gtk::Box* talon4Box = Gtk::manage(new BorderedBox(Gtk::ORIENTATION_HORIZONTAL, 5));
 
-    Gtk::Label* talon1Label=Gtk::manage(new Gtk::Label("Talon 1"));
-    Gtk::Label* talon2Label=Gtk::manage(new Gtk::Label("Talon 2"));
-    Gtk::Label* talon3Label=Gtk::manage(new Gtk::Label("Talon 3"));
-    Gtk::Label* talon4Label=Gtk::manage(new Gtk::Label("Talon 4"));
+        Gtk::Label* talon1Label=Gtk::manage(new Gtk::Label("Talon 1"));
+        talon1Label->set_hexpand(true);
+        Gtk::Label* talon2Label=Gtk::manage(new Gtk::Label("Talon 2"));
+        talon2Label->set_hexpand(true);
+        Gtk::Label* talon3Label=Gtk::manage(new Gtk::Label("Talon 3"));
+        talon3Label->set_hexpand(true);
+        Gtk::Label* talon4Label=Gtk::manage(new Gtk::Label("Talon 4"));
+        talon4Label->set_hexpand(true);
 
-    talon1Box->add(*talon1Label);
-    talon2Box->add(*talon2Label);
-    talon3Box->add(*talon3Label);
-    talon4Box->add(*talon4Label);
+        talon1Box->add(*talon1Label);
+        talon1Box->set_size_request(300, 75);
+        talon2Box->add(*talon2Label);
+        talon2Box->set_size_request(300, 75);
+        talon3Box->add(*talon3Label);
+        talon3Box->set_size_request(300, 75);
+        talon4Box->add(*talon4Label);
+        talon4Box->set_size_request(300, 75);
 
-    innerLeftBox->set_size_request(400, 300);
-    innerLeftBox->set_hexpand(false);
-    innerLeftBox->set_vexpand(false);
+        talon1Circle = Gtk::manage(new CircleDrawingArea());
+        talon1Circle->set_size_request(75, 75);
+        talon1Circle->set_hexpand(false);
+        talon1Circle->set_halign(Gtk::ALIGN_CENTER);
+        talon1Box->add(*talon1Circle);
 
-    innerLeftBox->add(*talon1Box);
-    innerLeftBox->add(*talon2Box);
-    initArmPos();
-    innerLeftBox->add(*talon3Box);
-    innerLeftBox->add(*talon4Box);
+        talon2Circle = Gtk::manage(new CircleDrawingArea());
+        talon2Circle->set_size_request(75, 75);
+        talon2Circle->set_hexpand(false);
+        talon2Circle->set_halign(Gtk::ALIGN_CENTER);
+        talon2Box->add(*talon2Circle);
 
-    bottomInnerBox->add(*innerLeftBox);
+        talon3Circle = Gtk::manage(new CircleDrawingArea());
+        talon3Circle->set_size_request(75, 75);
+        talon3Circle->set_hexpand(false);
+        talon3Circle->set_halign(Gtk::ALIGN_CENTER);
+        talon3Box->add(*talon3Circle);
 
-    // Create centered transparent outlined rectangle (800x600)
-    Gtk::Box* cameraBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
-    cameraBox->set_size_request(800, 600);
-    innerMiddleBox->add(*cameraBox);
-    bottomInnerBox->add(*innerMiddleBox);
+        talon4Circle = Gtk::manage(new CircleDrawingArea());
+        talon4Circle->set_size_request(75, 75);
+        talon4Circle->set_hexpand(false);
+        talon4Circle->set_halign(Gtk::ALIGN_CENTER);
+        talon4Box->add(*talon4Circle);
 
-    Gtk::Box* falcon1Box = Gtk::manage(new BorderedBox(Gtk::ORIENTATION_HORIZONTAL, 5));
-    Gtk::Box* falcon2Box = Gtk::manage(new BorderedBox(Gtk::ORIENTATION_HORIZONTAL, 5));
-    Gtk::Box* falcon3Box = Gtk::manage(new BorderedBox(Gtk::ORIENTATION_HORIZONTAL, 5));
-    Gtk::Box* falcon4Box = Gtk::manage(new BorderedBox(Gtk::ORIENTATION_HORIZONTAL, 5));
+        innerLeftBox->set_size_request(300, 300);
+        innerLeftBox->set_hexpand(false);
+        innerLeftBox->set_vexpand(false);
 
-    Gtk::Label* falcon1Label=Gtk::manage(new Gtk::Label("Falcon 1"));
-    Gtk::Label* falcon2Label=Gtk::manage(new Gtk::Label("Falcon 2"));
-    Gtk::Label* falcon3Label=Gtk::manage(new Gtk::Label("Falcon 3"));
-    Gtk::Label* falcon4Label=Gtk::manage(new Gtk::Label("Falcon 4"));
+        innerLeftBox->add(*talon1Box);
+        innerLeftBox->add(*talon2Box);
+        initArmPos();
+        innerLeftBox->add(*talon3Box);
+        innerLeftBox->add(*talon4Box);
 
-    falcon1Box->add(*falcon1Label);
-    falcon2Box->add(*falcon2Label);
-    falcon3Box->add(*falcon3Label);
-    falcon4Box->add(*falcon4Label);
+        bottomInnerBox->add(*innerLeftBox);
 
-    innerRightBox->set_size_request(400, 300);
-    innerRightBox->set_hexpand(false);
-    innerRightBox->set_vexpand(false);
+        // Create centered transparent outlined rectangle (800x600)
+        Gtk::Box* cameraBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
+        cameraBox->set_size_request(800, 600);
+        innerMiddleBox->add(*cameraBox);
+        bottomInnerBox->add(*innerMiddleBox);
 
-    innerRightBox->add(*falcon1Box);
-    innerRightBox->add(*falcon2Box);
-    initBucketPos();
-    innerRightBox->add(*falcon3Box);
-    innerRightBox->add(*falcon4Box);
+        Gtk::Box* falcon1Box = Gtk::manage(new BorderedBox(Gtk::ORIENTATION_HORIZONTAL, 5));
+        Gtk::Box* falcon2Box = Gtk::manage(new BorderedBox(Gtk::ORIENTATION_HORIZONTAL, 5));
+        Gtk::Box* falcon3Box = Gtk::manage(new BorderedBox(Gtk::ORIENTATION_HORIZONTAL, 5));
+        Gtk::Box* falcon4Box = Gtk::manage(new BorderedBox(Gtk::ORIENTATION_HORIZONTAL, 5));
 
-    bottomInnerBox->add(*innerRightBox);
-    bottomInnerBox->set_halign(Gtk::ALIGN_CENTER);
-    bottomBox->add(*bottomInnerBox);
+        Gtk::Label* falcon1Label=Gtk::manage(new Gtk::Label("Falcon 1"));
+        falcon1Label->set_hexpand(true);
+        Gtk::Label* falcon2Label=Gtk::manage(new Gtk::Label("Falcon 2"));
+        falcon2Label->set_hexpand(true);
+        Gtk::Label* falcon3Label=Gtk::manage(new Gtk::Label("Falcon 3"));
+        falcon3Label->set_hexpand(true);
+        Gtk::Label* falcon4Label=Gtk::manage(new Gtk::Label("Falcon 4"));
+        falcon4Label->set_hexpand(true);
 
-    initRollPitch();
-    bottomLowerBox->set_halign(Gtk::ALIGN_CENTER);
-    bottomBox->add(*bottomLowerBox);
-    topLevelBox->add(*bottomBox);
+        falcon1Circle = Gtk::manage(new CircleDrawingArea());
+        falcon1Circle->set_size_request(75, 75);
+        falcon1Circle->set_hexpand(false);
+        falcon1Circle->set_halign(Gtk::ALIGN_CENTER);
+        falcon1Box->add(*falcon1Circle);
+
+        falcon2Circle = Gtk::manage(new CircleDrawingArea());
+        falcon2Circle->set_size_request(75, 75);
+        falcon2Circle->set_hexpand(false);
+        falcon2Circle->set_halign(Gtk::ALIGN_CENTER);
+        falcon2Box->add(*falcon2Circle);
+
+        falcon3Circle = Gtk::manage(new CircleDrawingArea());
+        falcon3Circle->set_size_request(75, 75);
+        falcon3Circle->set_hexpand(false);
+        falcon3Circle->set_halign(Gtk::ALIGN_CENTER);
+        falcon3Box->add(*falcon3Circle);
+
+        falcon4Circle = Gtk::manage(new CircleDrawingArea());
+        falcon4Circle->set_size_request(75, 75);
+        falcon4Circle->set_hexpand(false);
+        falcon4Circle->set_halign(Gtk::ALIGN_CENTER);
+        falcon4Box->add(*falcon4Circle);
+
+        falcon1Box->add(*falcon1Label);
+        falcon1Box->set_size_request(300, 75);
+        falcon2Box->add(*falcon2Label);
+        falcon2Box->set_size_request(300, 75);
+        falcon3Box->add(*falcon3Label);
+        falcon3Box->set_size_request(300, 75);
+        falcon4Box->add(*falcon4Label);
+        falcon4Box->set_size_request(300, 75);
+
+        innerRightBox->set_size_request(300, 300);
+        innerRightBox->set_hexpand(false);
+        innerRightBox->set_vexpand(false);
+
+        innerRightBox->add(*falcon1Box);
+        innerRightBox->add(*falcon2Box);
+        initBucketPos();
+        innerRightBox->add(*falcon3Box);
+        innerRightBox->add(*falcon4Box);
+
+        bottomInnerBox->add(*innerRightBox);
+        bottomInnerBox->set_halign(Gtk::ALIGN_CENTER);
+        bottomBox->add(*bottomInnerBox);
+
+        initRollPitch();
+        bottomLowerBox->set_halign(Gtk::ALIGN_CENTER);
+        bottomBox->add(*bottomLowerBox);
+        topLevelBox->add(*bottomBox);
+
+        Gdk::RGBA background;
+        background.set("#f0faf2");
+        setBackgroundColors(background);
+    }
+    else{
+        sensorBox = Gtk::manage(new Gtk::FlowBox());
+        sensorBox->set_orientation(Gtk::ORIENTATION_HORIZONTAL);
+        topLevelBox->add(*sensorBox);
+    }
+
 
     window->add(*topLevelBox);
     window->signal_delete_event().connect(sigc::ptr_fun(quit));
@@ -2218,18 +2509,20 @@ void processArguments(int argc, char** argv){
             if(!strcmp("--help", argv[i])){
 
             }
-            if(!strcmp("--init", argv[i])){
+            else if(!strcmp("--init", argv[i])){
                 initVals = true;
             }
-            if(!strcmp("--testing", argv[i])){
+            else if(!strcmp("--testing", argv[i])){
                 
             }
-            if(!strcmp("--no_video", argv[i])){
+            else if(!strcmp("--no_video", argv[i])){
                 noVideo = true;
+            }
+            else if(!strcmp("--no_arena", argv[i])){
+                noArena = true;
             }
         }
     }
-    checkSize();
 }
 
 
@@ -2259,14 +2552,20 @@ void moveWindows(){
     }
 }
 
+/*
+TODO: Add no_arena flag
+Add checks to run without arena being created
+
+*/
 
 //UDP Version
 int main(int argc, char** argv) { 
     //Setup GUI
     Glib::RefPtr<Gtk::Application> application = Gtk::Application::create(argc, argv, "edu.uark.razorbotz");
-    setupGUI(application);
     processArguments(argc, argv);
-    initArenaWindow();
+    setupGUI(application);
+    if(!noArena)
+        initArenaWindow();
     if(!noVideo)
         initSensorsWindow();
     initGUI();

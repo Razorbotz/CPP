@@ -437,6 +437,29 @@ Glib::RefPtr<Gdk::Pixbuf> rotate_image(Glib::RefPtr<Gdk::Pixbuf> pixbuf, double 
     return resized_pixbuf;
 }
 
+class BorderedBox : public Gtk::Box {
+    public:
+    BorderedBox(Gtk::Orientation orientation, int spacing)
+    : Gtk::Box(orientation, spacing) {}
+    
+    protected:
+        bool on_draw(const Cairo::RefPtr<Cairo::Context>& cr) override {
+            Gtk::Box::on_draw(cr); 
+    
+            auto allocation = get_allocation();
+            double width = allocation.get_width();
+            double height = allocation.get_height();
+    
+            cr->set_line_width(2.0);
+            cr->set_source_rgb(0, 0, 0);
+    
+            cr->rectangle(1, 1, width - 2, height - 2);
+            cr->stroke();
+    
+            return true;
+        }
+    };
+
 
 void initRollPitch(){
     if(!roll_init){
@@ -453,6 +476,12 @@ void initRollPitch(){
         catch(const Glib::FileError& e){
             g_print("Failed to load image: %s\n", e.what().c_str());
             return;
+        }
+
+        if(!noVideo){
+            Gtk::Box* padding = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
+            padding->set_size_request(200, 100);
+            bottomLowerBox->add(*padding);
         }
         
         Glib::RefPtr<Gdk::Pixbuf> newrollpixbuf = rotate_image(roll_pixbuf, roll_rotation_angle, 200, 200);
@@ -1470,11 +1499,10 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
     innerRightBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
     bottomLowerBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
 
-
-    Gtk::Box* talon1Box = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
-    Gtk::Box* talon2Box = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
-    Gtk::Box* talon3Box = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
-    Gtk::Box* talon4Box = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
+    Gtk::Box* talon1Box = Gtk::manage(new BorderedBox(Gtk::ORIENTATION_HORIZONTAL, 5));
+    Gtk::Box* talon2Box = Gtk::manage(new BorderedBox(Gtk::ORIENTATION_HORIZONTAL, 5));
+    Gtk::Box* talon3Box = Gtk::manage(new BorderedBox(Gtk::ORIENTATION_HORIZONTAL, 5));
+    Gtk::Box* talon4Box = Gtk::manage(new BorderedBox(Gtk::ORIENTATION_HORIZONTAL, 5));
 
     Gtk::Label* talon1Label=Gtk::manage(new Gtk::Label("Talon 1"));
     Gtk::Label* talon2Label=Gtk::manage(new Gtk::Label("Talon 2"));
@@ -1486,6 +1514,10 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
     talon3Box->add(*talon3Label);
     talon4Box->add(*talon4Label);
 
+    innerLeftBox->set_size_request(400, 300);
+    innerLeftBox->set_hexpand(false);
+    innerLeftBox->set_vexpand(false);
+
     innerLeftBox->add(*talon1Box);
     innerLeftBox->add(*talon2Box);
     initArmPos();
@@ -1495,22 +1527,15 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
     bottomInnerBox->add(*innerLeftBox);
 
     // Create centered transparent outlined rectangle (800x600)
-    Gtk::Frame* cameraPlaceholder = Gtk::manage(new Gtk::Frame());
-    cameraPlaceholder->set_shadow_type(Gtk::SHADOW_ETCHED_IN);
-    cameraPlaceholder->set_size_request(800, 600);
-    // Make content area transparent while keeping border
-    Gtk::Box* placeholderContent = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 0));
-    auto style_context2 = placeholderContent->get_style_context();
-    auto bg_color = style_context2->get_background_color(Gtk::STATE_FLAG_NORMAL);
-    bg_color.set_alpha(0); // Fully transparent
-    placeholderContent->override_background_color(bg_color);
-    cameraPlaceholder->add(*placeholderContent);
-    innerMiddleBox->add(*cameraPlaceholder);
+    Gtk::Box* cameraBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
+    cameraBox->set_size_request(800, 600);
+    innerMiddleBox->add(*cameraBox);
+    bottomInnerBox->add(*innerMiddleBox);
 
-    Gtk::Box* falcon1Box = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
-    Gtk::Box* falcon2Box = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
-    Gtk::Box* falcon3Box = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
-    Gtk::Box* falcon4Box = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
+    Gtk::Box* falcon1Box = Gtk::manage(new BorderedBox(Gtk::ORIENTATION_HORIZONTAL, 5));
+    Gtk::Box* falcon2Box = Gtk::manage(new BorderedBox(Gtk::ORIENTATION_HORIZONTAL, 5));
+    Gtk::Box* falcon3Box = Gtk::manage(new BorderedBox(Gtk::ORIENTATION_HORIZONTAL, 5));
+    Gtk::Box* falcon4Box = Gtk::manage(new BorderedBox(Gtk::ORIENTATION_HORIZONTAL, 5));
 
     Gtk::Label* falcon1Label=Gtk::manage(new Gtk::Label("Falcon 1"));
     Gtk::Label* falcon2Label=Gtk::manage(new Gtk::Label("Falcon 2"));
@@ -1522,6 +1547,10 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
     falcon3Box->add(*falcon3Label);
     falcon4Box->add(*falcon4Label);
 
+    innerRightBox->set_size_request(400, 300);
+    innerRightBox->set_hexpand(false);
+    innerRightBox->set_vexpand(false);
+
     innerRightBox->add(*falcon1Box);
     innerRightBox->add(*falcon2Box);
     initBucketPos();
@@ -1529,9 +1558,11 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
     innerRightBox->add(*falcon4Box);
 
     bottomInnerBox->add(*innerRightBox);
+    bottomInnerBox->set_halign(Gtk::ALIGN_CENTER);
     bottomBox->add(*bottomInnerBox);
 
     initRollPitch();
+    bottomLowerBox->set_halign(Gtk::ALIGN_CENTER);
     bottomBox->add(*bottomLowerBox);
     topLevelBox->add(*bottomBox);
 
@@ -1541,6 +1572,9 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
 }
 
 void initSensorsWindow(){
+    sensorsWindow = new Gtk::Window();
+    sensorsWindow->maximize();
+
     Gtk::Box* sensorTopLevelBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
 
     // Create horizontal flow box to hold sensor widgets
@@ -1549,7 +1583,6 @@ void initSensorsWindow(){
     sensorTopLevelBox->add(*sensorBox);
     sensorsWindow->add(*sensorTopLevelBox);
 
-    sensorsWindow->signal_delete_event().connect(sigc::ptr_fun(quit));
     sensorsWindow->show_all();
 }
 

@@ -103,6 +103,9 @@ cv::Mat latestFrame;
 bool newFrameAvailable;
   
 Gtk::FlowBox* sensorBox;
+Gtk::Box* innerLeftBox;
+Gtk::Box* innerRightBox;
+Gtk::Box* bottomLowerBox;
 
 Gtk::Window* window;
 int sock = 0; 
@@ -112,6 +115,7 @@ bool silentRunning=false;
 bool initVals = false;
 bool threeMonitors = false;
 bool smallLaptop = false;
+bool noVideo = false;
 
 int videoSock = 0; 
 bool videoConnected=false;
@@ -437,7 +441,11 @@ Glib::RefPtr<Gdk::Pixbuf> rotate_image(Glib::RefPtr<Gdk::Pixbuf> pixbuf, double 
 void initRollPitch(){
     if(!roll_init){
         roll_image = Gtk::manage(new Gtk::Image());
-        sensorBox->add(*roll_image);
+        
+        if(noVideo)
+            sensorBox->add(*roll_image);
+        else
+            bottomLowerBox->add(*roll_image);
         
         try{
             roll_pixbuf = Gdk::Pixbuf::create_from_file("../resources/RobotSide.png");
@@ -451,7 +459,10 @@ void initRollPitch(){
         roll_image->set(newrollpixbuf);
         
         pitch_image = Gtk::manage(new Gtk::Image());
-        sensorBox->add(*pitch_image);
+        if(noVideo)
+            sensorBox->add(*pitch_image);
+        else
+            bottomLowerBox->add(*pitch_image);
         
         try{
             pitch_pixbuf = Gdk::Pixbuf::create_from_file("../resources/RobotBack.png");
@@ -505,7 +516,10 @@ void initArmPos(){
         armTextBox->add(*armPosLabel);
         armTextBox->add(*armLabel);
         
-        sensorBox->add(*armTextBox);
+        if(noVideo)
+            sensorBox->add(*armTextBox);
+        else
+            innerLeftBox->add(*armTextBox);
 
         arm_init = true;
         window->show_all();
@@ -543,7 +557,10 @@ void initBucketPos(){
         bucketTextBox->add(*bucketPosLabel);
         bucketTextBox->add(*bucketLabel);
         
-        sensorBox->add(*bucketTextBox);
+        if(noVideo)
+            sensorBox->add(*bucketTextBox);
+        else
+            innerRightBox->add(*bucketTextBox);
         bucket_init = true;
         window->show_all();
     }
@@ -1416,11 +1433,6 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
     videoControlsBox->add(*toggleModeButton);
     videoTopLevelBox->add(*videoControlsBox);
 
-
-    // Create horizontal flow box to hold sensor widgets
-    sensorBox = Gtk::manage(new Gtk::FlowBox());
-    sensorBox->set_orientation(Gtk::ORIENTATION_HORIZONTAL);
-
     // Set size for address list box
     addressListBox->set_size_request(200, 75);
     scrolledList->set_size_request(200, 75);
@@ -1450,11 +1462,95 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
     topControlsBox->add(*controlsBox);
     topControlsBox->add(*videoTopLevelBox);
     topLevelBox->add(*topControlsBox);
-    topLevelBox->add(*sensorBox);
-    window->add(*topLevelBox);
 
+    Gtk::Box* bottomBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
+    Gtk::Box* bottomInnerBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
+    innerLeftBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
+    Gtk::Box* innerMiddleBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
+    innerRightBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
+    bottomLowerBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
+
+
+    Gtk::Box* talon1Box = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
+    Gtk::Box* talon2Box = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
+    Gtk::Box* talon3Box = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
+    Gtk::Box* talon4Box = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
+
+    Gtk::Label* talon1Label=Gtk::manage(new Gtk::Label("Talon 1"));
+    Gtk::Label* talon2Label=Gtk::manage(new Gtk::Label("Talon 2"));
+    Gtk::Label* talon3Label=Gtk::manage(new Gtk::Label("Talon 3"));
+    Gtk::Label* talon4Label=Gtk::manage(new Gtk::Label("Talon 4"));
+
+    talon1Box->add(*talon1Label);
+    talon2Box->add(*talon2Label);
+    talon3Box->add(*talon3Label);
+    talon4Box->add(*talon4Label);
+
+    innerLeftBox->add(*talon1Box);
+    innerLeftBox->add(*talon2Box);
+    initArmPos();
+    innerLeftBox->add(*talon3Box);
+    innerLeftBox->add(*talon4Box);
+
+    bottomInnerBox->add(*innerLeftBox);
+
+    // Create centered transparent outlined rectangle (800x600)
+    Gtk::Frame* cameraPlaceholder = Gtk::manage(new Gtk::Frame());
+    cameraPlaceholder->set_shadow_type(Gtk::SHADOW_ETCHED_IN);
+    cameraPlaceholder->set_size_request(800, 600);
+    // Make content area transparent while keeping border
+    Gtk::Box* placeholderContent = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 0));
+    auto style_context2 = placeholderContent->get_style_context();
+    auto bg_color = style_context2->get_background_color(Gtk::STATE_FLAG_NORMAL);
+    bg_color.set_alpha(0); // Fully transparent
+    placeholderContent->override_background_color(bg_color);
+    cameraPlaceholder->add(*placeholderContent);
+    innerMiddleBox->add(*cameraPlaceholder);
+
+    Gtk::Box* falcon1Box = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
+    Gtk::Box* falcon2Box = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
+    Gtk::Box* falcon3Box = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
+    Gtk::Box* falcon4Box = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
+
+    Gtk::Label* falcon1Label=Gtk::manage(new Gtk::Label("Falcon 1"));
+    Gtk::Label* falcon2Label=Gtk::manage(new Gtk::Label("Falcon 2"));
+    Gtk::Label* falcon3Label=Gtk::manage(new Gtk::Label("Falcon 3"));
+    Gtk::Label* falcon4Label=Gtk::manage(new Gtk::Label("Falcon 4"));
+
+    falcon1Box->add(*falcon1Label);
+    falcon2Box->add(*falcon2Label);
+    falcon3Box->add(*falcon3Label);
+    falcon4Box->add(*falcon4Label);
+
+    innerRightBox->add(*falcon1Box);
+    innerRightBox->add(*falcon2Box);
+    initBucketPos();
+    innerRightBox->add(*falcon3Box);
+    innerRightBox->add(*falcon4Box);
+
+    bottomInnerBox->add(*innerRightBox);
+    bottomBox->add(*bottomInnerBox);
+
+    initRollPitch();
+    bottomBox->add(*bottomLowerBox);
+    topLevelBox->add(*bottomBox);
+
+    window->add(*topLevelBox);
     window->signal_delete_event().connect(sigc::ptr_fun(quit));
     window->show_all();
+}
+
+void initSensorsWindow(){
+    Gtk::Box* sensorTopLevelBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
+
+    // Create horizontal flow box to hold sensor widgets
+    sensorBox = Gtk::manage(new Gtk::FlowBox());
+    sensorBox->set_orientation(Gtk::ORIENTATION_HORIZONTAL);
+    sensorTopLevelBox->add(*sensorBox);
+    sensorsWindow->add(*sensorTopLevelBox);
+
+    sensorsWindow->signal_delete_event().connect(sigc::ptr_fun(quit));
+    sensorsWindow->show_all();
 }
 
 
@@ -1755,102 +1851,42 @@ void createLinearMessage(std::string name){
 
 
 void initGUI() {
-    // Initialize all the BinaryMessage components first
-    createTalonMessage("Talon 1");
-    createTalonMessage("Talon 2");
-    createTalonMessage("Talon 3");
-    createTalonMessage("Talon 4");
-
-    // Main container for visual elements
-    Gtk::Box* mainContainer = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 10));
-    mainContainer->set_halign(Gtk::ALIGN_CENTER);
-    mainContainer->set_valign(Gtk::ALIGN_CENTER);
-    mainContainer->set_margin_top(10);
-    mainContainer->set_margin_bottom(10);
-    mainContainer->set_margin_start(10);
-    mainContainer->set_margin_end(10);
-
-    // First row: Arm positions and camera placeholder
-    Gtk::Box* topRow = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 10));
-    topRow->set_halign(Gtk::ALIGN_CENTER);
-
-    // Initialize and add arm positions (left side)
-    initArmPos();
-    Gtk::Frame* armFrame = Gtk::manage(new Gtk::Frame("Arm Positions"));
-    armFrame->add(*armBox);
-    armFrame->set_size_request(150, 250);
-    topRow->add(*armFrame);
-
-    // Create centered transparent outlined rectangle (800x600)
-    Gtk::Frame* cameraPlaceholder = Gtk::manage(new Gtk::Frame());
-    cameraPlaceholder->set_shadow_type(Gtk::SHADOW_ETCHED_IN);
-    cameraPlaceholder->set_size_request(800, 600);
-    // Make content area transparent while keeping border
-    Gtk::Box* placeholderContent = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 0));
-    auto style_context = placeholderContent->get_style_context();
-    auto bg_color = style_context->get_background_color(Gtk::STATE_FLAG_NORMAL);
-    bg_color.set_alpha(0); // Fully transparent
-    placeholderContent->override_background_color(bg_color);
-    cameraPlaceholder->add(*placeholderContent);
-    topRow->add(*cameraPlaceholder);
-
-    // Initialize and add bucket positions (right side)
-    initBucketPos();
-    Gtk::Frame* bucketFrame = Gtk::manage(new Gtk::Frame("Bucket Positions"));
-    bucketFrame->add(*bucketBox);
-    bucketFrame->set_size_request(150, 250);
-    topRow->add(*bucketFrame);
-
-    mainContainer->add(*topRow);
-
-    // Second row: Roll and pitch indicators
-    initRollPitch();
-    Gtk::Box* orientationContainer = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 20));
-    orientationContainer->set_halign(Gtk::ALIGN_CENTER);
-    orientationContainer->set_margin_top(20);
-
-    // Roll indicator
-    Gtk::Frame* rollFrame = Gtk::manage(new Gtk::Frame("Roll"));
-    rollFrame->add(*roll_image);
-    rollFrame->set_size_request(200, 200);
-
-    // Pitch indicator
-    Gtk::Frame* pitchFrame = Gtk::manage(new Gtk::Frame("Pitch"));
-    pitchFrame->add(*pitch_image);
-    pitchFrame->set_size_request(200, 200);
-
-    orientationContainer->add(*rollFrame);
-    orientationContainer->add(*pitchFrame);
-    mainContainer->add(*orientationContainer);
-
-    // Add visual elements to sensorBox
-    sensorBox->add(*mainContainer);
-
-    createTalonMessage("Falcon 1");
-    createTalonMessage("Falcon 2");
-    createTalonMessage("Falcon 3");
-    createTalonMessage("Falcon 4");
+    if(initVals){
+        createTalonMessage("Talon 1");
+        createTalonMessage("Talon 2");
+        createTalonMessage("Talon 3");
+        createTalonMessage("Talon 4");
+      
+        createTalonMessage("Falcon 1");
+        createTalonMessage("Falcon 2");
+        createTalonMessage("Falcon 3");
+        createTalonMessage("Falcon 4");
+        
+        createLinearMessage("Linear 1");
+        createLinearMessage("Linear 2");
+        createLinearMessage("Linear 3");
+        createLinearMessage("Linear 4");
+        
+        initRollPitch();
+        initArmPos();
+        initBucketPos();
+        
+        BinaryMessage communicationMessage("Communication");
+        updateGUI(communicationMessage);
+        
+        BinaryMessage autonomyMessage("Autonomy");
+        updateGUI(autonomyMessage);
+        
+        BinaryMessage zedMessage("Zed");
+        updateGUI(zedMessage);
     
-    createLinearMessage("Linear 1");
-    createLinearMessage("Linear 2");
-    createLinearMessage("Linear 3");
-    createLinearMessage("Linear 4");
+        BinaryMessage powerMessage("Power");
+        updateGUI(powerMessage);
     
-    BinaryMessage communicationMessage("Communication");
-    updateGUI(communicationMessage);
+        BinaryMessage powerMessage2("Power2");
+        updateGUI(powerMessage2);
+    }
     
-    BinaryMessage autonomyMessage("Autonomy");
-    updateGUI(autonomyMessage);
-    
-    BinaryMessage zedMessage("Zed");
-    updateGUI(zedMessage);
-
-    BinaryMessage powerMessage("Power");
-    updateGUI(powerMessage);
-
-    BinaryMessage powerMessage2("Power2");
-    updateGUI(powerMessage2);
-
     // Ensure proper initial display
     window->set_default_size(1200, 900);
     window->show_all();
@@ -2003,14 +2039,6 @@ void initArenaWindow(){
 }
 
 
-void initsensorsWindow(){
-    sensorsWindow = new Gtk::Window();
-    sensorsWindow->set_title("Sensor Window");
-
-    sensorsWindow->maximize();
-}
-
-
 /* Main function to receive the video stream and display it*/
 void videoMain(){
     std::thread broadcastListenThread2(videoBroadcastListen);
@@ -2144,7 +2172,7 @@ void checkSize(){
         int width = geometry.get_width();
         int height = geometry.get_height();
         std::cout << "Height: " << height << std::endl << "Width: " << width << std::endl;
-        if(width < 1200){
+        if(width < 1920){
             smallLaptop = true;
         }
     }
@@ -2162,6 +2190,9 @@ void processArguments(int argc, char** argv){
             }
             if(!strcmp("--testing", argv[i])){
                 
+            }
+            if(!strcmp("--no_video", argv[i])){
+                noVideo = true;
             }
         }
     }
@@ -2203,7 +2234,8 @@ int main(int argc, char** argv) {
     setupGUI(application);
     processArguments(argc, argv);
     initArenaWindow();
-    initsensorsWindow();
+    if(!noVideo)
+        initSensorsWindow();
     initGUI();
     moveWindows();
 

@@ -511,7 +511,268 @@ CircleDrawingArea* falcon2Circle;
 CircleDrawingArea* falcon3Circle;
 CircleDrawingArea* falcon4Circle;
 
+class MultiMotorGraph : public Gtk::Box {
+    public:
+        enum GraphType {
+            VOLTAGE,
+            CURRENT,
+            POSITION,
+            OUTPUT_PERCENT,
+            SPEED,
+            POTENTIOMETER
+        };
+    
+        MultiMotorGraph(const std::string& title, GraphType type, const std::vector<std::string>& motorNames)
+            : Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5),
+              title(title),
+              graphType(type),
+              motorNames(motorNames) {
+            
+            // Setup colors and ranges based on graph type
+            colors = {
+                {1.0, 0.0, 0.0}, // Red - Motor 1
+                {0.0, 0.5, 0.0}, // Green - Motor 2
+                {0.0, 0.0, 1.0}, // Blue - Motor 3
+                {1.0, 0.0, 1.0}, // Magenta - Motor 4
+                {1.0, 0.5, 0.0}, // Orange - Motor 5
+                {0.0, 0.5, 0.5}  // Teal - Motor 6
+            };
+    
+            // Set ranges based on graph type
+            switch(graphType) {
+                case VOLTAGE:
+                    minVal = 0.0f;
+                    maxVal = 15.0f; // 0-15V for Talon voltage
+                    yLabel = "Voltage (V)";
+                    break;
+                case CURRENT:
+                    minVal = 0.0f;
+                    maxVal = 50.0f; // 0-50A for current (adjust as needed)
+                    yLabel = "Current (A)";
+                    break;
+                case POSITION:
+                    minVal = 0.0f;
+                    maxVal = 1024.0f; // 0-1024 for position (adjust based on your sensor)
+                    yLabel = "Position (units)";
+                    break;
+                case OUTPUT_PERCENT:
+                    minVal = 0.0f;
+                    maxVal = 1.0f; // -100% to 100% output
+                    yLabel = "Output (%)";
+                    break;
+                case SPEED:
+                //TODO: SPEED RANGE 
+                minVal = 0.0f;
+                maxVal = 1.0f; // -100% to 100% speed
+                yLabel = "Speed (normalized)";
+                break;
+                case POTENTIOMETER:
+                //TODO: POTENTIOMETER RANGE 
+                    minVal = 0.0f;
+                    maxVal = 5.0f; // 0-5V typical for potentiometers
+                    // TODO: What is potentiometer measured in?
+                    yLabel = "Potentiometer (TODO)";
+                    break;
+            }
+    
+            // Create legend
+            setup_legend();
+            
+            // Create drawing area
+            setup_graph_area();
+        }
+    
+        void update_data(const std::string& motorName, float value) {
+            // For output percentage and speed, clamp values to [-1, 1] range
+            if (graphType == OUTPUT_PERCENT || graphType == SPEED) {
+                value = std::max(-1.0f, std::min(1.0f, value));
+            }
+            // For potentiometer, clamp to [0, 5] range
+            else if (graphType == POTENTIOMETER) {
+                value = std::max(0.0f, std::min(5.0f, value));
+            }
+            
+            data[motorName].push_back(value);
+            
+            if (data[motorName].size() > 100) {
+                data[motorName].pop_front();
+            }
+            graphArea->queue_draw();
+        }
+    
+    private:
+        void setup_legend() {
+            Gtk::Box* legendBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 10));
+            legendBox->property_margin().set_value(5);
+            
+            // Title with units
+            Gtk::Label* titleLabel = Gtk::manage(new Gtk::Label(title + " (" + yLabel + ")"));
+            titleLabel->set_halign(Gtk::ALIGN_START);
+            legendBox->add(*titleLabel);
+            
+            // Color indicators
+            for (size_t i = 0; i < motorNames.size(); i++) {
+                Gtk::DrawingArea* colorSwatch = Gtk::manage(new Gtk::DrawingArea());
+                colorSwatch->set_size_request(15, 15);
+                colorSwatch->signal_draw().connect(
+                    sigc::bind(sigc::mem_fun(*this, &MultiMotorGraph::draw_color_swatch), i));
+                
+                Gtk::Label* motorLabel = Gtk::manage(new Gtk::Label(motorNames[i]));
+                motorLabel->set_margin_start(5);
+                
+                Gtk::Box* legendItem = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 0));
+                legendItem->add(*colorSwatch);
+                legendItem->add(*motorLabel);
+                legendItem->set_margin_end(15);
+                
+                legendBox->add(*legendItem);
+            }
+            
+            this->add(*legendBox);
+        }
+    
+        void setup_graph_area() {
+            graphArea = Gtk::manage(new Gtk::DrawingArea());
+            graphArea->set_hexpand(true);
+            graphArea->set_vexpand(true);
+            graphArea->signal_draw().connect(
+                sigc::mem_fun(*this, &MultiMotorGraph::draw_graph));
+            this->add(*graphArea);
+        }
+    
+        bool draw_color_swatch(const Cairo::RefPtr<Cairo::Context>& cr, int colorIndex) {
+            const auto& color = colors[colorIndex % colors.size()];
+            cr->set_source_rgb(color[0], color[1], color[2]);
+            cr->rectangle(0, 0, 15, 15);
+            cr->fill();
+            return true;
+        }
+    
+        bool draw_graph(const Cairo::RefPtr<Cairo::Context>& cr) {
+            Gtk::Allocation alloc = graphArea->get_allocation();
+            const int width = alloc.get_width();
+            const int height = alloc.get_height();
+    
+            // Clear background
+            cr->set_source_rgb(1, 1, 1);
+            cr->paint();
+    
+            // Draw border
+            cr->set_source_rgb(0.7, 0.7, 0.7);
+            cr->rectangle(0, 0, width, height);
+            cr->stroke();
+    
+            // Calculate grid steps based on range
+            float range = maxVal - minVal;
+            float step;
+            
+            if (graphType == OUTPUT_PERCENT || graphType == SPEED) {
+                step = 0.1f; // 25% increments for output and speed
+            } else if (graphType == POTENTIOMETER) {
+                step = 1.0f; // 1V increments for potentiometer
+            } else {
+                step = (range > 1000) ? 100.0f :
+                      (range > 20) ? 5.0f : 
+                      (range > 10) ? 1.0f : 
+                      (range > 5) ? 1.0f : 0.5f;
+            }
+    
+            // Draw grid and labels
+            cr->set_source_rgb(0.9, 0.9, 0.9);
+            cr->select_font_face("Sans", Cairo::FONT_SLANT_NORMAL, Cairo::FONT_WEIGHT_NORMAL);
+            cr->set_font_size(10);
+            
+            // Special case for output percentage and speed to show 0 line
+            if (graphType == OUTPUT_PERCENT || graphType == SPEED) {
+                float zeroY = height - ((0 - minVal) / range) * (height - 20);
+                cr->set_source_rgb(0.7, 0.7, 0.7);
+                cr->move_to(0, zeroY);
+                cr->line_to(width, zeroY);
+                cr->stroke();
+                
+                cr->set_source_rgb(0, 0, 0);
+                cr->move_to(5, zeroY - 5);
+                cr->show_text("0");
+            }
+            
+            for (float v = minVal; v <= maxVal; v += step) {
+                // Skip 0 if we already drew it specially
+                if ((graphType == OUTPUT_PERCENT || graphType == SPEED) && v == 0) {
+                    continue;
+                }
+                
+                float y = height - ((v - minVal) / range) * (height - 20);
+                cr->set_source_rgb(0.9, 0.9, 0.9);
+                cr->move_to(0, y);
+                cr->line_to(width, y);
+                cr->stroke();
+                
+                cr->set_source_rgb(0, 0, 0);
+                cr->move_to(5, y - 5);
+                
+                // Format label based on value size and type
+                if (graphType == OUTPUT_PERCENT || graphType == SPEED) {
+                    cr->show_text(Glib::ustring::format(std::fixed, std::setprecision(0), v * 100) + "%");
+                } else if (graphType == POTENTIOMETER) {
+                    cr->show_text(Glib::ustring::format(std::fixed, std::setprecision(1), v) + "V");
+                } else if (maxVal > 100) {
+                    cr->show_text(Glib::ustring::format(std::fixed, std::setprecision(0), v));
+                } else {
+                    cr->show_text(Glib::ustring::format(std::fixed, std::setprecision(1), v));
+                }
+            }
+    
+            // Draw each motor's data
+            for (size_t i = 0; i < motorNames.size(); i++) {
+                const auto& name = motorNames[i];
+                if (data[name].empty()) continue;
+    
+                const auto& color = colors[i % colors.size()];
+                cr->set_source_rgb(color[0], color[1], color[2]);
+                cr->set_line_width(1.5);
+    
+                bool first = true;
+                for (size_t j = 0; j < data[name].size(); j++) {
+                    float x = (j / 100.0) * (width - 20) + 10;
+                    float y = height - ((data[name][j] - minVal) / range) * (height - 20);
+                    
+                    if (first) {
+                        cr->move_to(x, y);
+                        first = false;
+                    } else {
+                        cr->line_to(x, y);
+                    }
+                }
+                cr->stroke();
+            }
+    
+            return true;
+        }
+    
+        std::string title;
+        std::string yLabel;
+        GraphType graphType;
+        std::vector<std::string> motorNames;
+        std::map<std::string, std::deque<float>> data;
+        std::vector<std::array<double, 3>> colors;
+        float minVal;
+        float maxVal;
+        Gtk::DrawingArea* graphArea;
+};
 
+MultiMotorGraph* talonVoltageGraph;
+MultiMotorGraph* talonCurrentGraph;
+MultiMotorGraph* talonPositionGraph;
+MultiMotorGraph* talonPercentGraph;
+
+
+MultiMotorGraph* falconVoltageGraph;
+MultiMotorGraph* falconCurrentGraph;
+MultiMotorGraph* falconPositionGraph;
+MultiMotorGraph* falconPercentGraph;
+
+MultiMotorGraph* linearSpeedGraph;
+MultiMotorGraph* linearPotentiometerGraph;
 
 void initRollPitch(){
     if(!roll_init){
@@ -790,9 +1051,15 @@ void updateGUI (BinaryMessage& message){
             				left_arm->set_height_ratio((920 - element.data.front().uint16) / 920.0);
             				bool synced = std::abs(left_arm_pos - right_arm_pos) > 50;
                             updateBackgroundColor(armBox, synced);
+
+                            talonPositionGraph->update_data(label, synced);
+
         				}
                         if(element.label == "Bus Voltage"){
                             float voltage = (element.data.begin()->uint16 / 100.0);
+                            
+                            talonVoltageGraph->update_data(label, voltage);
+                            
                             if(voltage < 15.0){
                                 Gdk::RGBA red;
                                 red.set_rgba(1.0,0,0,1.0);
@@ -806,6 +1073,17 @@ void updateGUI (BinaryMessage& message){
                                     talon1Circle->set_color(green);
                             }
                         }
+                        if(element.label == "Output Current") {
+                            float current = (element.data.begin()->uint16 / 100.0);
+
+                            talonCurrentGraph->update_data(label, current);
+                        }
+                        if(element.label == "Output Percent") {
+                            float percent = (element.data.begin()->uint16);
+
+                            talonPercentGraph->update_data(label, percent);
+
+                        }
     				}
             	}
             	if(label == "Talon 2"){
@@ -816,9 +1094,14 @@ void updateGUI (BinaryMessage& message){
             				right_arm->set_height_ratio((920 - element.data.front().uint16) / 920.0);
             				bool synced = std::abs(left_arm_pos - right_arm_pos) > 50;
                             updateBackgroundColor(armBox, synced);
+
+                            talonPositionGraph->update_data(label, synced);
         				}
                         if(element.label == "Bus Voltage"){
                             float voltage = (element.data.begin()->uint16 / 100.0);
+
+                            talonVoltageGraph->update_data(label, voltage);
+
                             if(voltage < 15.0){
                                 Gdk::RGBA red;
                                 red.set_rgba(1.0,0,0,1.0);
@@ -832,6 +1115,17 @@ void updateGUI (BinaryMessage& message){
                                     talon2Circle->set_color(green);
                             }
                         }
+                        if(element.label == "Output Current") {
+                            float current = (element.data.begin()->uint16 / 100.0);
+
+                            talonCurrentGraph->update_data(label, current);
+                        }
+                        if(element.label == "Output Percent") {
+                            float percent = (element.data.begin()->uint16);
+
+                            talonPercentGraph->update_data(label, percent);
+
+                        }
     				}
             	}
             	if(label == "Talon 3"){
@@ -842,9 +1136,14 @@ void updateGUI (BinaryMessage& message){
             				left_bucket->set_height_ratio((700 - element.data.front().uint16) / 700.0);
             				bool synced = std::abs(left_bucket_pos - right_bucket_pos) > 50;
                             updateBackgroundColor(bucketBox, synced);
+
+                            talonPositionGraph->update_data(label, synced);
         				}
                         if(element.label == "Bus Voltage"){
                             float voltage = (element.data.begin()->uint16 / 100.0);
+
+                            talonVoltageGraph->update_data(label, voltage);
+
                             if(voltage < 15.0){
                                 Gdk::RGBA red;
                                 red.set_rgba(1.0,0,0,1.0);
@@ -858,6 +1157,17 @@ void updateGUI (BinaryMessage& message){
                                     talon3Circle->set_color(green);
                             }
                         }
+                        if(element.label == "Output Current") {
+                            float current = (element.data.begin()->uint16 / 100.0);
+
+                            talonCurrentGraph->update_data(label, current);
+                        }
+                        if(element.label == "Output Percent") {
+                            float percent = (element.data.begin()->uint16);
+
+                            talonPercentGraph->update_data(label, percent);
+
+                        }
     				}
             	}
             	if(label == "Talon 4"){
@@ -868,9 +1178,14 @@ void updateGUI (BinaryMessage& message){
             				right_bucket->set_height_ratio((700 - element.data.front().uint16) / 700.0);
             				bool synced = std::abs(left_bucket_pos - right_bucket_pos) > 50;
                             updateBackgroundColor(bucketBox, synced);
+
+                            talonPositionGraph->update_data(label, synced);
         				}
                         if(element.label == "Bus Voltage"){
                             float voltage = (element.data.begin()->uint16 / 100.0);
+                            
+                            talonVoltageGraph->update_data(label, voltage);
+
                             if(voltage < 15.0){
                                 Gdk::RGBA red;
                                 red.set_rgba(1.0,0,0,1.0);
@@ -884,15 +1199,30 @@ void updateGUI (BinaryMessage& message){
                                     talon4Circle->set_color(green);
                             }
                         }
+                        if(element.label == "Output Current") {
+                            float current = (element.data.begin()->uint16 / 100.0);
+
+                            talonCurrentGraph->update_data(label, current);
+                        }
+                        if(element.label == "Output Percent") {
+                            float percent = (element.data.begin()->uint16);
+
+                            talonPercentGraph->update_data(label, percent);
+
+                        }
     				}
             	}
             }
             if(label.find("Falcon ") != std::string::npos){
             	if(label == "Falcon 1"){
             		for(int elementIndex=0; elementIndex<message.getObject().elementList.size(); elementIndex++){
-                    	Element element=message.getObject().elementList[elementIndex];
+                    	// TODO: Sensor position
+                        Element element=message.getObject().elementList[elementIndex];
                         if(element.label == "Bus Voltage"){
                             float voltage = (element.data.begin()->uint16 / 100.0);
+                            
+                            falconVoltageGraph->update_data(label, voltage);
+
                             if(voltage < 15.0){
                                 Gdk::RGBA red;
                                 red.set_rgba(1.0,0,0,1.0);
@@ -906,13 +1236,28 @@ void updateGUI (BinaryMessage& message){
                                     falcon1Circle->set_color(green);
                             }
                         }
+                        if(element.label == "Output Current") {
+                            float current = (element.data.begin()->uint16 / 100.0);
+
+                            talonCurrentGraph->update_data(label, current);
+                        }
+                        if(element.label == "Output Percent") {
+                            float percent = (element.data.begin()->uint16);
+
+                            talonPercentGraph->update_data(label, percent);
+
+                        }
     				}
             	}
             	if(label == "Falcon 2"){
             		for(int elementIndex=0; elementIndex<message.getObject().elementList.size(); elementIndex++){
                     	Element element=message.getObject().elementList[elementIndex];
+                        // TODO: Sensor position
                         if(element.label == "Bus Voltage"){
                             float voltage = (element.data.begin()->uint16 / 100.0);
+                                      
+                            falconVoltageGraph->update_data(label, voltage);
+
                             if(voltage < 15.0){
                                 Gdk::RGBA red;
                                 red.set_rgba(1.0,0,0,1.0);
@@ -926,13 +1271,28 @@ void updateGUI (BinaryMessage& message){
                                     falcon2Circle->set_color(green);
                             }
                         }
+                        if(element.label == "Output Current") {
+                            float current = (element.data.begin()->uint16 / 100.0);
+
+                            talonCurrentGraph->update_data(label, current);
+                        }
+                        if(element.label == "Output Percent") {
+                            float percent = (element.data.begin()->uint16);
+
+                            talonPercentGraph->update_data(label, percent);
+
+                        }
     				}
             	}
             	if(label == "Falcon 3"){
             		for(int elementIndex=0; elementIndex<message.getObject().elementList.size(); elementIndex++){
                     	Element element=message.getObject().elementList[elementIndex];
+                        // TODO: Sensor position
                         if(element.label == "Bus Voltage"){
                             float voltage = (element.data.begin()->uint16 / 100.0);
+                            
+                            falconVoltageGraph->update_data(label, voltage);
+                      
                             if(voltage < 15.0){
                                 Gdk::RGBA red;
                                 red.set_rgba(1.0,0,0,1.0);
@@ -946,25 +1306,51 @@ void updateGUI (BinaryMessage& message){
                                     falcon3Circle->set_color(green);
                             }
                         }
+                        if(element.label == "Output Current") {
+                            float current = (element.data.begin()->uint16 / 100.0);
+
+                            talonCurrentGraph->update_data(label, current);
+                        }
+                        if(element.label == "Output Percent") {
+                            float percent = (element.data.begin()->uint16);
+
+                            talonPercentGraph->update_data(label, percent);
+
+                        }
     				}
             	}
             	if(label == "Falcon 4"){
             		for(int elementIndex=0; elementIndex<message.getObject().elementList.size(); elementIndex++){
                     	Element element=message.getObject().elementList[elementIndex];
+                        // TODO: Sensor position
                         if(element.label == "Bus Voltage"){
                             float voltage = (element.data.begin()->uint16 / 100.0);
+                                      
+                            falconVoltageGraph->update_data(label, voltage);
+
                             if(voltage < 15.0){
                                 Gdk::RGBA red;
                                 red.set_rgba(1.0,0,0,1.0);
-                                if(!noVideo)
+                                if(!noVideo) // TODO: Same condition
                                     falcon4Circle->set_color(red);
                             }
                             else{
                                 Gdk::RGBA green;
                                 green.set_rgba(0.0,1.0,0,1.0);
-                                if(!noVideo)
+                                if(!noVideo) // TODO: Same condition 
                                     falcon4Circle->set_color(green);
                             }
+                        }
+                        if(element.label == "Output Current") {
+                            float current = (element.data.begin()->uint16 / 100.0);
+
+                            talonCurrentGraph->update_data(label, current);
+                        }
+                        if(element.label == "Output Percent") {
+                            float percent = (element.data.begin()->uint16);
+
+                            talonPercentGraph->update_data(label, percent);
+
                         }
     				}
             	}
@@ -987,6 +1373,7 @@ void updateGUI (BinaryMessage& message){
                     }
                 }
             }
+            // TODO: if label == "LINEAR"
             for(int elementIndex=0; elementIndex<message.getObject().elementList.size(); elementIndex++){
                 Element element=message.getObject().elementList[elementIndex];
                 if(element.type == TYPE::BOOLEAN){
@@ -1862,21 +2249,101 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
     window->show_all();
 }
 
-void initSensorsWindow(){
+// void initSensorsWindow(){
+//     sensorsWindow = new Gtk::Window();
+//     sensorsWindow->maximize();
+
+//     Gtk::Box* sensorTopLevelBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
+
+//     // Create horizontal flow box to hold sensor widgets
+//     sensorBox = Gtk::manage(new Gtk::FlowBox());
+//     sensorBox->set_orientation(Gtk::ORIENTATION_HORIZONTAL);
+//     sensorTopLevelBox->add(*sensorBox);
+//     sensorsWindow->add(*sensorTopLevelBox);
+
+//     sensorsWindow->show_all();
+// }
+
+
+// void add_graph_with_frame(Gtk::Box* container, MultiMotorGraph* graph) {
+//     Gtk::Frame* frame = Gtk::manage(new Gtk::Frame());
+//     frame->set_shadow_type(Gtk::SHADOW_ETCHED_IN);
+//     frame->add(*graph);
+//     container->add(*frame);
+// }
+
+void initSensorsWindow() {
     sensorsWindow = new Gtk::Window();
     sensorsWindow->maximize();
 
-    Gtk::Box* sensorTopLevelBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
+    Gtk::Box* mainBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
+    mainBox->property_margin().set_value(10);
 
-    // Create horizontal flow box to hold sensor widgets
-    sensorBox = Gtk::manage(new Gtk::FlowBox());
-    sensorBox->set_orientation(Gtk::ORIENTATION_HORIZONTAL);
-    sensorTopLevelBox->add(*sensorBox);
-    sensorsWindow->add(*sensorTopLevelBox);
+    // Create motor name vectors
+    std::vector<std::string> talonNames = {"Talon 1", "Talon 2", "Talon 3", "Talon 4"};
+    std::vector<std::string> falconNames = {"Falcon 1", "Falcon 2", "Falcon 3", "Falcon 4"};
+    std::vector<std::string> linearNames = {"Linear 1", "Linear 2"};
 
+    // Create tabbed interface
+    Gtk::Notebook* tabs = Gtk::manage(new Gtk::Notebook());
+    tabs->set_vexpand(true);
+
+    // Tab 1: Talon Motors
+    Gtk::Box* talonTab = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
+    talonTab->property_margin().set_value(5);
+
+    talonVoltageGraph = Gtk::manage(new MultiMotorGraph(
+        "Talon Bus Voltage", MultiMotorGraph::VOLTAGE, talonNames));
+    talonCurrentGraph = Gtk::manage(new MultiMotorGraph(
+        "Talon Output Current", MultiMotorGraph::CURRENT, talonNames));
+    talonPositionGraph = Gtk::manage(new MultiMotorGraph(
+        "Talon Sensor Position", MultiMotorGraph::POSITION, talonNames));
+    MultiMotorGraph* talonOutputGraph = Gtk::manage(new MultiMotorGraph(
+        "Talon Output Percentage", MultiMotorGraph::OUTPUT_PERCENT, talonNames));
+
+    talonTab->add(*talonVoltageGraph);
+    talonTab->add(*talonCurrentGraph);
+    talonTab->add(*talonPositionGraph);
+    talonTab->add(*talonOutputGraph);
+    tabs->append_page(*talonTab, "Talon Motors");
+
+    // Tab 2: Falcon Motors
+    Gtk::Box* falconTab = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
+    falconTab->property_margin().set_value(5);
+
+    falconVoltageGraph = Gtk::manage(new MultiMotorGraph(
+        "Falcon Bus Voltage", MultiMotorGraph::VOLTAGE, falconNames));
+    falconCurrentGraph = Gtk::manage(new MultiMotorGraph(
+        "Falcon Output Current", MultiMotorGraph::CURRENT, falconNames));
+    falconPositionGraph = Gtk::manage(new MultiMotorGraph(
+        "Falcon Sensor Position", MultiMotorGraph::POSITION, falconNames));
+    MultiMotorGraph* falconOutputGraph = Gtk::manage(new MultiMotorGraph(
+        "Falcon Output Percentage", MultiMotorGraph::OUTPUT_PERCENT, falconNames));
+
+    falconTab->add(*falconVoltageGraph);
+    falconTab->add(*falconCurrentGraph);
+    falconTab->add(*falconPositionGraph);
+    falconTab->add(*falconOutputGraph);
+    tabs->append_page(*falconTab, "Falcon Motors");
+
+    // Tab 3: Linear Actuators
+    Gtk::Box* linearTab = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
+    linearTab->property_margin().set_value(5);
+
+    linearSpeedGraph = Gtk::manage(new MultiMotorGraph(
+        "Linear Actuator Speed", MultiMotorGraph::SPEED, linearNames));
+    linearPotentiometerGraph = Gtk::manage(new MultiMotorGraph(
+        "Linear Actuator Position", MultiMotorGraph::POTENTIOMETER, linearNames));
+
+    linearTab->add(*linearSpeedGraph);
+    linearTab->add(*linearPotentiometerGraph);
+    tabs->append_page(*linearTab, "Linear Actuators");
+
+    // Add everything to main window
+    mainBox->add(*tabs);
+    sensorsWindow->add(*mainBox);
     sensorsWindow->show_all();
 }
-
 
 struct RemoteRobot{
     std::string tag;

@@ -26,6 +26,7 @@
 #include <cairomm/context.h>
 #include <pangomm.h>
 //#include <gdk-pixbuf/gdk-pixbuf.h>
+#include <unordered_set>
 
 #include <cstdlib>
 #include <opencv2/opencv.hpp>
@@ -330,111 +331,85 @@ class ImageOverlay : public Gtk::DrawingArea {
 ImageOverlay* overlay_area;
 
 Glib::RefPtr<Gdk::Pixbuf> rotate_image(Glib::RefPtr<Gdk::Pixbuf> pixbuf, double angle_deg, int target_width, int target_height) {
-    // Convert degrees to radians
     double angle_rad = angle_deg * M_PI / 180.0;
 
-    // Get the original width and height
     int width = pixbuf->get_width();
     int height = pixbuf->get_height();
 
-    // Calculate new width and height after rotation
     int new_width = static_cast<int>(std::abs(width * std::cos(angle_rad)) + std::abs(height * std::sin(angle_rad)));
     int new_height = static_cast<int>(std::abs(width * std::sin(angle_rad)) + std::abs(height * std::cos(angle_rad)));
 
-    // Create a new pixbuf to hold the rotated image
-    Glib::RefPtr<Gdk::Pixbuf> rotated_pixbuf = Gdk::Pixbuf::create(Gdk::COLORSPACE_RGB, true, 8, new_width, new_height);
+    auto surface = Cairo::ImageSurface::create(Cairo::FORMAT_ARGB32, new_width, new_height);
+    auto cr = Cairo::Context::create(surface);
 
-    // Access the raw pixel data of the original image
-    unsigned char* pixels = pixbuf->get_pixels();
-    int rowstride = pixbuf->get_rowstride();
-    int channels = pixbuf->get_n_channels();
+    // Fill background
+    if (angle_deg > 30 || angle_deg < -30) {
+        cr->set_source_rgb(1.0, 0.0, 0.0); // Red
+    } else {
+        cr->set_source_rgb(1.0, 1.0, 1.0); // White
+    }
+    cr->paint();
 
-    // Access the raw pixel data of the rotated image
-    unsigned char* rotated_pixels = rotated_pixbuf->get_pixels();
-    int rotated_rowstride = rotated_pixbuf->get_rowstride();
+    // Move to center and rotate
+    cr->translate(new_width / 2.0, new_height / 2.0);
+    cr->rotate(angle_rad);
+    cr->translate(-width / 2.0, -height / 2.0);
 
-    // Calculate the center of the original image and the rotated image
-    double center_x = width / 2.0;
-    double center_y = height / 2.0;
-    double new_center_x = new_width / 2.0;
-    double new_center_y = new_height / 2.0;
+    // Draw original pixbuf
+    Gdk::Cairo::set_source_pixbuf(cr, pixbuf, 0, 0);
+    cr->paint();
 
-    // Loop through the new pixbuf and calculate where each pixel from the original image will go
+    // Copy Cairo surface into a new Pixbuf
+    Glib::RefPtr<Gdk::Pixbuf> rotated_pixbuf = Gdk::Pixbuf::create(
+        Gdk::COLORSPACE_RGB, true, 8, new_width, new_height
+    );
+
+    unsigned char* dest_pixels = rotated_pixbuf->get_pixels();
+    int dest_stride = rotated_pixbuf->get_rowstride();
+    const unsigned char* src_pixels = surface->get_data();
+    int src_stride = surface->get_stride();
+
     for (int y = 0; y < new_height; ++y) {
-        for (int x = 0; x < new_width; ++x) {
-            // Translate (x, y) to center-based coordinates
-            double new_x = x - new_center_x;
-            double new_y = y - new_center_y;
+        memcpy(dest_pixels + y * dest_stride, src_pixels + y * src_stride, new_width * 4);
+    }
 
-            // Apply the rotation matrix (inverse transformation)
-            double old_x = new_x * std::cos(angle_rad) + new_y * std::sin(angle_rad) + center_x;
-            double old_y = -new_x * std::sin(angle_rad) + new_y * std::cos(angle_rad) + center_y;
+    // Crop to target size
+    int crop_x = std::max(0, (new_width - target_width) / 2);
+    int crop_y = std::max(0, (new_height - target_height) / 2);
 
-            // Check if the old coordinates are within the bounds of the original image
-            if (old_x >= 0 && old_x < width && old_y >= 0 && old_y < height) {
-                // Compute pixel position in the original image
-                int old_pixel_x = static_cast<int>(old_x);
-                int old_pixel_y = static_cast<int>(old_y);
+    Glib::RefPtr<Gdk::Pixbuf> resized_pixbuf = rotated_pixbuf->create_subpixbuf(rotated_pixbuf,
+        crop_x, crop_y, target_width, target_height
+    );
 
-                // Get the pixel data from the original image
-                unsigned char* original_pixel = pixels + old_pixel_y * rowstride + old_pixel_x * channels;
+    // Draw black markers
+    unsigned char* new_pixels = resized_pixbuf->get_pixels();
+    int new_rowstride = resized_pixbuf->get_rowstride();
+    int new_channels = resized_pixbuf->get_n_channels();
 
-                // Get the pixel data for the rotated image
-                unsigned char* rotated_pixel = rotated_pixels + y * rotated_rowstride + x * channels;
-
-                // Copy the pixel data to the rotated image
-                for (int c = 0; c < channels; ++c) {
-                    rotated_pixel[c] = original_pixel[c];
-                }
+    for (int y = 98; y <= 101; ++y) {
+        unsigned char* row_start = new_pixels + y * new_rowstride;
+        
+        for (int x = 0; x <= 15; ++x) {
+            unsigned char* new_pixel = row_start + x * new_channels;
+            new_pixel[0] = 0;
+            new_pixel[1] = 0;
+            new_pixel[2] = 0;
+            if (new_channels == 4) {
+                new_pixel[3] = 255;
             }
-            else {
-                unsigned char* rotated_pixel = rotated_pixels + y * rotated_rowstride + x * channels;
-                if(angle_deg > 30 || angle_deg < -30){
-                    rotated_pixel[0] = 255;
-                    rotated_pixel[1] = 0;
-                    rotated_pixel[2] = 0;
-                    if (channels == 4) {
-                        rotated_pixel[3] = 255;
-                    }
-                }
-                else{
-                    rotated_pixel[0] = 255;
-                    rotated_pixel[1] = 255;
-                    rotated_pixel[2] = 255;
-                    if (channels == 4) {
-                        rotated_pixel[3] = 255;
-                    }
-                }
+        }
+    
+        for (int x = 185; x <= 199; ++x) {
+            unsigned char* new_pixel = row_start + x * new_channels;
+            new_pixel[0] = 0;
+            new_pixel[1] = 0;
+            new_pixel[2] = 0;
+            if (new_channels == 4) {
+                new_pixel[3] = 255;
             }
         }
     }
 
-    int crop_x = std::max(0, (new_width - target_width) / 2);
-    int crop_y = std::max(0, (new_height - target_height) / 2);
-    
-    Glib::RefPtr<Gdk::Pixbuf> resized_pixbuf = rotated_pixbuf->create_subpixbuf(rotated_pixbuf, crop_x, crop_y, target_width, target_height);
-    
-	unsigned char* new_pixels = resized_pixbuf->get_pixels();
-	int new_rowstride = resized_pixbuf->get_rowstride();
-	int new_channels = resized_pixbuf->get_n_channels();
-		
-	for (int y = 0; y < new_height; ++y) {
-    	for (int x = 0; x < new_width; ++x) {
-    	unsigned char* new_pixel = new_pixels + y * new_rowstride + x * new_channels;
-            if(y == 98 || y == 99 || y == 100 || y == 101){
-    			if(x <= 15 || x == 199 || x == 198 || x == 197 || x == 196
-    			|| x == 195|| x == 194|| x == 193|| x == 192|| x == 191 || x == 190
-    			|| x == 189|| x == 188|| x == 187|| x == 186 || x == 185){
-    				new_pixel[0] = 0;
-		            new_pixel[1] = 0;
-		            new_pixel[2] = 0;
-		            if (channels == 4) {
-		                new_pixel[3] = 255;
-		            }
-    			}
-    		}
-        }
-	}
     return resized_pixbuf;
 }
 
@@ -763,13 +738,13 @@ class MultiMotorGraph : public Gtk::Box {
 MultiMotorGraph* talonVoltageGraph;
 MultiMotorGraph* talonCurrentGraph;
 MultiMotorGraph* talonPositionGraph;
-MultiMotorGraph* talonPercentGraph;
+MultiMotorGraph* talonOutputGraph;
 
 
 MultiMotorGraph* falconVoltageGraph;
 MultiMotorGraph* falconCurrentGraph;
 MultiMotorGraph* falconPositionGraph;
-MultiMotorGraph* falconPercentGraph;
+MultiMotorGraph* falconOutputGraph;
 
 MultiMotorGraph* linearSpeedGraph;
 MultiMotorGraph* linearPotentiometerGraph;
@@ -966,14 +941,15 @@ void toggleMode() {
     if (isLightMode) {
         css_provider->load_from_data(darkMode);
         isLightMode = false;
-        background.set("#f0faf2");
-    } else {
+        background.set("#0b1a21");
+    } 
+    else {
         css_provider->load_from_data(lightMode);
         isLightMode = true;
-        background.set("#0b1a21");
+        background.set("#f0faf2");
     }
-    setBackgroundColors(background);
-
+    if(!noVideo)
+        setBackgroundColors(background);
 
     auto screen = Gdk::Screen::get_default();
     Gtk::StyleContext::add_provider_for_screen(
@@ -1007,522 +983,256 @@ void updateBackgroundColor(Gtk::Box* box, bool synced){
     }
 }
 
+const std::set<std::string> talonLabels = {"Talon 1", "Talon 2", "Talon 3", "Talon 4"};
+const std::set<std::string> falconLabels = {"Falcon 1", "Falcon 2", "Falcon 3", "Falcon 4"};
 
-void updateGUI (BinaryMessage& message){
-    for(int frameIndex=0; frameIndex < infoFrameList.size(); frameIndex++){
-	    InfoFrame* infoFrame = infoFrameList[frameIndex]; 
-        std::string label = message.getLabel();
-        if(infoFrame->get_label() == message.getLabel()){
-            if(label == "Zed"){
-                for(int elementIndex=0; elementIndex<message.getObject().elementList.size(); elementIndex++){
-                    Element element=message.getObject().elementList[elementIndex];
-                    if(element.type == TYPE::FLOAT32){
-                        if(element.label == "roll"){
-                            roll_rotation_angle = std::round(element.data.front().float32);
-                            Glib::RefPtr<Gdk::Pixbuf> newrollpixbuf = rotate_image(roll_pixbuf, -roll_rotation_angle, 200, 200);
-                            roll_image->set(newrollpixbuf);
-                        }
-                        if(element.label == "yaw"){
-                            pitch_rotation_angle = std::round(element.data.front().float32);
-                            Glib::RefPtr<Gdk::Pixbuf> newpitchpixbuf = rotate_image(pitch_pixbuf, pitch_rotation_angle, 200, 200);
-                            pitch_image->set(newpitchpixbuf);
-                        }
-                        if(element.label == "pitch"){
-                            if(!noArena)
-                                overlay_area->update_image_rotation(double(element.data.front().float32) - 90);
-                        }
-                        if(element.label == "Z"){
-                            if(!noArena)
-                                overlay_area->update_image_y(double(element.data.front().float32) * MULTIPLIER_Y);
-                        }
-                        if(element.label == "X"){
-                            if(!noArena)
-                                overlay_area->update_image_x(double(element.data.front().float32) * MULTIPLIER_X);
-                        }
-                    }
-                }
-            }
-            if(label.find("Talon ") != std::string::npos){
-            	if(label == "Talon 1"){
-            		for(int elementIndex=0; elementIndex<message.getObject().elementList.size(); elementIndex++){
-                    	Element element=message.getObject().elementList[elementIndex];
-                    	if(element.label == "Sensor Position"){
-                    		left_arm_pos = element.data.front().uint16;
-            				left_arm->set_height_ratio((920 - element.data.front().uint16) / 920.0);
-            				bool synced = std::abs(left_arm_pos - right_arm_pos) > 50;
-                            updateBackgroundColor(armBox, synced);
 
-                            talonPositionGraph->update_data(label, synced);
+CircleDrawingArea* getTalonCircle(const std::string& label) {
+    if (label == "Talon 1") return talon1Circle;
+    if (label == "Talon 2") return talon2Circle;
+    if (label == "Talon 3") return talon3Circle;
+    if (label == "Talon 4") return talon4Circle;
+    return nullptr;
+}
 
-        				}
-                        if(element.label == "Bus Voltage"){
-                            float voltage = (element.data.begin()->uint16 / 100.0);
-                            
-                            talonVoltageGraph->update_data(label, voltage);
-                            
-                            if(voltage < 15.0){
-                                Gdk::RGBA red;
-                                red.set_rgba(1.0,0,0,1.0);
-                                if(!noVideo)
-                                    talon1Circle->set_color(red);
-                            }
-                            else{
-                                Gdk::RGBA green;
-                                green.set_rgba(0.0,1.0,0,1.0);
-                                if(!noVideo)
-                                    talon1Circle->set_color(green);
-                            }
-                        }
-                        if(element.label == "Output Current") {
-                            float current = (element.data.begin()->uint16 / 100.0);
 
-                            talonCurrentGraph->update_data(label, current);
-                        }
-                        if(element.label == "Output Percent") {
-                            float percent = (element.data.begin()->uint16);
+CircleDrawingArea* getFalconCircle(const std::string& label) {
+    if (label == "Falcon 1") return falcon1Circle;
+    if (label == "Falcon 2") return falcon2Circle;
+    if (label == "Falcon 3") return falcon3Circle;
+    if (label == "Falcon 4") return falcon4Circle;
+    return nullptr;
+}
 
-                            talonPercentGraph->update_data(label, percent);
 
-                        }
-    				}
-            	}
-            	if(label == "Talon 2"){
-            		for(int elementIndex=0; elementIndex<message.getObject().elementList.size(); elementIndex++){
-                    	Element element=message.getObject().elementList[elementIndex];
-                    	if(element.label == "Sensor Position"){
-                    		right_arm_pos = element.data.front().uint16;
-            				right_arm->set_height_ratio((920 - element.data.front().uint16) / 920.0);
-            				bool synced = std::abs(left_arm_pos - right_arm_pos) > 50;
-                            updateBackgroundColor(armBox, synced);
+void updateCircleColor(CircleDrawingArea* circle, bool lowVoltage) {
+    if (!circle || noVideo) return;
 
-                            talonPositionGraph->update_data(label, synced);
-        				}
-                        if(element.label == "Bus Voltage"){
-                            float voltage = (element.data.begin()->uint16 / 100.0);
+    Gdk::RGBA color;
+    if (lowVoltage)
+        color.set_rgba(1.0, 0.0, 0.0, 1.0); // Red
+    else
+        color.set_rgba(0.0, 1.0, 0.0, 1.0); // Green
 
-                            talonVoltageGraph->update_data(label, voltage);
+    circle->set_color(color);
+}
 
-                            if(voltage < 15.0){
-                                Gdk::RGBA red;
-                                red.set_rgba(1.0,0,0,1.0);
-                                if(!noVideo)
-                                    talon2Circle->set_color(red);
-                            }
-                            else{
-                                Gdk::RGBA green;
-                                green.set_rgba(0.0,1.0,0,1.0);
-                                if(!noVideo)
-                                    talon2Circle->set_color(green);
-                            }
-                        }
-                        if(element.label == "Output Current") {
-                            float current = (element.data.begin()->uint16 / 100.0);
 
-                            talonCurrentGraph->update_data(label, current);
-                        }
-                        if(element.label == "Output Percent") {
-                            float percent = (element.data.begin()->uint16);
+void handleZedElements(const std::vector<Element>& elements) {
+    for (const auto& element : elements) {
+        if (element.type != TYPE::FLOAT32) continue;
+        float value = element.data.front().float32;
 
-                            talonPercentGraph->update_data(label, percent);
-
-                        }
-    				}
-            	}
-            	if(label == "Talon 3"){
-            		for(int elementIndex=0; elementIndex<message.getObject().elementList.size(); elementIndex++){
-                    	Element element=message.getObject().elementList[elementIndex];
-                    	if(element.label == "Sensor Position"){
-                    		left_bucket_pos = element.data.front().uint16;
-            				left_bucket->set_height_ratio((700 - element.data.front().uint16) / 700.0);
-            				bool synced = std::abs(left_bucket_pos - right_bucket_pos) > 50;
-                            updateBackgroundColor(bucketBox, synced);
-
-                            talonPositionGraph->update_data(label, synced);
-        				}
-                        if(element.label == "Bus Voltage"){
-                            float voltage = (element.data.begin()->uint16 / 100.0);
-
-                            talonVoltageGraph->update_data(label, voltage);
-
-                            if(voltage < 15.0){
-                                Gdk::RGBA red;
-                                red.set_rgba(1.0,0,0,1.0);
-                                if(!noVideo)
-                                    talon3Circle->set_color(red);
-                            }
-                            else{
-                                Gdk::RGBA green;
-                                green.set_rgba(0.0,1.0,0,1.0);
-                                if(!noVideo)
-                                    talon3Circle->set_color(green);
-                            }
-                        }
-                        if(element.label == "Output Current") {
-                            float current = (element.data.begin()->uint16 / 100.0);
-
-                            talonCurrentGraph->update_data(label, current);
-                        }
-                        if(element.label == "Output Percent") {
-                            float percent = (element.data.begin()->uint16);
-
-                            talonPercentGraph->update_data(label, percent);
-
-                        }
-    				}
-            	}
-            	if(label == "Talon 4"){
-            		for(int elementIndex=0; elementIndex<message.getObject().elementList.size(); elementIndex++){
-                    	Element element=message.getObject().elementList[elementIndex];
-                    	if(element.label == "Sensor Position"){
-                    		right_bucket_pos = element.data.front().uint16;
-            				right_bucket->set_height_ratio((700 - element.data.front().uint16) / 700.0);
-            				bool synced = std::abs(left_bucket_pos - right_bucket_pos) > 50;
-                            updateBackgroundColor(bucketBox, synced);
-
-                            talonPositionGraph->update_data(label, synced);
-        				}
-                        if(element.label == "Bus Voltage"){
-                            float voltage = (element.data.begin()->uint16 / 100.0);
-                            
-                            talonVoltageGraph->update_data(label, voltage);
-
-                            if(voltage < 15.0){
-                                Gdk::RGBA red;
-                                red.set_rgba(1.0,0,0,1.0);
-                                if(!noVideo)
-                                    talon4Circle->set_color(red);
-                            }
-                            else{
-                                Gdk::RGBA green;
-                                green.set_rgba(0.0,1.0,0,1.0);
-                                if(!noVideo)
-                                    talon4Circle->set_color(green);
-                            }
-                        }
-                        if(element.label == "Output Current") {
-                            float current = (element.data.begin()->uint16 / 100.0);
-
-                            talonCurrentGraph->update_data(label, current);
-                        }
-                        if(element.label == "Output Percent") {
-                            float percent = (element.data.begin()->uint16);
-
-                            talonPercentGraph->update_data(label, percent);
-
-                        }
-    				}
-            	}
-            }
-            if(label.find("Falcon ") != std::string::npos){
-            	if(label == "Falcon 1"){
-            		for(int elementIndex=0; elementIndex<message.getObject().elementList.size(); elementIndex++){
-                    	// TODO: Sensor position
-                        Element element=message.getObject().elementList[elementIndex];
-                        if(element.label == "Bus Voltage"){
-                            float voltage = (element.data.begin()->uint16 / 100.0);
-                            
-                            falconVoltageGraph->update_data(label, voltage);
-
-                            if(voltage < 15.0){
-                                Gdk::RGBA red;
-                                red.set_rgba(1.0,0,0,1.0);
-                                if(!noVideo)
-                                    falcon1Circle->set_color(red);
-                            }
-                            else{
-                                Gdk::RGBA green;
-                                green.set_rgba(0.0,1.0,0,1.0);
-                                if(!noVideo)
-                                    falcon1Circle->set_color(green);
-                            }
-                        }
-                        if(element.label == "Output Current") {
-                            float current = (element.data.begin()->uint16 / 100.0);
-
-                            talonCurrentGraph->update_data(label, current);
-                        }
-                        if(element.label == "Output Percent") {
-                            float percent = (element.data.begin()->uint16);
-
-                            talonPercentGraph->update_data(label, percent);
-
-                        }
-    				}
-            	}
-            	if(label == "Falcon 2"){
-            		for(int elementIndex=0; elementIndex<message.getObject().elementList.size(); elementIndex++){
-                    	Element element=message.getObject().elementList[elementIndex];
-                        // TODO: Sensor position
-                        if(element.label == "Bus Voltage"){
-                            float voltage = (element.data.begin()->uint16 / 100.0);
-                                      
-                            falconVoltageGraph->update_data(label, voltage);
-
-                            if(voltage < 15.0){
-                                Gdk::RGBA red;
-                                red.set_rgba(1.0,0,0,1.0);
-                                if(!noVideo)
-                                    falcon2Circle->set_color(red);
-                            }
-                            else{
-                                Gdk::RGBA green;
-                                green.set_rgba(0.0,1.0,0,1.0);
-                                if(!noVideo)
-                                    falcon2Circle->set_color(green);
-                            }
-                        }
-                        if(element.label == "Output Current") {
-                            float current = (element.data.begin()->uint16 / 100.0);
-
-                            talonCurrentGraph->update_data(label, current);
-                        }
-                        if(element.label == "Output Percent") {
-                            float percent = (element.data.begin()->uint16);
-
-                            talonPercentGraph->update_data(label, percent);
-
-                        }
-    				}
-            	}
-            	if(label == "Falcon 3"){
-            		for(int elementIndex=0; elementIndex<message.getObject().elementList.size(); elementIndex++){
-                    	Element element=message.getObject().elementList[elementIndex];
-                        // TODO: Sensor position
-                        if(element.label == "Bus Voltage"){
-                            float voltage = (element.data.begin()->uint16 / 100.0);
-                            
-                            falconVoltageGraph->update_data(label, voltage);
-                      
-                            if(voltage < 15.0){
-                                Gdk::RGBA red;
-                                red.set_rgba(1.0,0,0,1.0);
-                                if(!noVideo)
-                                    falcon3Circle->set_color(red);
-                            }
-                            else{
-                                Gdk::RGBA green;
-                                green.set_rgba(0.0,1.0,0,1.0);
-                                if(!noVideo)
-                                    falcon3Circle->set_color(green);
-                            }
-                        }
-                        if(element.label == "Output Current") {
-                            float current = (element.data.begin()->uint16 / 100.0);
-
-                            talonCurrentGraph->update_data(label, current);
-                        }
-                        if(element.label == "Output Percent") {
-                            float percent = (element.data.begin()->uint16);
-
-                            talonPercentGraph->update_data(label, percent);
-
-                        }
-    				}
-            	}
-            	if(label == "Falcon 4"){
-            		for(int elementIndex=0; elementIndex<message.getObject().elementList.size(); elementIndex++){
-                    	Element element=message.getObject().elementList[elementIndex];
-                        // TODO: Sensor position
-                        if(element.label == "Bus Voltage"){
-                            float voltage = (element.data.begin()->uint16 / 100.0);
-                                      
-                            falconVoltageGraph->update_data(label, voltage);
-
-                            if(voltage < 15.0){
-                                Gdk::RGBA red;
-                                red.set_rgba(1.0,0,0,1.0);
-                                if(!noVideo) // TODO: Same condition
-                                    falcon4Circle->set_color(red);
-                            }
-                            else{
-                                Gdk::RGBA green;
-                                green.set_rgba(0.0,1.0,0,1.0);
-                                if(!noVideo) // TODO: Same condition 
-                                    falcon4Circle->set_color(green);
-                            }
-                        }
-                        if(element.label == "Output Current") {
-                            float current = (element.data.begin()->uint16 / 100.0);
-
-                            talonCurrentGraph->update_data(label, current);
-                        }
-                        if(element.label == "Output Percent") {
-                            float percent = (element.data.begin()->uint16);
-
-                            talonPercentGraph->update_data(label, percent);
-
-                        }
-    				}
-            	}
-            }
-            if(label == "Communication"){
-                for(int elementIndex=0; elementIndex<message.getObject().elementList.size(); elementIndex++){
-                    Element element=message.getObject().elementList[elementIndex];
-                    if(element.label == "Wi-Fi" || element.label == "CAN Bus"){
-                        std::string theString= "";
-                        for(auto iterator=element.data.begin(); iterator != element.data.end(); iterator++ ){
-                            theString.push_back(iterator->character);
-                        }
-                        if(theString == "NON-FUNCTIONAL" || theString == "INTERFERENCE" || theString == "DOWN"){
-                            infoFrame->setBackground(element.label, "#FF0000");
-                            infoFrame->setTextColor(element.label, "white", true);
-                        }
-                        else{
-                            updateBackgroundColor(infoFrame, element.label);
-                        }
-                    }
-                }
-            }
-            // TODO: if label == "LINEAR"
-            for(int elementIndex=0; elementIndex<message.getObject().elementList.size(); elementIndex++){
-                Element element=message.getObject().elementList[elementIndex];
-                if(element.type == TYPE::BOOLEAN){
-                    infoFrame->setItem(element.label, element.data.front().boolean );
-                }
-                if(element.type == TYPE::UINT8){
-                	infoFrame->setItem(element.label, element.data.front().uint8 );
-                }
-                if(element.type == TYPE::INT8){
-                    infoFrame->setItem(element.label, element.data.front().int8 );
-                }
-                if(element.type == TYPE::UINT16){
-                	if(element.label == "Bus Voltage"){
-						// Change this over to float
-						float voltage = (element.data.begin()->uint16 / 100.0);
-                        if(voltage < 15.0){
-                            infoFrame->setBackground(element.label, "#FF0000");
-                            infoFrame->setTextColor(element.label, "white", true);
-                        }
-                        else{
-                            updateBackgroundColor(infoFrame, element.label);
-                        }
-						infoFrame->setItem(element.label, voltage);
-		    		}
-                    else if(element.label == "Output Current"){
-                        // Change this over to float
-						float voltage = (element.data.begin()->uint16 / 100.0);
-                        updateBackgroundColor(infoFrame, element.label);
-						infoFrame->setItem(element.label, voltage);
-                    }
-		    		else{
-	                    infoFrame->setItem(element.label, element.data.front().uint16 );
-					}
-                }
-                if(element.type == TYPE::INT16){
-                    infoFrame->setItem(element.label, element.data.front().int16 );
-                }
-                if(element.type == TYPE::UINT32){
-                    infoFrame->setItem(element.label, element.data.front().uint32 );
-                }
-                if(element.type == TYPE::INT32){
-                    infoFrame->setItem(element.label, element.data.front().int32 );
-                }
-                if(element.type == TYPE::UINT64){
-                    infoFrame->setItem(element.label, element.data.front().uint64 );
-                }
-                if(element.type == TYPE::INT64){
-                    infoFrame->setItem(element.label, element.data.front().int64 );
-                }
-                if(element.type == TYPE::FLOAT32){
-                    infoFrame->setItem(element.label, element.data.front().float32 );
-                }
-                if(element.type == TYPE::FLOAT64){
-                    infoFrame->setItem(element.label, element.data.front().float64 );
-                }
-                if(element.type == TYPE::STRING){
-                    std::string theString= "";
-                    for(auto iterator=element.data.begin(); iterator != element.data.end(); iterator++ ){
-                        theString.push_back(iterator->character);
-                    }
-                    infoFrame->setItem(element.label, theString );
-                }
-            }
-            return;
+        if (element.label == "roll") {
+            roll_rotation_angle = std::round(value);
+            roll_image->set(rotate_image(roll_pixbuf, -roll_rotation_angle, 200, 200));
+        }
+        else if (element.label == "yaw") {
+            pitch_rotation_angle = std::round(value);
+            pitch_image->set(rotate_image(pitch_pixbuf, pitch_rotation_angle, 200, 200));
+        }
+        else if (element.label == "pitch" && !noArena) {
+            overlay_area->update_image_rotation(value - 90);
+        }
+        else if (element.label == "Z" && !noArena) {
+            overlay_area->update_image_y(value * MULTIPLIER_Y);
+        }
+        else if (element.label == "X" && !noArena) {
+            overlay_area->update_image_x(value * MULTIPLIER_X);
         }
     }
+}
 
+void handleTalonElements(const std::string& label, const std::vector<Element>& elements) {
+    for (const auto& element : elements) {
+        if (element.label == "Sensor Position") {
+            int pos = element.data.front().uint16;
+            if (label == "Talon 1") {
+                left_arm_pos = pos;
+                left_arm->set_height_ratio((920 - pos) / 920.0);
+            }
+            else if (label == "Talon 2") {
+                right_arm_pos = pos;
+                right_arm->set_height_ratio((920 - pos) / 920.0);
+            }
+            else if (label == "Talon 3") {
+                left_bucket_pos = pos;
+                left_bucket->set_height_ratio((700 - pos) / 700.0);
+            }
+            else if (label == "Talon 4") {
+                right_bucket_pos = pos;
+                right_bucket->set_height_ratio((700 - pos) / 700.0);
+            }
+
+            bool synced = std::abs(left_arm_pos - right_arm_pos) > 50;
+            if (label == "Talon 1" || label == "Talon 2")
+                updateBackgroundColor(armBox, synced);
+            else
+                updateBackgroundColor(bucketBox, synced);
+
+            if (!noVideo) talonPositionGraph->update_data(label, pos);
+        }
+        else if (element.label == "Bus Voltage") {
+            float voltage = element.data.front().uint16 / 100.0f;
+            if (!noVideo) talonVoltageGraph->update_data(label, voltage);
+            updateCircleColor(getTalonCircle(label), voltage < 15.0f);
+        }
+        else if (element.label == "Output Current") {
+            float current = element.data.front().uint16 / 100.0f;
+            if (!noVideo) talonCurrentGraph->update_data(label, current);
+        }
+        else if (element.label == "Output Percent") {
+            float percent = element.data.front().uint16;
+            if (!noVideo) talonOutputGraph->update_data(label, percent);
+        }
+    }
+}
+
+void handleFalconElements(const std::string& label, const std::vector<Element>& elements) {
+    for (const auto& element : elements) {
+        if (element.label == "Bus Voltage") {
+            float voltage = element.data.front().uint16 / 100.0f;
+            if (!noVideo) falconVoltageGraph->update_data(label, voltage);
+            updateCircleColor(getFalconCircle(label), voltage < 15.0f);
+        }
+        else if (element.label == "Output Current") {
+            float current = element.data.front().uint16 / 100.0f;
+            if (!noVideo) falconCurrentGraph->update_data(label, current);
+        }
+        else if (element.label == "Output Percent") {
+            float percent = element.data.front().uint16;
+            if (!noVideo) falconOutputGraph->update_data(label, percent);
+        }
+    }
+}
+
+void handleCommunicationElements(InfoFrame* frame, const std::vector<Element>& elements) {
+    for (const auto& element : elements) {
+        if (element.label != "Wi-Fi" && element.label != "CAN Bus") continue;
+
+        std::string text;
+        for (const auto& c : element.data) text += c.character;
+
+        if (text == "NON-FUNCTIONAL" || text == "INTERFERENCE" || text == "DOWN") {
+            frame->setBackground(element.label, "#FF0000");
+            frame->setTextColor(element.label, "white", true);
+        }
+        else {
+            updateBackgroundColor(frame, element.label);
+        }
+    }
+}
+
+void handleGenericElements(InfoFrame* frame, const std::vector<Element>& elements) {
+    for (const auto& element : elements) {
+        const auto& value = element.data.front();
+
+        if (element.type == TYPE::BOOLEAN)       frame->setItem(element.label, value.boolean);
+        else if (element.type == TYPE::UINT8)     frame->setItem(element.label, value.uint8);
+        else if (element.type == TYPE::INT8)      frame->setItem(element.label, value.int8);
+        else if (element.type == TYPE::UINT16) {
+            float val = value.uint16 / 100.0f;
+            if (element.label == "Bus Voltage" && val < 15.0f) {
+                frame->setBackground(element.label, "#FF0000");
+                frame->setTextColor(element.label, "white", true);
+            }
+            else updateBackgroundColor(frame, element.label);
+            frame->setItem(element.label, val);
+        }
+        else if (element.type == TYPE::INT16)     frame->setItem(element.label, value.int16);
+        else if (element.type == TYPE::UINT32)    frame->setItem(element.label, value.uint32);
+        else if (element.type == TYPE::INT32)     frame->setItem(element.label, value.int32);
+        else if (element.type == TYPE::UINT64)    frame->setItem(element.label, value.uint64);
+        else if (element.type == TYPE::INT64)     frame->setItem(element.label, value.int64);
+        else if (element.type == TYPE::FLOAT32)   frame->setItem(element.label, value.float32);
+        else if (element.type == TYPE::FLOAT64)   frame->setItem(element.label, value.float64);
+        else if (element.type == TYPE::STRING) {
+            std::string text;
+            for (const auto& c : element.data) text += c.character;
+            frame->setItem(element.label, text);
+        }
+    }
+}
+
+const std::unordered_set<std::string> validLabels = {
+    "Falcon 1", "Falcon 2", "Falcon 3", "Falcon 4",
+    "Talon 1", "Talon 2", "Talon 3", "Talon 4",
+    "Linear 1", "Linear 2", "Linear 3", "Linear 4",
+    "Zed", "Autonomy", "Communication", "Power", "Power2"
+};
+
+void addElementToInfoFrame(InfoFrame* frame, const Element& element) {
+    frame->addItem(element.label);
+    const auto& data = element.data.front();
+
+    switch (element.type) {
+        case TYPE::BOOLEAN:   frame->setItem(element.label, data.boolean); break;
+        case TYPE::INT8:      frame->setItem(element.label, data.int8); break;
+        case TYPE::UINT8:     frame->setItem(element.label, data.uint8); break;
+        case TYPE::INT16:     frame->setItem(element.label, data.int16); break;
+        case TYPE::UINT16:
+            if (element.label == "Bus Voltage" || element.label == "Output Current")
+                frame->setItem(element.label, data.uint16 / 100.0f);
+            else
+                frame->setItem(element.label, data.uint16);
+            break;
+        case TYPE::INT32:     frame->setItem(element.label, data.int32); break;
+        case TYPE::UINT32:    frame->setItem(element.label, data.uint32); break;
+        case TYPE::INT64:     frame->setItem(element.label, data.int64); break;
+        case TYPE::UINT64:    frame->setItem(element.label, data.uint64); break;
+        case TYPE::FLOAT32:   frame->setItem(element.label, data.float32); break;
+        case TYPE::FLOAT64:   frame->setItem(element.label, data.float64); break;
+        case TYPE::STRING: {
+            std::string text;
+            for (const auto& c : element.data) text += c.character;
+            frame->setItem(element.label, text);
+            break;
+        }
+        default: break;
+    }
+}
+
+void updateGUI(BinaryMessage& message) {
     std::string label = message.getLabel();
-	if(label == "Falcon 1" || label == "Falcon 2" || label == "Falcon 3" || label == "Falcon 4"
-	|| label == "Talon 1" || label == "Talon 2" || label == "Talon 3" || label == "Talon 4"
-	|| label == "Linear 1" || label == "Linear 2" || label == "Linear 3" || label == "Linear 4"
-	|| label == "Zed" || label == "Autonomy" || label == "Communication" || label == "Power" || label == "Power2"){
 
-        if((label == "Talon 1" || label == "Talon 2") && !arm_init){
-            initArmPos();
-        }
-        if((label == "Talon 3" || label == "Talon 4") && !bucket_init){
-            initBucketPos();
-        }
-        if(label == "Zed" && !roll_init){
-            initRollPitch();
-        }
-        InfoFrame* infoFrame=Gtk::manage( new InfoFrame(message.getLabel()) );
-        infoFrameList.push_back(infoFrame);
+    for (InfoFrame* frame : infoFrameList) {
+        if (frame->get_label() != label) continue;
 
-        for(int index=0;index<message.getObject().elementList.size() ; index++){
-            Element element=message.getObject().elementList[index];
-            if(element.type == TYPE::BOOLEAN){
-                infoFrame->addItem(element.label);
-                infoFrame->setItem(element.label, element.data.begin()->boolean );
-            }
-            if(element.type == TYPE::INT8){
-                infoFrame->addItem(element.label);
-                infoFrame->setItem(element.label, element.data.begin()->int8 );
-            }
-            if(element.type == TYPE::UINT8){
-                infoFrame->addItem(element.label);
-                infoFrame->setItem(element.label, element.data.begin()->uint8 );
-            }
-            if(element.type == TYPE::INT16){
-                infoFrame->addItem(element.label);
-                infoFrame->setItem(element.label, element.data.begin()->int16 );
-            }
-            if(element.type == TYPE::UINT16){
-                if(element.label == "Bus Voltage" || element.label == "Output Current"){
-                    // Change this over to float
-                    infoFrame->addItem(element.label);
-                    float voltage = (element.data.begin()->uint16 / 100.0);
-                    infoFrame->setItem(element.label, voltage);
-                }
-                else{
-                    infoFrame->addItem(element.label);
-                    infoFrame->setItem(element.label, element.data.begin()->uint16 );
-                }
-            }
-            if(element.type == TYPE::INT32){
-                infoFrame->addItem(element.label);
-                infoFrame->setItem(element.label, element.data.begin()->int32 );
-            }
-            if(element.type == TYPE::UINT32){
-                infoFrame->addItem(element.label);
-                infoFrame->setItem(element.label, element.data.begin()->uint32 );
-            }
-            if(element.type == TYPE::INT64){
-                infoFrame->addItem(element.label);
-                infoFrame->setItem(element.label, element.data.begin()->int64 );
-            }
-            if(element.type == TYPE::UINT64){
-                infoFrame->addItem(element.label);
-                infoFrame->setItem(element.label, element.data.begin()->uint64 );
-            }
-            if(element.type == TYPE::FLOAT32){
-                infoFrame->addItem(element.label);
-                infoFrame->setItem(element.label, element.data.begin()->float32 );
-            }
-            if(element.type == TYPE::FLOAT64){
-                infoFrame->addItem(element.label);
-                infoFrame->setItem(element.label, element.data.begin()->float64 );
-            }
-            if(element.type == TYPE::STRING){
-                std::string theString= "";
-                for(auto iterator=element.data.begin(); iterator != element.data.end(); iterator++ ){
-                    theString.push_back(iterator->character);
-                }
-                infoFrame->addItem(element.label);
-                infoFrame->setItem(element.label, theString );
-            }
+        const auto& elements = message.getObject().elementList;
+
+        if (label == "Zed") {
+            handleZedElements(elements);
+        }
+        else if (label == "Communication") {
+            handleCommunicationElements(frame, elements);
+        }
+        else if (talonLabels.count(label)) {
+            handleTalonElements(label, elements);
+        }
+        else if (falconLabels.count(label)) {
+            handleFalconElements(label, elements);
         }
 
+        handleGenericElements(frame, elements);
+        return;
+    }
+    if (!validLabels.count(label)) return;
+
+    if ((label == "Talon 1" || label == "Talon 2") && !arm_init) 
+        initArmPos();
+    if ((label == "Talon 3" || label == "Talon 4") && !bucket_init) 
+        initBucketPos();
+    if (label == "Zed" && !roll_init) 
+        initRollPitch();
+
+    InfoFrame* infoFrame = Gtk::manage(new InfoFrame(label));
+    infoFrameList.push_back(infoFrame);
+
+    for (const Element& element : message.getObject().elementList) {
+        addElementToInfoFrame(infoFrame, element);
+    }
+
+    if (noVideo) {
         sensorBox->add(*infoFrame);
         infoFrame->show();
     }
@@ -2033,14 +1743,19 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
     videoIPAddressEntry->set_can_focus(true);
     videoIPAddressEntry->set_editable(true);
     videoIPAddressEntry->set_text("192.168.1.6");
+    videoIPAddressEntry->set_name("dark_text");
+
     videoConnectButton=Gtk::manage(new Gtk::Button("Connect"));
     videoConnectButton->signal_clicked().connect(sigc::ptr_fun(&videoConnectOrDisconnect));
+    videoConnectButton->set_name("dark_text");
     videoConnectionStatusLabel=Gtk::manage(new Gtk::Label("Not Connected"));
     videoConnectionStatusLabel->override_background_color(red);
+    videoConnectionStatusLabel->set_name("dark_text");
     
     Gtk::Box* videoStateBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,2));
     videoStreamButton=Gtk::manage(new Gtk::Button("Not Video Streaming"));
     videoStreamButton->signal_clicked().connect(sigc::ptr_fun(&videoStream));
+    videoStreamButton->set_name("dark_text");
 
     videoAddressListBox->set_size_request(200,30);
     videoScrolledList->set_size_request(200,100);
@@ -2181,6 +1896,17 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
         Gtk::Label* falcon4Label=Gtk::manage(new Gtk::Label("Falcon 4"));
         falcon4Label->set_hexpand(true);
 
+        Pango::FontDescription font;
+        font.set_size(20 * Pango::SCALE);
+        talon1Label->override_font(font);
+        talon2Label->override_font(font);
+        talon3Label->override_font(font);
+        talon4Label->override_font(font);
+        falcon1Label->override_font(font);
+        falcon2Label->override_font(font);
+        falcon3Label->override_font(font);
+        falcon4Label->override_font(font);
+
         falcon1Circle = Gtk::manage(new CircleDrawingArea());
         falcon1Circle->set_size_request(75, 75);
         falcon1Circle->set_hexpand(false);
@@ -2298,7 +2024,7 @@ void initSensorsWindow() {
         "Talon Output Current", MultiMotorGraph::CURRENT, talonNames));
     talonPositionGraph = Gtk::manage(new MultiMotorGraph(
         "Talon Sensor Position", MultiMotorGraph::POSITION, talonNames));
-    MultiMotorGraph* talonOutputGraph = Gtk::manage(new MultiMotorGraph(
+    talonOutputGraph = Gtk::manage(new MultiMotorGraph(
         "Talon Output Percentage", MultiMotorGraph::OUTPUT_PERCENT, talonNames));
 
     talonTab->add(*talonVoltageGraph);
@@ -2317,7 +2043,7 @@ void initSensorsWindow() {
         "Falcon Output Current", MultiMotorGraph::CURRENT, falconNames));
     falconPositionGraph = Gtk::manage(new MultiMotorGraph(
         "Falcon Sensor Position", MultiMotorGraph::POSITION, falconNames));
-    MultiMotorGraph* falconOutputGraph = Gtk::manage(new MultiMotorGraph(
+    falconOutputGraph = Gtk::manage(new MultiMotorGraph(
         "Falcon Output Percentage", MultiMotorGraph::OUTPUT_PERCENT, falconNames));
 
     falconTab->add(*falconVoltageGraph);
@@ -2610,7 +2336,7 @@ void createTalonMessage(std::string name){
     BinaryMessage talonMessage(name);
     if(initVals){
         talonMessage.addElementUInt8("Device ID",(uint8_t)0);
-        talonMessage.addElementUInt16("Bus Voltage",0);
+        talonMessage.addElementUInt16("Bus Voltage",1600);
         talonMessage.addElementUInt16("Output Current",0);
         talonMessage.addElementFloat32("Output Percent",0.0);
         talonMessage.addElementUInt8("Temperature",(uint8_t)0);

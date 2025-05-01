@@ -516,8 +516,8 @@ class MultiMotorGraph : public Gtk::Box {
             // Set ranges based on graph type
             switch(graphType) {
                 case VOLTAGE:
-                    minVal = 0.0f;
-                    maxVal = 15.0f; // 0-15V for Talon voltage
+                    minVal = 14.5f;
+                    maxVal = 17.0f; // 14-17V for Talon voltage
                     yLabel = "Voltage (V)";
                     break;
                 case CURRENT:
@@ -896,41 +896,39 @@ void setBackgroundColors(Gdk::RGBA color){
 }
 
 
+std::string darkBackgroundColor = "#0b1a21";
+std::string lightBackgroundColor = "#f0faf2";
+
 // Dark mode
-const std::string darkMode = R"(
-    * { font-family: 'Proxima Nova'; 
-        font-weight: bold;
-    }
-    window { background-color: #0b1a21; }
-    #dark_text {
-        color: #000000;
-    }
-    #dark_text label {
-        color: #000000;
-    }
-    label, button, entry {
-        color: #edf6fa;
-    }
-    button {
-        border: 1px solid #edf6fa;
-        background-color: transparent;
-    }
-)";
+std::string darkMode =
+    "* { font-family: 'Proxima Nova'; font-weight: bold; }\n"
+    "window { background-color: " + darkBackgroundColor + "; }\n"
+    "#dark_text, #dark_text label { color: #000000; }\n"
+    "label, button, entry { color: #edf6fa; }\n"
+    "button { border: 1px solid #edf6fa; background-color: transparent; }\n";
+
+std::string generateDarkModeString(const std::string& color) {
+    return
+        "* { font-family: 'Proxima Nova'; font-weight: bold; }\n"
+    "window { background-color: " + color + "; }\n"
+    "#dark_text, #dark_text label { color: #000000; }\n"
+    "label, button, entry { color: #edf6fa; }\n"
+    "button { border: 1px solid #edf6fa; background-color: transparent; }\n";
+}
 
 // Light mode
-const std::string lightMode = R"(
-    * { font-family: 'Proxima Nova'; 
-        font-weight: bold;
-    }
-    window { background-color: #f0faf2; }
-    label, button, entry {
-        color: #000000;
-    }
-    button {
-        border: 1px solid #000000;
-        background-color: #f0f0f0;
-    }
-)";
+std::string generateLightModeString(const std::string& color) {
+    return
+        "* { font-family: 'Proxima Nova'; font-weight: bold }\n"
+    "window { background-color: " + color + "; }\n"
+    "label, button, entry { color: #000000; }\n"
+    "button {  border: 1px solid #000000; background-color: #f0f0f0; }\n";
+}
+const std::string lightMode = 
+    "* { font-family: 'Proxima Nova'; font-weight: bold }\n"
+    "window { background-color: " + lightBackgroundColor + "; }\n"
+    "label, button, entry { color: #000000; }\n"
+    "button {  border: 1px solid #000000; background-color: #f0f0f0; }\n";
 
 
 bool isLightMode = true;
@@ -939,14 +937,14 @@ void toggleMode() {
     Gdk::RGBA background;
 
     if (isLightMode) {
-        css_provider->load_from_data(darkMode);
+        css_provider->load_from_data(generateDarkModeString(darkBackgroundColor));
         isLightMode = false;
-        background.set("#0b1a21");
+        background.set(darkBackgroundColor);
     } 
     else {
-        css_provider->load_from_data(lightMode);
+        css_provider->load_from_data(generateLightModeString(lightBackgroundColor));
         isLightMode = true;
-        background.set("#f0faf2");
+        background.set(lightBackgroundColor);
     }
     if(!noVideo)
         setBackgroundColors(background);
@@ -960,11 +958,11 @@ void toggleMode() {
 
 void updateBackgroundColor(InfoFrame* infoFrame, std::string label){
     if(isLightMode){
-        infoFrame->setBackground(label, "rgb(#f0faf2)");
+        infoFrame->setBackground(label, lightBackgroundColor);
         infoFrame->setTextColor(label, "#000000", false);
     }
     else{
-        infoFrame->setBackground(label, "#0b1a21");
+        infoFrame->setBackground(label, darkBackgroundColor);
         infoFrame->setTextColor(label, "white", false);
     }
 }
@@ -1623,6 +1621,43 @@ bool on_key_press_event(GdkEventKey* key_event){
 }
 
 
+Gtk::Box* create_labeled_box(const Glib::ustring& label_text, CircleDrawingArea*& out_circle) {
+    auto box = Gtk::manage(new BorderedBox(Gtk::ORIENTATION_HORIZONTAL, 5));
+    box->set_size_request(300, 75);
+
+    auto label = Gtk::manage(new Gtk::Label(label_text));
+    label->set_hexpand(true);
+
+    Pango::FontDescription font;
+    font.set_size(20 * Pango::SCALE);
+    label->override_font(font);
+
+    out_circle = Gtk::manage(new CircleDrawingArea());
+    out_circle->set_size_request(75, 75);
+    out_circle->set_hexpand(false);
+    out_circle->set_halign(Gtk::ALIGN_CENTER);
+
+    box->add(*out_circle);
+    box->add(*label);
+
+    return box;
+}
+
+Gtk::Box* create_motor_column(std::vector<std::pair<Glib::ustring, CircleDrawingArea**>> items, void (*init_hook)()) {
+    auto column = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
+    column->set_size_request(300, 300);
+    column->set_hexpand(false);
+    column->set_vexpand(false);
+
+    for (size_t i = 0; i < items.size(); ++i) {
+        if (i == 2 && init_hook) init_hook();
+        column->add(*create_labeled_box(items[i].first, *items[i].second));
+    }
+
+    return column;
+}
+
+
 void setupGUI(Glib::RefPtr<Gtk::Application> application) {
     // Create window instance
     window = new Gtk::Window();
@@ -1705,7 +1740,7 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
 
     // Apply CSS
     auto css_provider = Gtk::CssProvider::create();
-    css_provider->load_from_data(lightMode);
+    css_provider->load_from_data(generateLightModeString(lightBackgroundColor));
     auto screen = Gdk::Screen::get_default();
     auto style_context = Gtk::StyleContext::create();
     style_context->add_provider_for_screen(screen, css_provider, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
@@ -1817,150 +1852,38 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
         innerRightBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
         bottomLowerBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
 
-        Gtk::Box* talon1Box = Gtk::manage(new BorderedBox(Gtk::ORIENTATION_HORIZONTAL, 5));
-        Gtk::Box* talon2Box = Gtk::manage(new BorderedBox(Gtk::ORIENTATION_HORIZONTAL, 5));
-        Gtk::Box* talon3Box = Gtk::manage(new BorderedBox(Gtk::ORIENTATION_HORIZONTAL, 5));
-        Gtk::Box* talon4Box = Gtk::manage(new BorderedBox(Gtk::ORIENTATION_HORIZONTAL, 5));
+        
+        innerLeftBox = create_motor_column({
+            {"Talon 1", &talon1Circle},
+            {"Talon 2", &talon2Circle},
+            {"Talon 3", &talon3Circle},
+            {"Talon 4", &talon4Circle}
+        }, initArmPos);
 
-        Gtk::Label* talon1Label=Gtk::manage(new Gtk::Label("Talon 1"));
-        talon1Label->set_hexpand(true);
-        Gtk::Label* talon2Label=Gtk::manage(new Gtk::Label("Talon 2"));
-        talon2Label->set_hexpand(true);
-        Gtk::Label* talon3Label=Gtk::manage(new Gtk::Label("Talon 3"));
-        talon3Label->set_hexpand(true);
-        Gtk::Label* talon4Label=Gtk::manage(new Gtk::Label("Talon 4"));
-        talon4Label->set_hexpand(true);
-
-        talon1Box->add(*talon1Label);
-        talon1Box->set_size_request(300, 75);
-        talon2Box->add(*talon2Label);
-        talon2Box->set_size_request(300, 75);
-        talon3Box->add(*talon3Label);
-        talon3Box->set_size_request(300, 75);
-        talon4Box->add(*talon4Label);
-        talon4Box->set_size_request(300, 75);
-
-        talon1Circle = Gtk::manage(new CircleDrawingArea());
-        talon1Circle->set_size_request(75, 75);
-        talon1Circle->set_hexpand(false);
-        talon1Circle->set_halign(Gtk::ALIGN_CENTER);
-        talon1Box->add(*talon1Circle);
-
-        talon2Circle = Gtk::manage(new CircleDrawingArea());
-        talon2Circle->set_size_request(75, 75);
-        talon2Circle->set_hexpand(false);
-        talon2Circle->set_halign(Gtk::ALIGN_CENTER);
-        talon2Box->add(*talon2Circle);
-
-        talon3Circle = Gtk::manage(new CircleDrawingArea());
-        talon3Circle->set_size_request(75, 75);
-        talon3Circle->set_hexpand(false);
-        talon3Circle->set_halign(Gtk::ALIGN_CENTER);
-        talon3Box->add(*talon3Circle);
-
-        talon4Circle = Gtk::manage(new CircleDrawingArea());
-        talon4Circle->set_size_request(75, 75);
-        talon4Circle->set_hexpand(false);
-        talon4Circle->set_halign(Gtk::ALIGN_CENTER);
-        talon4Box->add(*talon4Circle);
-
-        innerLeftBox->set_size_request(300, 300);
-        innerLeftBox->set_hexpand(false);
-        innerLeftBox->set_vexpand(false);
-
-        innerLeftBox->add(*talon1Box);
-        innerLeftBox->add(*talon2Box);
-        initArmPos();
-        innerLeftBox->add(*talon3Box);
-        innerLeftBox->add(*talon4Box);
-
-        bottomInnerBox->add(*innerLeftBox);
-
-        // Create centered transparent outlined rectangle (800x600)
-        Gtk::Box* cameraBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
+        auto cameraBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
         cameraBox->set_size_request(800, 600);
         innerMiddleBox->add(*cameraBox);
+
+        innerRightBox = create_motor_column({
+            {"Falcon 1", &falcon1Circle},
+            {"Falcon 2", &falcon2Circle},
+            {"Falcon 3", &falcon3Circle},
+            {"Falcon 4", &falcon4Circle}
+        }, initBucketPos);
+
+        bottomInnerBox->add(*innerLeftBox);
         bottomInnerBox->add(*innerMiddleBox);
-
-        Gtk::Box* falcon1Box = Gtk::manage(new BorderedBox(Gtk::ORIENTATION_HORIZONTAL, 5));
-        Gtk::Box* falcon2Box = Gtk::manage(new BorderedBox(Gtk::ORIENTATION_HORIZONTAL, 5));
-        Gtk::Box* falcon3Box = Gtk::manage(new BorderedBox(Gtk::ORIENTATION_HORIZONTAL, 5));
-        Gtk::Box* falcon4Box = Gtk::manage(new BorderedBox(Gtk::ORIENTATION_HORIZONTAL, 5));
-
-        Gtk::Label* falcon1Label=Gtk::manage(new Gtk::Label("Falcon 1"));
-        falcon1Label->set_hexpand(true);
-        Gtk::Label* falcon2Label=Gtk::manage(new Gtk::Label("Falcon 2"));
-        falcon2Label->set_hexpand(true);
-        Gtk::Label* falcon3Label=Gtk::manage(new Gtk::Label("Falcon 3"));
-        falcon3Label->set_hexpand(true);
-        Gtk::Label* falcon4Label=Gtk::manage(new Gtk::Label("Falcon 4"));
-        falcon4Label->set_hexpand(true);
-
-        Pango::FontDescription font;
-        font.set_size(20 * Pango::SCALE);
-        talon1Label->override_font(font);
-        talon2Label->override_font(font);
-        talon3Label->override_font(font);
-        talon4Label->override_font(font);
-        falcon1Label->override_font(font);
-        falcon2Label->override_font(font);
-        falcon3Label->override_font(font);
-        falcon4Label->override_font(font);
-
-        falcon1Circle = Gtk::manage(new CircleDrawingArea());
-        falcon1Circle->set_size_request(75, 75);
-        falcon1Circle->set_hexpand(false);
-        falcon1Circle->set_halign(Gtk::ALIGN_CENTER);
-        falcon1Box->add(*falcon1Circle);
-
-        falcon2Circle = Gtk::manage(new CircleDrawingArea());
-        falcon2Circle->set_size_request(75, 75);
-        falcon2Circle->set_hexpand(false);
-        falcon2Circle->set_halign(Gtk::ALIGN_CENTER);
-        falcon2Box->add(*falcon2Circle);
-
-        falcon3Circle = Gtk::manage(new CircleDrawingArea());
-        falcon3Circle->set_size_request(75, 75);
-        falcon3Circle->set_hexpand(false);
-        falcon3Circle->set_halign(Gtk::ALIGN_CENTER);
-        falcon3Box->add(*falcon3Circle);
-
-        falcon4Circle = Gtk::manage(new CircleDrawingArea());
-        falcon4Circle->set_size_request(75, 75);
-        falcon4Circle->set_hexpand(false);
-        falcon4Circle->set_halign(Gtk::ALIGN_CENTER);
-        falcon4Box->add(*falcon4Circle);
-
-        falcon1Box->add(*falcon1Label);
-        falcon1Box->set_size_request(300, 75);
-        falcon2Box->add(*falcon2Label);
-        falcon2Box->set_size_request(300, 75);
-        falcon3Box->add(*falcon3Label);
-        falcon3Box->set_size_request(300, 75);
-        falcon4Box->add(*falcon4Label);
-        falcon4Box->set_size_request(300, 75);
-
-        innerRightBox->set_size_request(300, 300);
-        innerRightBox->set_hexpand(false);
-        innerRightBox->set_vexpand(false);
-
-        innerRightBox->add(*falcon1Box);
-        innerRightBox->add(*falcon2Box);
-        initBucketPos();
-        innerRightBox->add(*falcon3Box);
-        innerRightBox->add(*falcon4Box);
-
         bottomInnerBox->add(*innerRightBox);
         bottomInnerBox->set_halign(Gtk::ALIGN_CENTER);
-        bottomBox->add(*bottomInnerBox);
 
+        bottomBox->add(*bottomInnerBox);
         initRollPitch();
         bottomLowerBox->set_halign(Gtk::ALIGN_CENTER);
         bottomBox->add(*bottomLowerBox);
         topLevelBox->add(*bottomBox);
 
         Gdk::RGBA background;
-        background.set("#f0faf2");
+        background.set(lightBackgroundColor);
         setBackgroundColors(background);
     }
     else{
@@ -1974,21 +1897,6 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
     window->signal_delete_event().connect(sigc::ptr_fun(quit));
     window->show_all();
 }
-
-// void initSensorsWindow(){
-//     sensorsWindow = new Gtk::Window();
-//     sensorsWindow->maximize();
-
-//     Gtk::Box* sensorTopLevelBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
-
-//     // Create horizontal flow box to hold sensor widgets
-//     sensorBox = Gtk::manage(new Gtk::FlowBox());
-//     sensorBox->set_orientation(Gtk::ORIENTATION_HORIZONTAL);
-//     sensorTopLevelBox->add(*sensorBox);
-//     sensorsWindow->add(*sensorTopLevelBox);
-
-//     sensorsWindow->show_all();
-// }
 
 
 // void add_graph_with_frame(Gtk::Box* container, MultiMotorGraph* graph) {
@@ -2064,6 +1972,14 @@ void initSensorsWindow() {
     linearTab->add(*linearSpeedGraph);
     linearTab->add(*linearPotentiometerGraph);
     tabs->append_page(*linearTab, "Linear Actuators");
+
+    Gtk::Box* sensorsTab = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
+    sensorsTab->property_margin().set_value(5);
+    sensorBox = Gtk::manage(new Gtk::FlowBox());
+    sensorBox->set_orientation(Gtk::ORIENTATION_HORIZONTAL);
+    sensorsTab->add(*sensorBox);
+
+    tabs->append_page(*sensorsTab, "Sensors");
 
     // Add everything to main window
     mainBox->add(*tabs);
@@ -2714,6 +2630,16 @@ void processArguments(int argc, char** argv){
             else if(!strcmp("--no_arena", argv[i])){
                 noArena = true;
             }
+            else if(!strcmp("--set_colors", argv[i])){
+                if(i+1 < argc){
+                    lightBackgroundColor = argv[i+1];
+                    i++;
+                }
+                if(i+1 < argc){
+                    darkBackgroundColor = argv[i+1];
+                    i++;
+                }
+            }
         }
     }
 }
@@ -2745,11 +2671,6 @@ void moveWindows(){
     }
 }
 
-/*
-TODO: Add no_arena flag
-Add checks to run without arena being created
-
-*/
 
 //UDP Version
 int main(int argc, char** argv) { 

@@ -118,6 +118,7 @@ bool threeMonitors = false;
 bool smallLaptop = false;
 bool noVideo = false;
 bool noArena = false;
+std::string mapUsed = "NASA";
 
 int videoSock = 0; 
 bool videoConnected=false;
@@ -189,14 +190,14 @@ DrawingArea* right_bucket;
 DrawingArea* left_bucket;
 Gtk::Box* armBox;
 Gtk::Box* bucketBox;
-bool arm_init = false, bucket_init = false, roll_init = false;
+bool arm_init = false, bucket_init = false, roll_init = false, pitch_init = false;
 
 int right_arm_pos = 0, left_arm_pos = 0, right_bucket_pos = 0, left_bucket_pos = 0;
 
 class ImageOverlay : public Gtk::DrawingArea {
     public:
         ImageOverlay() :
-            img_x(200), img_y(150), rotation_angle(0.0) {
+            img_x(100), img_y(50), rotation_angle(0.0), dest_x(-1), dest_y(-1) {
                 load_images();
             }
     
@@ -234,6 +235,12 @@ class ImageOverlay : public Gtk::DrawingArea {
 
         void add_hole_image(int x, int y, double scale_multiplier) {
             hole_data.emplace_back(x, y, scale_multiplier);
+            queue_draw();
+        }
+
+        void add_dest_loc(int x, int y){
+            dest_x = x;
+            dest_y = y;
             queue_draw();
         }
 
@@ -293,6 +300,11 @@ class ImageOverlay : public Gtk::DrawingArea {
             cr->paint();
         }
 
+        if(dest_x != -1 && dest_y != -1){
+            Gdk::Cairo::set_source_pixbuf(cr, dest_image, data.x - (dest_image.get_height() / 2), 800 - (data.y - dest_image.get_width() / 2));
+            cr->paint();
+        }
+
         cr->restore();
         cr->reset_clip();
     
@@ -302,9 +314,11 @@ class ImageOverlay : public Gtk::DrawingArea {
 
 
     private:
-        Glib::RefPtr<Gdk::Pixbuf> background, overlay, rock, hole;
+        Glib::RefPtr<Gdk::Pixbuf> background, overlay, rock, hole, x;
         double img_x, img_y;
         double rotation_angle;
+
+        int dest_x, dest_y;
 
         struct ImageData {
             int x, y;
@@ -317,10 +331,25 @@ class ImageOverlay : public Gtk::DrawingArea {
     
         void load_images(){
             try{
-                background = Gdk::Pixbuf::create_from_file("../resources/Arena.png");
+                if(mapUsed == "NASA"){
+                    background = Gdk::Pixbuf::create_from_file("../resources/Arena.png");
+                }
+                else if(mapUsed == "UCF"){
+                    background = Gdk::Pixbuf::create_from_file("../resources/UCFArena.png");
+                }
+                else if(mapUsed == "Cosmic"){
+                    background = Gdk::Pixbuf::create_from_file("../resources/CosmicArena.png");
+                }
+                else if(mapUsed == "Lab"){
+                    background = Gdk::Pixbuf::create_from_file("../resources/LabArena.png");
+                }
+                else{
+                    background = Gdk::Pixbuf::create_from_file("../resources/Arena.png");
+                }
                 overlay = Gdk::Pixbuf::create_from_file("../resources/RobotTop.png");
                 rock = Gdk::Pixbuf::create_from_file("../resources/Rock.png");
                 hole = Gdk::Pixbuf::create_from_file("../resources/Hole.png");
+                dest_image = Gdk::Pixbuf::create_from_file("../resources/X.png");
             }
             catch(const Glib::Exception& ex){
                 g_warning("Failed to load images: %s", ex.what().c_str());
@@ -749,7 +778,111 @@ MultiMotorGraph* falconOutputGraph;
 MultiMotorGraph* linearSpeedGraph;
 MultiMotorGraph* linearPotentiometerGraph;
 
-void initRollPitch(){
+
+class Speedometer : public Gtk::DrawingArea {
+    public:
+        Speedometer() : speed_(0), max_speed_(100), reverse_(false), realistic_(true), text_inside_(true), dark_mode_(false) {}
+    
+        void set_speed(double speed) {
+            speed_ = speed;
+            queue_draw();
+        }
+    
+        void set_reverse(bool reverse) {
+            reverse_ = reverse;
+            queue_draw();
+        }
+    
+        void set_realistic(bool realistic) {
+            realistic_ = realistic;
+            queue_draw();
+        }
+    
+        void set_text_inside(bool inside) {
+            text_inside_ = inside;
+            queue_draw();
+        }
+    
+        void set_dark_mode(bool dark_mode) {
+            dark_mode_ = dark_mode;
+            queue_draw();
+        }
+    
+    protected:
+        bool on_draw(const Cairo::RefPtr<Cairo::Context>& cr) override {
+            Gtk::Allocation allocation = get_allocation();
+            int width = allocation.get_width();
+            int height = allocation.get_height();
+    
+            cr->save();
+            cr->set_source_rgb(dark_mode_ ? 0.0 : 1.0, dark_mode_ ? 0.0 : 1.0, dark_mode_ ? 0.0 : 1.0);
+            cr->paint();
+            cr->restore();
+    
+            const double radius = std::min(width, height) / 2.5;
+            const double center_x = width / 2.0;
+            const double center_y = height * 0.9;
+    
+            const double angle_start = M_PI;
+            const double angle_end = 0;
+            double angle = M_PI - (M_PI * (speed_ / max_speed_));
+    
+            // Draw arc background
+            cr->save();
+            cr->arc(center_x, center_y, radius, angle_start, angle_end);
+            cr->set_line_width(realistic_ ? 15.0 : 10.0);
+            cr->set_source_rgb(dark_mode_ ? 0.7 : 0.0, dark_mode_ ? 0.7 : 0.0, dark_mode_ ? 0.7 : 0.0);
+            cr->stroke();
+            cr->restore();
+    
+            // Draw current speed indicator
+            cr->save();
+            cr->arc(center_x, center_y, radius, angle_start, angle);
+            cr->set_line_width(realistic_ ? 15.0 : 10.0);
+            cr->set_source_rgb(dark_mode_ ? 0.3 : 0.2, dark_mode_ ? 0.8 : 0.6, dark_mode_ ? 0.3 : 0.2);
+            cr->stroke();
+            cr->restore();
+    
+            // Draw speed text
+            cr->save();
+            cr->select_font_face("Sans", Cairo::FONT_SLANT_NORMAL, Cairo::FONT_WEIGHT_BOLD);
+            cr->set_font_size(24.0);
+            cr->set_source_rgb(dark_mode_ ? 1.0 : 0.0, dark_mode_ ? 1.0 : 0.0, dark_mode_ ? 1.0 : 0.0);
+            std::string speed_text = std::to_string(static_cast<int>(speed_)) + " km/h";
+            Cairo::TextExtents extents;
+            cr->get_text_extents(speed_text, extents);
+            double text_x = center_x - extents.width / 2.0;
+            double text_y = text_inside_ ? center_y - radius / 2.0 : center_y - radius - 10.0;
+            cr->move_to(text_x, text_y);
+            cr->show_text(speed_text);
+            cr->restore();
+    
+            // Draw reverse indicator
+            if (reverse_) {
+                cr->save();
+                cr->set_source_rgb(1.0, 0.0, 0.0);
+                cr->arc(center_x, center_y - radius * 0.8, 10.0, 0, 2 * M_PI);
+                cr->fill();
+                cr->restore();
+            }
+    
+            return true;
+        }
+    
+    private:
+        double speed_;
+        double max_speed_;
+        bool reverse_;
+        bool realistic_;
+        bool text_inside_;
+        bool dark_mode_;
+    };
+
+Speedometer* leftSpeedometer;
+Speedometer* rightSpeedometer;
+
+
+void initRoll(){
     if(!roll_init){
         roll_image = Gtk::manage(new Gtk::Image());
         
@@ -768,13 +901,25 @@ void initRollPitch(){
 
         if(!noVideo){
             Gtk::Box* padding = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
-            padding->set_size_request(200, 100);
+            padding->set_size_request(100, 100);
             bottomLowerBox->add(*padding);
         }
         
         Glib::RefPtr<Gdk::Pixbuf> newrollpixbuf = rotate_image(roll_pixbuf, roll_rotation_angle, 200, 200);
         roll_image->set(newrollpixbuf);
-        
+        roll_init = true;
+        window->show_all();
+    }
+}
+
+
+void initPitch(){
+    if(!pitch_init){
+        if(!noVideo){
+            Gtk::Box* padding = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
+            padding->set_size_request(100, 100);
+            bottomLowerBox->add(*padding);
+        }
         pitch_image = Gtk::manage(new Gtk::Image());
         if(noVideo)
             sensorBox->add(*pitch_image);
@@ -791,11 +936,10 @@ void initRollPitch(){
         
         Glib::RefPtr<Gdk::Pixbuf> newpitchpixbuf = rotate_image(pitch_pixbuf, pitch_rotation_angle, 200, 200);
         pitch_image->set(newpitchpixbuf);
-        roll_init = true;
+        pitch_init = true;
         window->show_all();
     }
 }
-
 
 void initArmPos(){
     if(!arm_init){
@@ -1121,6 +1265,29 @@ void handleCommunicationElements(InfoFrame* frame, const std::vector<Element>& e
     }
 }
 
+
+void handleAutonomyElements(const std::string& label, const std::vector<Element>& elements) {
+    int destX = -1;
+    int destY = -1;
+    for (const auto& element : elements) {
+        if (element.label == "Dest X") {
+            destX = element.data.front().float32 * MULTIPLIER_X;
+            if(destY != -1){
+                overlay_area->add_dest_loc(destX, destY);
+                break;
+            }
+        }
+        else if(element.label == "Dest Z"){
+            destY = element.data.front().float32 * MULTIPLIER_Y;
+            if(destX != -1){
+                overlay_area->add_dest_loc(destX, destY);
+                break;
+            }
+        }
+    }
+}
+
+
 void handleGenericElements(InfoFrame* frame, const std::vector<Element>& elements) {
     for (const auto& element : elements) {
         const auto& value = element.data.front();
@@ -1210,6 +1377,9 @@ void updateGUI(BinaryMessage& message) {
         else if (falconLabels.count(label)) {
             handleFalconElements(label, elements);
         }
+        else if(label == "Autonomy"){
+            handleAutonomyElements(label, elements);
+        }
 
         handleGenericElements(frame, elements);
         return;
@@ -1221,7 +1391,9 @@ void updateGUI(BinaryMessage& message) {
     if ((label == "Talon 3" || label == "Talon 4") && !bucket_init) 
         initBucketPos();
     if (label == "Zed" && !roll_init) 
-        initRollPitch();
+        initRoll();
+    if(label == "Zed" && !pitch_init)
+        initPitch();
 
     InfoFrame* infoFrame = Gtk::manage(new InfoFrame(label));
     infoFrameList.push_back(infoFrame);
@@ -1230,10 +1402,8 @@ void updateGUI(BinaryMessage& message) {
         addElementToInfoFrame(infoFrame, element);
     }
 
-    if (noVideo) {
-        sensorBox->add(*infoFrame);
-        infoFrame->show();
-    }
+    sensorBox->add(*infoFrame);
+    infoFrame->show();
 }
 
 
@@ -1861,7 +2031,7 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
         }, initArmPos);
 
         auto cameraBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
-        cameraBox->set_size_request(800, 600);
+        cameraBox->set_size_request(1400, 800);
         innerMiddleBox->add(*cameraBox);
 
         innerRightBox = create_motor_column({
@@ -1877,7 +2047,24 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
         bottomInnerBox->set_halign(Gtk::ALIGN_CENTER);
 
         bottomBox->add(*bottomInnerBox);
-        initRollPitch();
+        initRoll();
+        leftSpeedometer = Gtk::manage(new Speedometer());
+        leftSpeedometer->set_speed(0);
+        leftSpeedometer->set_reverse(true);
+        leftSpeedometer->set_realistic(true);
+        leftSpeedometer->set_text_inside(true);
+        leftSpeedometer->set_dark_mode(true);
+        bottomLowerBox->add(*leftSpeedometer);
+
+        rightSpeedometer = Gtk::manage(new Speedometer());
+        rightSpeedometer->set_speed(0);
+        rightSpeedometer->set_reverse(true);
+        rightSpeedometer->set_realistic(true);
+        rightSpeedometer->set_text_inside(true);
+        rightSpeedometer->set_dark_mode(true);
+        bottomLowerBox->add(*rightSpeedometer);
+
+        initPitch();
         bottomLowerBox->set_halign(Gtk::ALIGN_CENTER);
         bottomBox->add(*bottomLowerBox);
         topLevelBox->add(*bottomBox);
@@ -2300,7 +2487,8 @@ void initGUI() {
         createLinearMessage("Linear 3");
         createLinearMessage("Linear 4");
         
-        initRollPitch();
+        initRoll();
+        initPitch();
         initArmPos();
         initBucketPos();
         
@@ -2616,7 +2804,13 @@ void processArguments(int argc, char** argv){
     if(argc > 1){
         for(int i = 1; i < argc; ++i){
             if(!strcmp("--help", argv[i])){
-
+                std::cout << "Control Flag Options:" << std::endl;
+                std::cout << "--init: Initialize GUI with values" << std::endl;
+                std::cout << "--no_video: Remove large center space for video stream, Displays sensor values instead" << std::endl;
+                std::cout << "--no_arena: Disables arena map window" << std::endl;
+                std::cout << "--set_colors: Specifies values to use as background colors. Should have light color, then dark color in" 
+                "format \"#FFFFFF\" \"#000000\""<< std::endl;
+                std::cout << "NOTE: All strings must be enclosed in \" to have them work properly" << std::endl;
             }
             else if(!strcmp("--init", argv[i])){
                 initVals = true;
@@ -2639,6 +2833,9 @@ void processArguments(int argc, char** argv){
                     darkBackgroundColor = argv[i+1];
                     i++;
                 }
+            }
+            else if(!strcmp("--set_map")){
+                mapUsed = argv[i+1];
             }
         }
     }

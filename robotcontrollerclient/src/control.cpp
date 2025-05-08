@@ -882,6 +882,45 @@ Speedometer* leftSpeedometer;
 Speedometer* rightSpeedometer;
 
 
+class VideoWidget : public Gtk::DrawingArea {
+    public:
+        VideoWidget() {}
+    
+        void setFrame(const cv::Mat& frame) {
+            std::lock_guard<std::mutex> lock(frameMutex);
+            latestFrame = frame.clone();
+            newFrameAvailable = true;
+            queue_draw(); // Schedule redraw
+        }
+    
+    protected:
+        bool on_draw(const Cairo::RefPtr<Cairo::Context>& cr) override {
+            std::lock_guard<std::mutex> lock(frameMutex);
+    
+            if (latestFrame.empty())
+                return true;
+    
+            cv::Mat rgbFrame;
+            if (latestFrame.channels() == 1) {
+                cv::cvtColor(latestFrame, rgbFrame, cv::COLOR_GRAY2RGB);
+            } else {
+                cv::cvtColor(latestFrame, rgbFrame, cv::COLOR_BGR2RGB);
+            }
+    
+            auto surface = Gdk::Pixbuf::create_from_data(
+                rgbFrame.data, Gdk::COLORSPACE_RGB, false, 8,
+                rgbFrame.cols, rgbFrame.rows, rgbFrame.step
+            );
+    
+            Gdk::Cairo::set_source_pixbuf(cr, surface, 0, 0);
+            cr->paint();
+            return true;
+        }
+    };
+
+VideoWidget* videoArea;
+
+
 void initRoll(){
     if(!roll_init){
         roll_image = Gtk::manage(new Gtk::Image());
@@ -2032,6 +2071,9 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
 
         auto cameraBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
         cameraBox->set_size_request(1400, 800);
+        videoArea = Gtk::manage(new VideoWidget());
+        videoArea->set_size_request(1400, 800);
+        cameraBox->add(*videoArea);
         innerMiddleBox->add(*cameraBox);
 
         innerRightBox = create_motor_column({
@@ -2946,8 +2988,9 @@ int main(int argc, char** argv) {
 
         std::lock_guard<std::mutex> lock(frameMutex);
         if(newFrameAvailable){
-            cv::imshow("Video", latestFrame);
-            cv::waitKey(1);
+            if (videoArea) {
+                videoArea->setFrame(latestFrame);
+            }
             newFrameAvailable = false;
         }
 

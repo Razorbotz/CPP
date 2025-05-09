@@ -27,6 +27,8 @@
 #include <pangomm.h>
 //#include <gdk-pixbuf/gdk-pixbuf.h>
 #include <unordered_set>
+#include <algorithm>
+#include <iomanip>
 
 #include <cstdlib>
 #include <opencv2/opencv.hpp>
@@ -785,93 +787,360 @@ MultiMotorGraph* linearPotentiometerGraph;
 
 
 class Speedometer : public Gtk::DrawingArea {
-    public:
-        Speedometer(const std::string& label) : label_(label), speed_(0) {}
-    
-        void set_speed(double speed) {
-            speed_ = std::clamp(speed, 0.0, max_speed_);
-            queue_draw();
-        }
+public:
+    Speedometer(const std::string& label)
+        : label_(label),
+          speed_(0.0),
+          reverse_(false),
+          min_speed_(0.0),
+          max_speed_(100.0),
+          num_major_divisions_(10), // e.g., 0, 10, 20 ... 100 (11 ticks)
+          num_minor_ticks_per_segment_(4) // 4 minor ticks = 5 small intervals
+    {
+        // Set a minimum size for the widget
+        set_size_request(150, 150);
+    }
 
-        void set_reverse(bool reverse){
-            reverse_ = reverse;
-            queue_draw();
-        }
+    void set_speed(double speed) {
+        speed_ = std::clamp(speed, min_speed_, max_speed_); // Assuming min_speed_ is typically 0 for magnitude
+        queue_draw();
+    }
 
-        void set_min_speed(double speed){
-            min_speed_ = speed;
-            queue_draw();
-        }
+    void set_reverse(bool reverse) {
+        reverse_ = reverse;
+        queue_draw();
+    }
 
-        void set_max_speed(double speed){
+    // Call this if you want the gauge to represent a range other than 0-max_speed
+    // Note: The current drawing logic primarily uses 0 as the start of the scale.
+    // Modifying this to a dynamic min_speed_ on the dial requires adjusting tick/needle logic.
+    void set_min_speed(double speed) {
+        min_speed_ = speed;
+        // Potentially adjust speed_ if it's now out of new bounds
+        speed_ = std::clamp(speed_, min_speed_, max_speed_);
+        queue_draw();
+    }
+
+    void set_max_speed(double speed) {
+        if (speed < min_speed_) { // Ensure max_speed is not less than min_speed
+            max_speed_ = min_speed_;
+        } else {
             max_speed_ = speed;
+        }
+        // Potentially adjust speed_ if it's now out of new bounds
+        speed_ = std::clamp(speed_, min_speed_, max_speed_);
+        queue_draw();
+    }
+
+    void set_num_major_divisions(int divisions) {
+        if (divisions > 0) {
+            num_major_divisions_ = divisions;
             queue_draw();
         }
-    
-    protected:
-        bool on_draw(const Cairo::RefPtr<Cairo::Context>& cr) override {
-            Gtk::Allocation alloc = get_allocation();
-            const int w = alloc.get_width(), h = alloc.get_height();
-            const double radius = std::min(w, h) / 2.2;
-            const double cx = w / 2.0, cy = h / 2.0;
-    
-            // Dial background
-            cr->set_source_rgb(0.95, 0.95, 0.95);
-            cr->arc(cx, cy, radius + 10, 0, 2 * M_PI);
-            cr->fill_preserve();
-            cr->set_source_rgb(0.2, 0.2, 0.2);
-            cr->stroke();
-    
-            // Ticks and labels
-            for (int i = 0; i <= 10; ++i) {
-                double angle = M_PI * (1 + i / 10.0);
-                double x1 = cx + radius * cos(angle);
-                double y1 = cy + radius * sin(angle);
-                double x2 = cx + (radius - 10) * cos(angle);
-                double y2 = cy + (radius - 10) * sin(angle);
-    
-                cr->move_to(x1, y1);
-                cr->line_to(x2, y2);
-                cr->stroke();
-    
-                // Number label
-                cr->set_font_size(10);
-                int value = static_cast<int>((i / 10.0) * max_speed_);
-                double tx = cx + (radius - 20) * cos(angle);
-                double ty = cy + (radius - 20) * sin(angle);
-                cr->move_to(tx - 5, ty + 5);
-                cr->show_text(std::to_string(value));
-            }
-    
-            // Needle
-            double angle = M_PI + (speed_ / max_speed_) * M_PI;
-            cr->set_source_rgb(1.0, 0, 0);
-            cr->set_line_width(2);
-            cr->move_to(cx, cy);
-            cr->line_to(cx + (radius - 15) * cos(angle), cy + (radius - 15) * sin(angle));
-            cr->stroke();
-    
-            // Label
-            cr->set_source_rgb(0, 0, 0);
-            cr->select_font_face("Sans", Cairo::FONT_SLANT_NORMAL, Cairo::FONT_WEIGHT_BOLD);
-            cr->set_font_size(14);
-            cr->move_to(cx - 25, cy + radius + 20);
-            cr->show_text(label_);
-    
-            return true;
+    }
+
+    void set_num_minor_ticks_per_segment(int minor_ticks) {
+        if (minor_ticks >= 0) {
+            num_minor_ticks_per_segment_ = minor_ticks;
+            queue_draw();
         }
-    
-    private:
-        std::string label_;
-        double speed_;
-        bool reverse_;
-        double min_speed_ = 0.0;
-        double max_speed_ = 100.0;
-    };
+    }
+
+
+protected:
+    bool on_draw(const Cairo::RefPtr<Cairo::Context>& cr) override {
+        Gtk::Allocation alloc = get_allocation();
+        const int w = alloc.get_width();
+        const int h = alloc.get_height();
+
+        const double smallest_dim = std::min(w, h);
+        const double radius = smallest_dim / 2.5; // Main radius for ticks
+        const double cx = w / 2.0;
+        const double cy = h / 2.0; // Center of the gauge
+
+        // Define gauge angles (270-degree sweep, clockwise)
+        // 0 speed at 135 degrees (top-left-ish, pointing towards 10 o'clock direction)
+        // Max speed at 135 + 270 = 405 degrees = 45 degrees (top-right-ish, pointing towards 2 o'clock direction)
+        const double angle_for_zero_value_rad = 135.0 * M_PI / 180.0;
+        const double total_sweep_angle_rad = 270.0 * M_PI / 180.0;
+
+        // Colors
+        Gdk::RGBA color_dial_bg;
+        color_dial_bg.set_rgba(0.1, 0.1, 0.1, 1.0); // Dark grey
+        Gdk::RGBA color_bezel;
+        color_bezel.set_rgba(0.2, 0.2, 0.2, 1.0);
+        Gdk::RGBA color_tick_mark;
+        color_tick_mark.set_rgba(0.9, 0.9, 0.9, 1.0); // Light grey/white
+        Gdk::RGBA color_text;
+        color_text.set_rgba(0.9, 0.9, 0.9, 1.0);
+        Gdk::RGBA color_needle;
+        color_needle.set_rgba(1.0, 0.2, 0.2, 1.0); // Reddish
+        Gdk::RGBA color_needle_pivot;
+        color_needle_pivot.set_rgba(0.7, 0.7, 0.7, 1.0);
+        Gdk::RGBA color_speed_text_normal;
+        color_speed_text_normal.set_rgba(0.8, 0.8, 1.0, 1.0); // Light blueish
+        Gdk::RGBA color_speed_text_reverse;
+        color_speed_text_reverse.set_rgba(1.0, 0.8, 0.8, 1.0); // Light reddish
+
+
+        // 1. Bezel
+        cr->set_source_rgba(color_bezel.get_red(), color_bezel.get_green(), color_bezel.get_blue(), color_bezel.get_alpha());
+        cr->arc(cx, cy, radius + 10, 0, 2 * M_PI);
+        cr->fill();
+
+        // 2. Dial background
+        cr->set_source_rgba(color_dial_bg.get_red(), color_dial_bg.get_green(), color_dial_bg.get_blue(), color_dial_bg.get_alpha());
+        cr->arc(cx, cy, radius + 5, 0, 2 * M_PI);
+        cr->fill_preserve();
+        cr->set_source_rgba(0.3, 0.3, 0.3, 1.0); // Outline for the dial face
+        cr->set_line_width(1.0);
+        cr->stroke();
+
+        // 3. Ticks and Labels
+        cr->set_source_rgba(color_tick_mark.get_red(), color_tick_mark.get_green(), color_tick_mark.get_blue(), color_tick_mark.get_alpha());
+        const double major_tick_len = 10.0;
+        const double minor_tick_len = 5.0;
+        const double text_radius_offset = 20.0; // How far from ticks to place text
+
+        for (int i = 0; i <= num_major_divisions_; ++i) {
+            double tick_ratio = static_cast<double>(i) / num_major_divisions_;
+            double angle = angle_for_zero_value_rad + tick_ratio * total_sweep_angle_rad;
+
+            // Major tick
+            double x1 = cx + radius * cos(angle);
+            double y1 = cy + radius * sin(angle);
+            double x2 = cx + (radius - major_tick_len) * cos(angle);
+            double y2 = cy + (radius - major_tick_len) * sin(angle);
+
+            cr->set_line_width(2.0);
+            cr->move_to(x1, y1);
+            cr->line_to(x2, y2);
+            cr->stroke();
+
+            // Number label for major tick
+            // Ensure max_speed_ is not zero to avoid issues, though labels can be 0
+            double value = tick_ratio * (max_speed_ - min_speed_) + min_speed_;
+            std::string tick_text = std::to_string(static_cast<int>(round(value)));
+
+            Cairo::TextExtents extents;
+            cr->set_font_size(std::max(10.0, smallest_dim / 20.0)); // Responsive font size
+            cr->get_text_extents(tick_text, extents);
+
+            // Adjust text position to be centered and outside ticks
+            double tx = cx + (radius - major_tick_len - text_radius_offset) * cos(angle) - (extents.width / 2.0 + extents.x_bearing);
+            double ty = cy + (radius - major_tick_len - text_radius_offset) * sin(angle) - (extents.height / 2.0 + extents.y_bearing);
+            
+            cr->move_to(tx, ty);
+            cr->show_text(tick_text);
+
+
+            // Minor ticks (except after the last major tick)
+            if (i < num_major_divisions_) {
+                for (int j = 1; j <= num_minor_ticks_per_segment_; ++j) {
+                    double minor_tick_ratio = tick_ratio + (static_cast<double>(j) / num_major_divisions_ / (num_minor_ticks_per_segment_ + 1));
+                    // Ensure minor ticks don't overshoot total_sweep_angle_rad
+                    if (minor_tick_ratio * total_sweep_angle_rad > total_sweep_angle_rad + 1e-6) continue; 
+
+                    double minor_angle = angle_for_zero_value_rad + minor_tick_ratio * total_sweep_angle_rad;
+                    double mx1 = cx + radius * cos(minor_angle);
+                    double my1 = cy + radius * sin(minor_angle);
+                    double mx2 = cx + (radius - minor_tick_len) * cos(minor_angle);
+                    double my2 = cy + (radius - minor_tick_len) * sin(minor_angle);
+
+                    cr->set_line_width(1.0);
+                    cr->move_to(mx1, my1);
+                    cr->line_to(mx2, my2);
+                    cr->stroke();
+                }
+            }
+        }
+
+        // 4. Needle
+        double current_speed_ratio = 0.0;
+        if (max_speed_ > min_speed_) { // Avoid division by zero or undefined behavior
+             current_speed_ratio = (speed_ - min_speed_) / (max_speed_ - min_speed_);
+        } else if (max_speed_ == min_speed_ && speed_ == min_speed_){
+             current_speed_ratio = 0.0; // Or 0.5 if middle, but for 0-max this is fine
+        }
+
+
+        double needle_angle = angle_for_zero_value_rad + current_speed_ratio * total_sweep_angle_rad;
+        cr->set_source_rgba(color_needle.get_red(), color_needle.get_green(), color_needle.get_blue(), color_needle.get_alpha());
+        cr->set_line_width(std::max(2.0, smallest_dim / 80.0)); // Responsive needle width
+        cr->move_to(cx, cy);
+        cr->line_to(cx + (radius - major_tick_len/2) * cos(needle_angle), cy + (radius - major_tick_len/2) * sin(needle_angle));
+        cr->stroke();
+
+        // 5. Needle Pivot
+        cr->set_source_rgba(color_needle_pivot.get_red(), color_needle_pivot.get_green(), color_needle_pivot.get_blue(), color_needle_pivot.get_alpha());
+        cr->arc(cx, cy, std::max(4.0, smallest_dim / 40.0), 0, 2 * M_PI);
+        cr->fill();
+        cr->set_source_rgba(0.1,0.1,0.1,1); // Pivot outline
+        cr->set_line_width(0.5);
+        cr->arc(cx, cy, std::max(4.0, smallest_dim / 40.0), 0, 2 * M_PI);
+        cr->stroke();
+
+
+        // 6. Speed Text Display
+        std::ostringstream speed_stream;
+        speed_stream << std::fixed << std::setprecision(1) << speed_;
+        std::string speed_str = speed_stream.str();
+        if (reverse_) {
+            speed_str += " R";
+            cr->set_source_rgba(color_speed_text_reverse.get_red(), color_speed_text_reverse.get_green(), color_speed_text_reverse.get_blue(), color_speed_text_reverse.get_alpha());
+        } else {
+            cr->set_source_rgba(color_speed_text_normal.get_red(), color_speed_text_normal.get_green(), color_speed_text_normal.get_blue(), color_speed_text_normal.get_alpha());
+        }
+
+        cr->select_font_face("Sans", Cairo::FONT_SLANT_NORMAL, Cairo::FONT_WEIGHT_BOLD);
+        cr->set_font_size(std::max(14.0, smallest_dim / 12.0));
+
+        Cairo::TextExtents speed_extents;
+        cr->get_text_extents(speed_str, speed_extents);
+        cr->move_to(cx - (speed_extents.width / 2.0 + speed_extents.x_bearing), cy + radius * 0.5); // Position below center
+        cr->show_text(speed_str);
+
+
+        // 7. Main Label (e.g., "Left Speed")
+        cr->set_source_rgba(color_text.get_red(), color_text.get_green(), color_text.get_blue(), color_text.get_alpha());
+        cr->select_font_face("Sans", Cairo::FONT_SLANT_NORMAL, Cairo::FONT_WEIGHT_NORMAL);
+        cr->set_font_size(std::max(12.0, smallest_dim / 15.0));
+        Cairo::TextExtents label_extents;
+        cr->get_text_extents(label_, label_extents);
+        cr->move_to(cx - (label_extents.width / 2.0 + label_extents.x_bearing), cy + radius + 15 + label_extents.height); // Position below gauge
+        cr->show_text(label_);
+
+        return true;
+    }
+
+private:
+    std::string label_;
+    double speed_;
+    bool reverse_;
+    double min_speed_;
+    double max_speed_;
+    int num_major_divisions_;
+    int num_minor_ticks_per_segment_;
+};
+
+class Speedometer2 : public Gtk::DrawingArea {
+public:
+    Speedometer2(const std::string& label)
+        : label_(label), speed_(0.0), reverse_(false), min_speed_(0.0), max_speed_(100.0) {}
+
+    void set_speed(double speed) {
+        speed_ = std::clamp(speed, min_speed_, max_speed_);
+        queue_draw();
+    }
+
+    void set_reverse(bool reverse) {
+        reverse_ = reverse;
+        queue_draw();
+    }
+
+    void set_min_speed(double speed) {
+        min_speed_ = speed;
+        queue_draw();
+    }
+
+    void set_max_speed(double speed) {
+        max_speed_ = speed;
+        queue_draw();
+    }
+
+protected:
+    bool on_draw(const Cairo::RefPtr<Cairo::Context>& cr) override {
+        Gtk::Allocation alloc = get_allocation();
+        const int w = alloc.get_width(), h = alloc.get_height();
+        const double radius = std::min(w, h) / 2.2;
+        const double cx = w / 2.0, cy = h / 2.0;
+
+        // Background color (olive drab)
+        cr->set_source_rgb(0.2, 0.25, 0.2);
+        cr->arc(cx, cy, radius + 10, 0, 2 * M_PI);
+        cr->fill_preserve();
+        cr->set_source_rgb(0.1, 0.1, 0.1);
+        cr->set_line_width(2.0);
+        cr->stroke();
+
+        // Minor ticks
+        cr->set_line_width(1.0);
+        cr->set_source_rgb(1.0, 1.0, 0.8);
+        for (int i = 0; i <= 50; ++i) {
+            double angle = M_PI * (1 + i / 50.0);
+            double x1 = cx + radius * cos(angle);
+            double y1 = cy + radius * sin(angle);
+            double x2 = cx + (radius - 5) * cos(angle);
+            double y2 = cy + (radius - 5) * sin(angle);
+            cr->move_to(x1, y1);
+            cr->line_to(x2, y2);
+        }
+        cr->stroke();
+
+        // Major ticks and labels
+        cr->set_line_width(2.0);
+        cr->select_font_face("Courier", Cairo::FONT_SLANT_NORMAL, Cairo::FONT_WEIGHT_BOLD);
+        cr->set_font_size(12.0);
+
+        for (int i = 0; i <= 10; ++i) {
+            double angle = M_PI * (1 + i / 10.0);
+            double x1 = cx + radius * cos(angle);
+            double y1 = cy + radius * sin(angle);
+            double x2 = cx + (radius - 10) * cos(angle);
+            double y2 = cy + (radius - 10) * sin(angle);
+
+            cr->move_to(x1, y1);
+            cr->line_to(x2, y2);
+            cr->stroke();
+
+            int value = static_cast<int>((i / 10.0) * max_speed_);
+            double tx = cx + (radius - 25) * cos(angle);
+            double ty = cy + (radius - 25) * sin(angle);
+            cr->move_to(tx - 8, ty + 5);
+            cr->show_text(std::to_string(value));
+        }
+
+        // Needle
+        double needle_angle = M_PI + (speed_ - min_speed_) / (max_speed_ - min_speed_) * M_PI;
+        cr->set_source_rgb(reverse_ ? 1.0 : 1.0, reverse_ ? 0.0 : 0.0, 0.0); // red if reverse
+        cr->set_line_width(2.5);
+        cr->move_to(cx, cy);
+        cr->line_to(cx + (radius - 20) * cos(needle_angle), cy + (radius - 20) * sin(needle_angle));
+        cr->stroke();
+
+        // Center cap
+        cr->arc(cx, cy, 5.0, 0, 2 * M_PI);
+        cr->set_source_rgb(0.0, 0.0, 0.0);
+        cr->fill();
+
+        // Label
+        cr->set_source_rgb(1.0, 1.0, 1.0);
+        cr->set_font_size(14);
+        cr->move_to(cx - label_.size() * 4.5, cy + radius + 20);
+        cr->show_text(label_);
+
+        // Reverse text
+        if (reverse_) {
+            cr->set_source_rgb(1.0, 0.0, 0.0);
+            cr->set_font_size(12);
+            cr->move_to(cx - 20, cy + radius + 40);
+            cr->show_text("REV");
+        }
+
+        return true;
+    }
+
+private:
+    std::string label_;
+    double speed_;
+    bool reverse_;
+    double min_speed_;
+    double max_speed_;
+};
     
 
 Speedometer* leftSpeedometer;
-Speedometer* rightSpeedometer;
+Speedometer2* rightSpeedometer;
 
 
 class VideoWidget : public Gtk::DrawingArea {
@@ -2083,18 +2352,10 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
         bottomBox->add(*bottomInnerBox);
         initRoll();
         leftSpeedometer = Gtk::manage(new Speedometer("Left Speedometer"));
-        leftSpeedometer->set_min_speed(0.0);
-        leftSpeedometer->set_max_speed(1.0);
-        leftSpeedometer->set_speed(0);
-        leftSpeedometer->set_reverse(false);
         leftSpeedometer->set_size_request(200, 75);
         bottomLowerBox->add(*leftSpeedometer);
 
-        rightSpeedometer = Gtk::manage(new Speedometer("Right Speedometer"));
-        rightSpeedometer->set_min_speed(0.0);
-        rightSpeedometer->set_max_speed(1.0);
-        rightSpeedometer->set_speed(0);
-        rightSpeedometer->set_reverse(false);
+        rightSpeedometer = Gtk::manage(new Speedometer2("Right Speedometer"));
         rightSpeedometer->set_size_request(200, 75);
         bottomLowerBox->add(*rightSpeedometer);
 

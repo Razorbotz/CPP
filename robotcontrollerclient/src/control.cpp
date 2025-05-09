@@ -136,12 +136,17 @@ Gtk::Image* pitch_image;
 
 double MULTIPLIER_X = 1100.0 / 6.88;
 double MULTIPLIER_Y = 800.0 / 5.0;
-
+/*
+Arena specs
 double ARENA_WIDTH_M = 6.88, ARENA_HEIGHT_M = 5.0;
 double ARENA_WIDTH_P = 1100.0, ARENA_HEIGHT_P = 800.0;
 
 double UCF_WIDTH_M = 8.14, UCF_HEIGHT_M = 4.57;
 double UCF_WIDTH_P = 1300.0, UCF_HEIGHT_P = 730;
+
+Lab arena - 5
+*/
+
 
 std::vector<InfoFrame*> infoFrameList;
 
@@ -301,7 +306,7 @@ class ImageOverlay : public Gtk::DrawingArea {
         }
 
         if(dest_x != -1 && dest_y != -1){
-            Gdk::Cairo::set_source_pixbuf(cr, dest_image, data.x - (dest_image.get_height() / 2), 800 - (data.y - dest_image.get_width() / 2));
+            Gdk::Cairo::set_source_pixbuf(cr, dest_image, dest_x - (dest_image->get_height() / 2), 800 - (dest_y - dest_image->get_width() / 2));
             cr->paint();
         }
 
@@ -314,7 +319,7 @@ class ImageOverlay : public Gtk::DrawingArea {
 
 
     private:
-        Glib::RefPtr<Gdk::Pixbuf> background, overlay, rock, hole, x;
+        Glib::RefPtr<Gdk::Pixbuf> background, overlay, rock, hole, dest_image;
         double img_x, img_y;
         double rotation_angle;
 
@@ -781,102 +786,89 @@ MultiMotorGraph* linearPotentiometerGraph;
 
 class Speedometer : public Gtk::DrawingArea {
     public:
-        Speedometer() : speed_(0), max_speed_(100), reverse_(false), realistic_(true), text_inside_(true), dark_mode_(false) {}
+        Speedometer(const std::string& label) : label_(label), speed_(0) {}
     
         void set_speed(double speed) {
-            speed_ = speed;
+            speed_ = std::clamp(speed, 0.0, max_speed_);
             queue_draw();
         }
-    
-        void set_reverse(bool reverse) {
+
+        void set_reverse(bool reverse){
             reverse_ = reverse;
             queue_draw();
         }
-    
-        void set_realistic(bool realistic) {
-            realistic_ = realistic;
+
+        void set_min_speed(double speed){
+            min_speed_ = speed;
             queue_draw();
         }
-    
-        void set_text_inside(bool inside) {
-            text_inside_ = inside;
-            queue_draw();
-        }
-    
-        void set_dark_mode(bool dark_mode) {
-            dark_mode_ = dark_mode;
+
+        void set_max_speed(double speed){
+            max_speed_ = speed;
             queue_draw();
         }
     
     protected:
         bool on_draw(const Cairo::RefPtr<Cairo::Context>& cr) override {
-            Gtk::Allocation allocation = get_allocation();
-            int width = allocation.get_width();
-            int height = allocation.get_height();
+            Gtk::Allocation alloc = get_allocation();
+            const int w = alloc.get_width(), h = alloc.get_height();
+            const double radius = std::min(w, h) / 2.2;
+            const double cx = w / 2.0, cy = h / 2.0;
     
-            cr->save();
-            cr->set_source_rgb(dark_mode_ ? 0.0 : 1.0, dark_mode_ ? 0.0 : 1.0, dark_mode_ ? 0.0 : 1.0);
-            cr->paint();
-            cr->restore();
-    
-            const double radius = std::min(width, height) / 2.5;
-            const double center_x = width / 2.0;
-            const double center_y = height * 0.9;
-    
-            const double angle_start = M_PI;
-            const double angle_end = 0;
-            double angle = M_PI - (M_PI * (speed_ / max_speed_));
-    
-            // Draw arc background
-            cr->save();
-            cr->arc(center_x, center_y, radius, angle_start, angle_end);
-            cr->set_line_width(realistic_ ? 15.0 : 10.0);
-            cr->set_source_rgb(dark_mode_ ? 0.7 : 0.0, dark_mode_ ? 0.7 : 0.0, dark_mode_ ? 0.7 : 0.0);
+            // Dial background
+            cr->set_source_rgb(0.95, 0.95, 0.95);
+            cr->arc(cx, cy, radius + 10, 0, 2 * M_PI);
+            cr->fill_preserve();
+            cr->set_source_rgb(0.2, 0.2, 0.2);
             cr->stroke();
-            cr->restore();
     
-            // Draw current speed indicator
-            cr->save();
-            cr->arc(center_x, center_y, radius, angle_start, angle);
-            cr->set_line_width(realistic_ ? 15.0 : 10.0);
-            cr->set_source_rgb(dark_mode_ ? 0.3 : 0.2, dark_mode_ ? 0.8 : 0.6, dark_mode_ ? 0.3 : 0.2);
-            cr->stroke();
-            cr->restore();
+            // Ticks and labels
+            for (int i = 0; i <= 10; ++i) {
+                double angle = M_PI * (1 + i / 10.0);
+                double x1 = cx + radius * cos(angle);
+                double y1 = cy + radius * sin(angle);
+                double x2 = cx + (radius - 10) * cos(angle);
+                double y2 = cy + (radius - 10) * sin(angle);
     
-            // Draw speed text
-            cr->save();
-            cr->select_font_face("Sans", Cairo::FONT_SLANT_NORMAL, Cairo::FONT_WEIGHT_BOLD);
-            cr->set_font_size(24.0);
-            cr->set_source_rgb(dark_mode_ ? 1.0 : 0.0, dark_mode_ ? 1.0 : 0.0, dark_mode_ ? 1.0 : 0.0);
-            std::string speed_text = std::to_string(static_cast<int>(speed_)) + " km/h";
-            Cairo::TextExtents extents;
-            cr->get_text_extents(speed_text, extents);
-            double text_x = center_x - extents.width / 2.0;
-            double text_y = text_inside_ ? center_y - radius / 2.0 : center_y - radius - 10.0;
-            cr->move_to(text_x, text_y);
-            cr->show_text(speed_text);
-            cr->restore();
+                cr->move_to(x1, y1);
+                cr->line_to(x2, y2);
+                cr->stroke();
     
-            // Draw reverse indicator
-            if (reverse_) {
-                cr->save();
-                cr->set_source_rgb(1.0, 0.0, 0.0);
-                cr->arc(center_x, center_y - radius * 0.8, 10.0, 0, 2 * M_PI);
-                cr->fill();
-                cr->restore();
+                // Number label
+                cr->set_font_size(10);
+                int value = static_cast<int>((i / 10.0) * max_speed_);
+                double tx = cx + (radius - 20) * cos(angle);
+                double ty = cy + (radius - 20) * sin(angle);
+                cr->move_to(tx - 5, ty + 5);
+                cr->show_text(std::to_string(value));
             }
+    
+            // Needle
+            double angle = M_PI + (speed_ / max_speed_) * M_PI;
+            cr->set_source_rgb(1.0, 0, 0);
+            cr->set_line_width(2);
+            cr->move_to(cx, cy);
+            cr->line_to(cx + (radius - 15) * cos(angle), cy + (radius - 15) * sin(angle));
+            cr->stroke();
+    
+            // Label
+            cr->set_source_rgb(0, 0, 0);
+            cr->select_font_face("Sans", Cairo::FONT_SLANT_NORMAL, Cairo::FONT_WEIGHT_BOLD);
+            cr->set_font_size(14);
+            cr->move_to(cx - 25, cy + radius + 20);
+            cr->show_text(label_);
     
             return true;
         }
     
     private:
+        std::string label_;
         double speed_;
-        double max_speed_;
         bool reverse_;
-        bool realistic_;
-        bool text_inside_;
-        bool dark_mode_;
+        double min_speed_ = 0.0;
+        double max_speed_ = 100.0;
     };
+    
 
 Speedometer* leftSpeedometer;
 Speedometer* rightSpeedometer;
@@ -2090,20 +2082,20 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
 
         bottomBox->add(*bottomInnerBox);
         initRoll();
-        leftSpeedometer = Gtk::manage(new Speedometer());
+        leftSpeedometer = Gtk::manage(new Speedometer("Left Speedometer"));
+        leftSpeedometer->set_min_speed(0.0);
+        leftSpeedometer->set_max_speed(1.0);
         leftSpeedometer->set_speed(0);
-        leftSpeedometer->set_reverse(true);
-        leftSpeedometer->set_realistic(true);
-        leftSpeedometer->set_text_inside(true);
-        leftSpeedometer->set_dark_mode(true);
+        leftSpeedometer->set_reverse(false);
+        leftSpeedometer->set_size_request(200, 75);
         bottomLowerBox->add(*leftSpeedometer);
 
-        rightSpeedometer = Gtk::manage(new Speedometer());
+        rightSpeedometer = Gtk::manage(new Speedometer("Right Speedometer"));
+        rightSpeedometer->set_min_speed(0.0);
+        rightSpeedometer->set_max_speed(1.0);
         rightSpeedometer->set_speed(0);
-        rightSpeedometer->set_reverse(true);
-        rightSpeedometer->set_realistic(true);
-        rightSpeedometer->set_text_inside(true);
-        rightSpeedometer->set_dark_mode(true);
+        rightSpeedometer->set_reverse(false);
+        rightSpeedometer->set_size_request(200, 75);
         bottomLowerBox->add(*rightSpeedometer);
 
         initPitch();
@@ -2876,7 +2868,7 @@ void processArguments(int argc, char** argv){
                     i++;
                 }
             }
-            else if(!strcmp("--set_map")){
+            else if(!strcmp("--set_map", argv[i])){
                 mapUsed = argv[i+1];
             }
         }

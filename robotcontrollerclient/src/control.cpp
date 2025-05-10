@@ -802,7 +802,15 @@ public:
     }
 
     void set_speed(double speed) {
-        speed_ = std::clamp(speed, min_speed_, max_speed_); // Assuming min_speed_ is typically 0 for magnitude
+        if(speed < min_speed_){
+            set_reverse(true);
+            speed_ = std::clamp(-speed, min_speed_, max_speed_); // Assuming min_speed_ is typically 0 for magnitude
+
+        }
+        else{
+            speed_ = std::clamp(speed, min_speed_, max_speed_); // Assuming min_speed_ is typically 0 for magnitude
+            set_reverse(false);
+        }
         queue_draw();
     }
 
@@ -1059,41 +1067,28 @@ protected:
             return true;
         }
 
-        cv::Mat frameToDisplay_CV; // This will hold the CV_8UC3 RGB data
+        // Assume `latestFrame` contains the compressed image data received from the server
+        // Step 1: Receive the compressed data (this happens earlier in your code)
+        // Step 2: Decompress the frame using OpenCV
+        cv::Mat frameToDisplay_CV;
 
-        // Convert frame to RGB CV_8UC3 format suitable for Gdk::Pixbuf
-        if (latestFrame.channels() == 1) {
-            if (latestFrame.type() != CV_8UC1) { // Check if it's 8-bit grayscale
-                draw_error_rect(cr, allocation, 0.5, 0.5, 0.0); // Yellowish for type error
+        try {
+            // Decompress the image using OpenCV (assuming `latestFrame` contains the compressed data)
+            frameToDisplay_CV = latestFrame.clone();
+            if (frameToDisplay_CV.empty()) {
                 return true;
             }
-            cv::cvtColor(latestFrame, frameToDisplay_CV, cv::COLOR_GRAY2RGB);
-        } else if (latestFrame.channels() == 3) { // Assuming BGR for 3 channels
-            if (latestFrame.type() != CV_8UC3) { // Check if it's 8-bit 3-channel
-                draw_error_rect(cr, allocation, 0.0, 0.5, 0.5); // Cyanish for type error
-                return true;
-            }
-            cv::cvtColor(latestFrame, frameToDisplay_CV, cv::COLOR_BGR2RGB);
-        } else if (latestFrame.channels() == 4) { // Assuming BGRA/RGBA for 4 channels
-            if (latestFrame.type() != CV_8UC4) { // Check if it's 8-bit 4-channel
-                draw_error_rect(cr, allocation, 0.5, 0.0, 0.5); // Purplish for type error
-                return true;
-            }
-            // Convert to 3-channel RGB, discarding alpha, for has_alpha=false Pixbuf
-            cv::cvtColor(latestFrame, frameToDisplay_CV, cv::COLOR_BGRA2RGB);
-            // If you need to preserve alpha, convert to RGBA:
-            // cv::cvtColor(latestFrame, frameToDisplay_CV, cv::COLOR_BGRA2RGBA);
-            // Then use has_alpha = true and adjust channels for rowstride.
-        } else {
-            // Unsupported number of channels
-            draw_error_rect(cr, allocation, 1.0, 0.0, 0.0); // Red for channel error
+        } catch (const std::exception& e) {
             return true;
         }
 
         // Ensure conversion was successful and resulted in a 3-channel, 8-bit unsigned Mat
-        if (frameToDisplay_CV.empty() || frameToDisplay_CV.type() != CV_8UC3) {
-            draw_error_rect(cr, allocation, 1.0, 0.5, 0.0); // Orange for conversion failure
-            return true;
+        if (frameToDisplay_CV.channels() == 1) {
+            cv::cvtColor(frameToDisplay_CV, frameToDisplay_CV, cv::COLOR_GRAY2RGB);
+        } else if (frameToDisplay_CV.channels() == 4) {
+            cv::cvtColor(frameToDisplay_CV, frameToDisplay_CV, cv::COLOR_BGRA2RGB);
+        } else if (frameToDisplay_CV.channels() == 3) {
+            cv::cvtColor(frameToDisplay_CV, frameToDisplay_CV, cv::COLOR_BGR2RGB);
         }
 
         const int width = frameToDisplay_CV.cols;
@@ -1130,7 +1125,7 @@ protected:
 
         Glib::RefPtr<Gdk::Pixbuf> pixbuf;
         try {
-           pixbuf = Gdk::Pixbuf::create_from_data(
+            pixbuf = Gdk::Pixbuf::create_from_data(
                 copiedData,             // Raw pixel data
                 Gdk::COLORSPACE_RGB,    // Colorspace
                 false,                  // has_alpha
@@ -1140,14 +1135,12 @@ protected:
                 pixbuf_rowstride        // Rowstride for copiedData
             );
         } catch (const Glib::Error& /*ex*/) {
-            // std::cerr << "VideoWidget: Failed to create Gdk::Pixbuf: " << ex.what().raw() << std::endl;
             delete[] copiedData; // IMPORTANT: If Pixbuf creation fails, destroy_fn is not set, free manually.
             draw_error_rect(cr, allocation, 0.0, 1.0, 0.0); // Green for Pixbuf creation error
             return true;
         }
 
         if (pixbuf) {
-            // Scale pixbuf to fit widget drawing area, maintaining aspect ratio, and center it.
             const int widget_width = allocation.get_width();
             const int widget_height = allocation.get_height();
 
@@ -1161,7 +1154,6 @@ protected:
             double draw_x = (widget_width - scaled_width) / 2.0;
             double draw_y = (widget_height - scaled_height) / 2.0;
             
-            // Ensure scaled dimensions are positive
             if (scaled_width > 0 && scaled_height > 0) {
                 Glib::RefPtr<Gdk::Pixbuf> scaled_pixbuf = pixbuf->scale_simple(
                     scaled_width, scaled_height, Gdk::INTERP_BILINEAR);
@@ -1169,22 +1161,19 @@ protected:
                 if (scaled_pixbuf) {
                     Gdk::Cairo::set_source_pixbuf(cr, scaled_pixbuf, draw_x, draw_y);
                 } else {
-                    // Fallback if scaling fails: try to draw original, centered
                     Gdk::Cairo::set_source_pixbuf(cr, pixbuf, draw_x, draw_y);
                 }
             } else {
-                 // If scaled dimensions are zero (e.g. widget is too small or original frame zero sized),
-                 // draw original pixbuf centered (might not be visible if widget is tiny)
-                 Gdk::Cairo::set_source_pixbuf(cr, pixbuf, draw_x, draw_y);
+                Gdk::Cairo::set_source_pixbuf(cr, pixbuf, draw_x, draw_y);
             }
             cr->paint();
         } else {
-            // This case should ideally be caught by the try-catch block for create_from_data
             draw_error_rect(cr, allocation, 0.0, 0.0, 1.0); // Blue for unexpected null pixbuf
         }
 
         return true;
     }
+
 
 private:
     void draw_error_rect(const Cairo::RefPtr<Cairo::Context>& cr, const Gtk::Allocation& alloc, double r, double g, double b) {
@@ -1542,7 +1531,7 @@ void handleTalonElements(const std::string& label, const std::vector<Element>& e
             if (!noVideo) talonCurrentGraph->update_data(label, current);
         }
         else if (element.label == "Output Percent") {
-            float percent = element.data.front().uint16;
+            float percent = element.data.front().float32;
             if (!noVideo) talonOutputGraph->update_data(label, percent);
         }
     }
@@ -1560,15 +1549,13 @@ void handleFalconElements(const std::string& label, const std::vector<Element>& 
             if (!noVideo) falconCurrentGraph->update_data(label, current);
         }
         else if (element.label == "Output Percent") {
-            float percent = element.data.front().uint16;
+            float percent = element.data.front().float32;
             if (!noVideo) falconOutputGraph->update_data(label, percent);
             if(label == "Falcon 2" || label == "Falcon 4"){
                 leftSpeedometer->set_speed(percent * 100.0);
-                leftSpeedometer->set_reverse((percent < 0));
             }
             if(label == "Falcon 1" || label == "Falcon 3"){
                 rightSpeedometer->set_speed(percent * 100.0);
-                rightSpeedometer->set_reverse((percent < 0));
             }
         }
     }
@@ -2360,8 +2347,8 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
         cameraBox->set_size_request(1400, 800);
         videoArea = Gtk::manage(new VideoWidget());
         videoArea->set_size_request(1400, 800);
-        videoArea->set_hexpand(true);
-        videoArea->set_vexpand(true);
+        //videoArea->set_hexpand(true);
+        //videoArea->set_vexpand(true);
         cameraBox->add(*videoArea);
         innerMiddleBox->add(*cameraBox);
 
@@ -3077,26 +3064,20 @@ void videoMain(){
         }
     
     
-        if (totalFrameRead == (720 * 1280 * 1) && isGray) {
-            cv::Mat received_img(720, 1280, CV_8UC1, frameDataBuffer.data());
-            cv::Mat display_img;
-            cv::resize(received_img, display_img, cv::Size(1400, 800), cv::INTER_LINEAR);
-            std::lock_guard<std::mutex> lock(frameMutex);
-            latestFrame = display_img.clone();
-            newFrameAvailable = true;
-        }
-        else if (totalFrameRead == (720 * 1280 * 3) && !isGray) {
-            cv::Mat received_img(720, 1280, CV_8UC3, frameDataBuffer.data());
-            cv::Mat display_img;
-            cv::resize(received_img, display_img, cv::Size(1400, 800), cv::INTER_LINEAR);
-            std::lock_guard<std::mutex> lock(frameMutex);
-            latestFrame = display_img.clone();
-            newFrameAvailable = true;
-        }
-        else {
-            std::cerr << "Frame size mismatch. Expected " << (720*1280*1) << ", Got " << totalFrameRead << std::endl;
+        cv::Mat decoded = cv::imdecode(frameDataBuffer, isGray ? cv::IMREAD_GRAYSCALE : cv::IMREAD_COLOR);
+        if (decoded.empty()) {
+            std::cerr << "Failed to decode JPEG image. Buffer size: " << frameDataBuffer.size() << std::endl;
             setVideoDisconnectedState();
             isStreamingActive = false;
+            continue;
+        }
+
+        cv::Mat display_img;
+        cv::resize(decoded, display_img, cv::Size(1400, 800), 0, 0, cv::INTER_LINEAR);
+        {
+            std::lock_guard<std::mutex> lock(frameMutex);
+            latestFrame = display_img.clone();
+            newFrameAvailable = true;
         }
     }
     return; 

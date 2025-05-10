@@ -138,16 +138,18 @@ Gtk::Image* pitch_image;
 
 double MULTIPLIER_X = 1100.0 / 6.88;
 double MULTIPLIER_Y = 800.0 / 5.0;
-/*
-Arena specs
+
 double ARENA_WIDTH_M = 6.88, ARENA_HEIGHT_M = 5.0;
 double ARENA_WIDTH_P = 1100.0, ARENA_HEIGHT_P = 800.0;
 
 double UCF_WIDTH_M = 8.14, UCF_HEIGHT_M = 4.57;
 double UCF_WIDTH_P = 1300.0, UCF_HEIGHT_P = 730;
 
-Lab arena - 5
-*/
+double COSMIC_WIDTH_M = 5.48, COSMIC_HEIGHT_M = 4.87;
+double COMSIC_WIDTH_P = 877, COSMIC_HEIGHT_P = 780;
+
+double LAB_WIDTH_M = 5.0, LAB_HEIGHT_M = 4.0;
+double LAB_WIDTH_P = 800, LAB_HEIGHT_P = 640;
 
 
 std::vector<InfoFrame*> infoFrameList;
@@ -254,6 +256,23 @@ class ImageOverlay : public Gtk::DrawingArea {
     protected:
     bool on_draw(const Cairo::RefPtr<Cairo::Context>& cr) override {
         if (!background || !overlay) return false;
+
+        int height = 0;
+        if(mapUsed == "NASA"){
+            height = ARENA_HEIGHT_P;
+        }
+        else if(mapUsed == "UCF"){
+            height = UCF_HEIGHT_P;
+        }
+        else if(mapUsed == "Cosmic"){
+            height = COSMIC_HEIGHT_P;
+        }
+        else if(mapUsed == "Lab"){
+            height = LAB_HEIGHT_P;
+        }
+        else{
+            height = ARENA_HEIGHT_P;
+        }
     
         // Get widget and image sizes to scale the images correctly
         int widget_width = get_allocation().get_width();
@@ -282,7 +301,7 @@ class ImageOverlay : public Gtk::DrawingArea {
         cr->restore();
 
         cr->save();
-        cr->translate(img_x + overlay->get_width() / 2, 800 - (img_y + overlay->get_height() / 2));
+        cr->translate(img_x + overlay->get_width() / 2, height - (img_y + overlay->get_height() / 2));
         cr->rotate(rotation_angle);
         cr->translate(-overlay->get_width() / 2, -overlay->get_height() / 2);
         Gdk::Cairo::set_source_pixbuf(cr, overlay, 0, 0);
@@ -294,7 +313,7 @@ class ImageOverlay : public Gtk::DrawingArea {
             int new_width = rock->get_width() * data.scale_multiplier;
             int new_height = rock->get_height() * data.scale_multiplier;
             auto scaled_pixbuf = rock->scale_simple(new_width, new_height, Gdk::INTERP_BILINEAR);
-            Gdk::Cairo::set_source_pixbuf(cr, scaled_pixbuf, data.x - (new_width / 2), 800 - (data.y - new_height / 2));
+            Gdk::Cairo::set_source_pixbuf(cr, scaled_pixbuf, data.x - (new_width / 2), height - (data.y - new_height / 2));
             cr->paint();
         }
     
@@ -303,12 +322,12 @@ class ImageOverlay : public Gtk::DrawingArea {
             int new_width = hole->get_width() * data.scale_multiplier;
             int new_height = hole->get_height() * data.scale_multiplier;
             auto scaled_pixbuf = hole->scale_simple(new_width, new_height, Gdk::INTERP_BILINEAR);
-            Gdk::Cairo::set_source_pixbuf(cr, scaled_pixbuf, data.x - (new_width / 2), 800 - (data.y - new_height / 2));
+            Gdk::Cairo::set_source_pixbuf(cr, scaled_pixbuf, data.x - (new_width / 2), height - (data.y - new_height / 2));
             cr->paint();
         }
 
         if(dest_x != -1 && dest_y != -1){
-            Gdk::Cairo::set_source_pixbuf(cr, dest_image, dest_x - (dest_image->get_height() / 2), 800 - (dest_y - dest_image->get_width() / 2));
+            Gdk::Cairo::set_source_pixbuf(cr, dest_image, dest_x - (dest_image->get_height() / 2), height - (dest_y - dest_image->get_width() / 2));
             cr->paint();
         }
 
@@ -3064,16 +3083,33 @@ void videoMain(){
         }
     
     
-        cv::Mat decoded = cv::imdecode(frameDataBuffer, isGray ? cv::IMREAD_GRAYSCALE : cv::IMREAD_COLOR);
-        if (decoded.empty()) {
-            std::cerr << "Failed to decode JPEG image. Buffer size: " << frameDataBuffer.size() << std::endl;
-            setVideoDisconnectedState();
-            isStreamingActive = false;
+        cv::Mat decoded_frame;
+        try {
+            decoded_frame = cv::imdecode(frameDataBuffer, isGray ? cv::IMREAD_GRAYSCALE : cv::IMREAD_COLOR);
+        }
+        catch (const cv::Exception& e) {
+            std::cerr << "OpenCV exception during imdecode: " << e.what() << ". Buffer size: " << frameDataBuffer.size() << std::endl;
             continue;
         }
 
+        if (decoded_frame.empty()) {
+            std::cerr << "Failed to decode JPEG image. Buffer size: " << frameDataBuffer.size() << std::endl;
+            continue; 
+        }
+
         cv::Mat display_img;
-        cv::resize(decoded, display_img, cv::Size(1400, 800), 0, 0, cv::INTER_LINEAR);
+        try {
+            cv::resize(decoded_frame, display_img, cv::Size(1400, 800), 0, 0, cv::INTER_LINEAR);
+        }
+        catch (const cv::Exception& e) {
+            std::cerr << "OpenCV exception during resize: " << e.what() << std::endl;
+            continue;
+        }
+        
+        if (display_img.empty()) {
+            std::cerr << "Image is empty after resize." << std::endl;
+            continue;
+        }
         {
             std::lock_guard<std::mutex> lock(frameMutex);
             latestFrame = display_img.clone();

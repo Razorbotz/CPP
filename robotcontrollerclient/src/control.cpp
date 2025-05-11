@@ -3024,8 +3024,8 @@ void videoMain(){
             }
             else {
                 if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                     std::this_thread::sleep_for(std::chrono::milliseconds(1));
-                     continue;
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                    continue;
                 }
                 else {
                     perror("recv header error");
@@ -3273,6 +3273,7 @@ int main(int argc, char** argv) {
     now = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> time_span = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastTransmitTime);
     double deltaTime = time_span.count();
+    bool initialized = false;
     
     std::list<uint8_t> messageBytesList; //List to store incoming bytes
     uint8_t message[256];
@@ -3314,19 +3315,22 @@ int main(int argc, char** argv) {
             std::cout << std::endl;
             continue;
         }
-        // if(bytesRead==0){
-        //     //std::cout << "Lost Connection" << std::endl;
-        //     setDisconnectedState();
-        //     if(messageBytesList.size() > 0){
-        //         messageBytesList.clear();
-        //     }
-        //     continue;
-        // }
-
-        //std::cout << "After Read" << std::endl;
-        
+        if (bytesRead == 0) {
+            std::cerr << "Server disconnected\n";
+            connected = false;
+            initialized = false;
+            close(sock);
+            continue;
+        }
+        else if (bytesRead < 0) {
+            perror("recv error");
+            connected = false;
+            initialized = false;
+            close(sock);
+            continue;
+        }
         //Fill the messageBytesList with the bytes read from the socket
-        if(bytesRead != -1){
+        if(bytesRead > 0){
         	std::cout << bytesRead << std::endl;
             for(int index=0;index<bytesRead;index++){
                 messageBytesList.push_back(buffer[index]);
@@ -3338,12 +3342,17 @@ int main(int argc, char** argv) {
             lastReceiveTime = std::chrono::high_resolution_clock::now();
         }
         else{
-            now = std::chrono::high_resolution_clock::now();
-            time_span = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastReceiveTime);
-            deltaTime = time_span.count();
-            if(deltaTime > 5.0 && connected){
-                setDisconnectedState();
+            if(!initialized)
+                initialized = true;
+            else{
+                now = std::chrono::high_resolution_clock::now();
+                time_span = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastReceiveTime);
+                deltaTime = time_span.count();
+                if(deltaTime > 5.0 && connected){
+                    //setDisconnectedState();
+                }
             }
+            
         }
         
         //std::cout << "Before hasMessage check" << std::endl;
@@ -3440,7 +3449,7 @@ int main(int argc, char** argv) {
                     break;
                 }
                 case SDL_JOYAXISMOTION: {
-                    std::cout << "Joystick axis motion" << std::endl;
+                    //std::cout << "Joystick axis motion" << std::endl;
                     int deadZone=4000;
                     if(event.jaxis.value < -deadZone || deadZone < event.jaxis.value ) {
                         axisEventList->at(event.jaxis.which)->at(event.jaxis.axis)->isSet = true;

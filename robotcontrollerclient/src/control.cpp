@@ -495,7 +495,7 @@ class CircleDrawingArea : public Gtk::DrawingArea{
     public:
         CircleDrawingArea()
         {
-            color_.set_rgba(1.0, 0.0, 0.0, 1.0);
+            color_.set_rgba(0.0, 0.0, 0.0, 1.0);
             background_color_.set_rgba(1.0, 1.0, 1.0, 1.0);
         }
     
@@ -1354,15 +1354,23 @@ void initBucketPos(){
 }
 
 void setBackgroundColors(Gdk::RGBA color){
-    talon1Circle->set_background_color(color);
-    talon2Circle->set_background_color(color);
-    talon3Circle->set_background_color(color);
-    talon4Circle->set_background_color(color);
+    if(talon1Circle)
+        talon1Circle->set_background_color(color);
+    if(talon2Circle)
+        talon2Circle->set_background_color(color);
+    if(talon3Circle)
+        talon3Circle->set_background_color(color);
+    if(talon4Circle)
+        talon4Circle->set_background_color(color);
 
-    falcon1Circle->set_background_color(color);
-    falcon2Circle->set_background_color(color);
-    falcon3Circle->set_background_color(color);
-    falcon4Circle->set_background_color(color);
+    if(falcon1Circle)
+        falcon1Circle->set_background_color(color);
+    if(falcon2Circle)
+        falcon2Circle->set_background_color(color);
+    if(falcon3Circle)
+        falcon3Circle->set_background_color(color);
+    if(falcon4Circle)
+        falcon4Circle->set_background_color(color);
 }
 
 
@@ -1482,6 +1490,12 @@ void updateCircleColor(CircleDrawingArea* circle, bool lowVoltage) {
     else
         color.set_rgba(0.0, 1.0, 0.0, 1.0); // Green
 
+    circle->set_color(color);
+}
+
+
+void updateCircleColor(CircleDrawingArea* circle, Gdk::RGBA color) {
+    if (!circle || noVideo) return;
     circle->set_color(color);
 }
 
@@ -1763,6 +1777,19 @@ void setDisconnectedState(){
     arm_init = false;
     bucket_init = false;
     roll_init = false;
+
+    if(!noVideo){
+        Gdk::RGBA black;
+        black.set_rgba(0.0, 0.0, 0.0, 1.0);
+        updateCircleColor(talon1Circle, black);
+        updateCircleColor(talon2Circle, black);
+        updateCircleColor(talon3Circle, black);
+        updateCircleColor(talon4Circle, black);
+        updateCircleColor(falcon1Circle, black);
+        updateCircleColor(falcon2Circle, black);
+        updateCircleColor(falcon3Circle, black);
+        updateCircleColor(falcon4Circle, black);
+    }
 }
 
 
@@ -1977,7 +2004,7 @@ void connectToServer(){
     
     bytesRead = recvfrom( sock , buffer, 2048, 0, (struct sockaddr *)&serv_addr, &addr_len);
     std::cout << "Bytes read: " << bytesRead << std::endl;
-    setConnectedState();
+    if(bytesRead > 0)setConnectedState();
     std::string addressString = ORIN_IP;
     ipAddressEntry->set_text(addressString);
 
@@ -2123,7 +2150,7 @@ bool on_key_press_event(GdkEventKey* key_event){
 }
 
 
-Gtk::Box* create_labeled_box(const Glib::ustring& label_text, CircleDrawingArea*& out_circle) {
+Gtk::Box* create_labeled_box(const Glib::ustring& label_text, CircleDrawingArea*& out_circle, bool right = false) {
     auto box = Gtk::manage(new BorderedBox(Gtk::ORIENTATION_HORIZONTAL, 5));
     box->set_size_request(300, 75);
 
@@ -2139,13 +2166,19 @@ Gtk::Box* create_labeled_box(const Glib::ustring& label_text, CircleDrawingArea*
     out_circle->set_hexpand(false);
     out_circle->set_halign(Gtk::ALIGN_CENTER);
 
-    box->add(*out_circle);
-    box->add(*label);
+    if(right){
+        box->add(*label);
+        box->add(*out_circle);
+    }
+    else{
+        box->add(*out_circle);
+        box->add(*label);
+    }   
 
     return box;
 }
 
-Gtk::Box* create_motor_column(std::vector<std::pair<Glib::ustring, CircleDrawingArea**>> items, void (*init_hook)()) {
+Gtk::Box* create_motor_column(std::vector<std::pair<Glib::ustring, CircleDrawingArea**>> items, void (*init_hook)(), bool right = false) {
     auto column = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
     column->set_size_request(300, 300);
     column->set_hexpand(false);
@@ -2153,7 +2186,7 @@ Gtk::Box* create_motor_column(std::vector<std::pair<Glib::ustring, CircleDrawing
 
     for (size_t i = 0; i < items.size(); ++i) {
         if (i == 2 && init_hook) init_hook();
-        column->add(*create_labeled_box(items[i].first, *items[i].second));
+        column->add(*create_labeled_box(items[i].first, *items[i].second, right));
     }
 
     return column;
@@ -2360,7 +2393,7 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
             {"Talon 2", &talon2Circle},
             {"Talon 3", &talon3Circle},
             {"Talon 4", &talon4Circle}
-        }, initArmPos);
+        }, initArmPos, true);
 
         auto cameraBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
         cameraBox->set_size_request(1400, 800);

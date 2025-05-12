@@ -29,6 +29,7 @@
 #include <unordered_set>
 #include <algorithm>
 #include <iomanip>
+#include <fstream>
 
 #include <cstdlib>
 #include <opencv2/opencv.hpp>
@@ -814,7 +815,10 @@ public:
           min_speed_(0.0),
           max_speed_(100.0),
           num_major_divisions_(10), // e.g., 0, 10, 20 ... 100 (11 ticks)
-          num_minor_ticks_per_segment_(4) // 4 minor ticks = 5 small intervals
+          num_minor_ticks_per_segment_(4), // 4 minor ticks = 5 small intervals
+          display_speed_(true),
+          numbers_inside_(true),
+          numbers_on_ticks_(true)
     {
         // Set a minimum size for the widget
         set_size_request(150, 150);
@@ -871,6 +875,18 @@ public:
             num_minor_ticks_per_segment_ = minor_ticks;
             queue_draw();
         }
+    }
+
+    void set_display_speed(bool display_speed){
+        display_speed_ = display_speed;
+    }
+
+    void set_numbers_inside(bool numbers_inside){
+        numbers_inside_ = numbers_inside;
+    }
+
+    void set_numbers_on_ticks(bool numbers_on_ticks){
+        numbers_on_ticks_ = numbers_on_ticks;
     }
 
 
@@ -954,12 +970,25 @@ protected:
             cr->get_text_extents(tick_text, extents);
 
             // Adjust text position to be centered and outside ticks
-            double tx = cx + (radius - major_tick_len - text_radius_offset) * cos(angle) - (extents.width / 2.0 + extents.x_bearing);
-            double ty = cy + (radius - major_tick_len - text_radius_offset) * sin(angle) - (extents.height / 2.0 + extents.y_bearing);
-            
-            cr->move_to(tx, ty);
-            cr->show_text(tick_text);
+            double label_distance = numbers_inside_
+                ? (radius - major_tick_len - text_radius_offset)
+                : (radius + text_radius_offset);
 
+            double tx = cx + label_distance * cos(angle) - (extents.width / 2.0 + extents.x_bearing);
+            double ty = cy + label_distance * sin(angle) - (extents.height / 2.0 + extents.y_bearing);
+            
+            if (numbers_inside_) {
+                cr->set_source_rgba(color_text.get_red(), color_text.get_green(), color_text.get_blue(), color_text.get_alpha());
+            }
+            else {
+                cr->set_source_rgb(0.0, 0.0, 0.0);
+            }
+            cr->move_to(tx, ty);
+            if(numbers_on_ticks_)
+                cr->show_text(tick_text);
+
+            // Reset color after drawing text
+            cr->set_source_rgba(color_text.get_red(), color_text.get_green(), color_text.get_blue(), color_text.get_alpha());
 
             // Minor ticks (except after the last major tick)
             if (i < num_major_divisions_) {
@@ -986,7 +1015,8 @@ protected:
         double current_speed_ratio = 0.0;
         if (max_speed_ > min_speed_) { // Avoid division by zero or undefined behavior
              current_speed_ratio = (speed_ - min_speed_) / (max_speed_ - min_speed_);
-        } else if (max_speed_ == min_speed_ && speed_ == min_speed_){
+        }
+        else if (max_speed_ == min_speed_ && speed_ == min_speed_){
              current_speed_ratio = 0.0; // Or 0.5 if middle, but for 0-max this is fine
         }
 
@@ -1025,7 +1055,8 @@ protected:
         Cairo::TextExtents speed_extents;
         cr->get_text_extents(speed_str, speed_extents);
         cr->move_to(cx - (speed_extents.width / 2.0 + speed_extents.x_bearing), cy + radius * 0.5); // Position below center
-        cr->show_text(speed_str);
+        if(display_speed_)
+            cr->show_text(speed_str);
 
 
         // 7. Main Label (e.g., "Left Speed")
@@ -1048,10 +1079,16 @@ private:
     double max_speed_;
     int num_major_divisions_;
     int num_minor_ticks_per_segment_;
+    bool display_speed_;
+    bool numbers_inside_;
+    bool numbers_on_ticks_;
 };    
 
 Speedometer* leftSpeedometer;
 Speedometer* rightSpeedometer;
+bool displaySpeed = false;
+bool numbersInside = false;
+bool numberTicks = false;
 
 
 class VideoWidget : public Gtk::DrawingArea {
@@ -2420,10 +2457,16 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
         initRoll();
         leftSpeedometer = Gtk::manage(new Speedometer("Left Speedometer"));
         leftSpeedometer->set_size_request(200, 75);
+        leftSpeedometer->set_display_speed(displaySpeed);
+        leftSpeedometer->set_numbers_inside(numbersInside);
+        leftSpeedometer->set_numbers_on_ticks(numberTicks);        
         bottomLowerBox->add(*leftSpeedometer);
 
         rightSpeedometer = Gtk::manage(new Speedometer("Right Speedometer"));
         rightSpeedometer->set_size_request(200, 75);
+        rightSpeedometer->set_display_speed(displaySpeed);
+        rightSpeedometer->set_numbers_inside(numbersInside);
+        rightSpeedometer->set_numbers_on_ticks(numberTicks); 
         bottomLowerBox->add(*rightSpeedometer);
 
         initPitch();
@@ -3173,6 +3216,65 @@ void checkSize(){
 }
 
 
+void setConfigValues(std::string variableName, std::string value){
+    std::cout << "Variable: " << variableName << ", Value: " << value << std::endl;
+    if("LIGHT_BACKGROUND" == variableName){
+        lightBackgroundColor = value;
+    }
+    if("DARK_BACKGROUND" == variableName){
+        darkBackgroundColor = value;
+    }
+    if("DISPLAY_SPEED" == variableName){
+        if("false" == value){
+            displaySpeed = false;
+        }
+        else{
+            displaySpeed = true;
+        }
+    }
+    if("NUMBERS_INSIDE" == variableName){
+        if("false" == value){
+            numbersInside = false;
+        }
+        else{
+            numbersInside = true;
+        }
+    }
+    if("NUMBER_TICKS" == variableName){
+        if("false" == value){
+            numberTicks = false;
+        }
+        else{
+            numberTicks = true;
+        }
+    }
+}
+
+
+void parseConfigFile(std::string filename){
+    std::ifstream file("../resources/" + filename);
+
+    if (file.is_open()) {
+        std::string line;
+        while (std::getline(file, line)) {
+            size_t delimiterPos = line.find('=');
+            if (delimiterPos != std::string::npos) {
+                std::string variableName = line.substr(0, delimiterPos);
+                std::string value = line.substr(delimiterPos + 1);
+                setConfigValues(variableName, value);
+            }
+            else {
+                std::cerr << "Invalid line (no '='): " << line << std::endl;
+            }
+        }
+        file.close();
+    }
+    else {
+        std::cout << "Unable to open file. Using default configuration" << std::endl;
+    }
+}
+
+
 void processArguments(int argc, char** argv){
     if(argc > 1){
         for(int i = 1; i < argc; ++i){
@@ -3209,6 +3311,10 @@ void processArguments(int argc, char** argv){
             }
             else if(!strcmp("--set_map", argv[i])){
                 mapUsed = argv[i+1];
+            }
+            else if(!strcmp("--config_file", argv[i])){
+                parseConfigFile(argv[i+1]);
+                return;
             }
         }
     }

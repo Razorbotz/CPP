@@ -33,6 +33,8 @@
 
 #include <cstdlib>
 #include <opencv2/opencv.hpp>
+#include <map>
+#include <sstream>
 
 #include "InfoFrame.hpp"
 #include "BinaryMessage.hpp"
@@ -93,6 +95,7 @@ Gtk::Label* connectionStatusLabel;
 Gtk::Button* silentRunButton;
 Gtk::Button* connectButton;
 Gtk::Button* toggleModeButton;
+Gtk::Button* settingsButton;
 
 Gtk::ListBox* videoAddressListBox;
 Gtk::Entry* videoIPAddressEntry;
@@ -128,6 +131,9 @@ bool videoConnected=false;
 
 Gtk::Window* arenaWindow;
 Gtk::Window* sensorsWindow;
+Gtk::Window* configWindow;
+
+std::string configFile = "config.txt";
 
 double roll_rotation_angle = 0.0;
 Glib::RefPtr<Gdk::Pixbuf> roll_pixbuf;
@@ -302,9 +308,20 @@ class ImageOverlay : public Gtk::DrawingArea {
         cr->restore();
 
         cr->save();
-        cr->translate(img_x + overlay->get_width() / 2, height - (img_y + overlay->get_height() / 2));
+        
+        double cam_offset_x = 20.0; // meters * 160
+        double cam_offset_y = 0.0;
+
+        double cos_theta = std::cos(rotation_angle);
+        double sin_theta = std::sin(rotation_angle);
+        double rotated_offset_x = cam_offset_x * cos_theta - cam_offset_y * sin_theta;
+        double rotated_offset_y = cam_offset_x * sin_theta + cam_offset_y * cos_theta;
+
+        cr->translate(img_x + rotated_offset_x + overlay->get_width() / 2,
+                    height - (img_y + rotated_offset_y + overlay->get_height() / 2));
         cr->rotate(rotation_angle);
         cr->translate(-overlay->get_width() / 2, -overlay->get_height() / 2);
+
         Gdk::Cairo::set_source_pixbuf(cr, overlay, 0, 0);
         cr->paint();
         cr->restore();
@@ -314,7 +331,9 @@ class ImageOverlay : public Gtk::DrawingArea {
             int new_width = rock->get_width() * data.scale_multiplier;
             int new_height = rock->get_height() * data.scale_multiplier;
             auto scaled_pixbuf = rock->scale_simple(new_width, new_height, Gdk::INTERP_BILINEAR);
-            Gdk::Cairo::set_source_pixbuf(cr, scaled_pixbuf, data.x - (new_width / 2), height - (data.y - new_height / 2));
+            int draw_x = data.x - (new_width / 2);
+            int draw_y = height - (data.y + new_height / 2);
+            Gdk::Cairo::set_source_pixbuf(cr, scaled_pixbuf, draw_x, draw_y);
             cr->paint();
         }
     
@@ -323,12 +342,20 @@ class ImageOverlay : public Gtk::DrawingArea {
             int new_width = hole->get_width() * data.scale_multiplier;
             int new_height = hole->get_height() * data.scale_multiplier;
             auto scaled_pixbuf = hole->scale_simple(new_width, new_height, Gdk::INTERP_BILINEAR);
-            Gdk::Cairo::set_source_pixbuf(cr, scaled_pixbuf, data.x - (new_width / 2), height - (data.y - new_height / 2));
+            int draw_x = data.x - (new_width / 2);
+            int draw_y = height - (data.y + new_height / 2);
+            Gdk::Cairo::set_source_pixbuf(cr, scaled_pixbuf, draw_x, draw_y);
             cr->paint();
         }
 
         if(dest_x != -1 && dest_y != -1){
-            Gdk::Cairo::set_source_pixbuf(cr, dest_image, dest_x - (dest_image->get_height() / 2), height - (dest_y - dest_image->get_width() / 2));
+            int dest_img_w = dest_image->get_width();
+            int dest_img_h = dest_image->get_height();
+
+            int draw_x = dest_x - dest_img_w / 2;
+            int draw_y = height - (dest_y + dest_img_h / 2);
+
+            Gdk::Cairo::set_source_pixbuf(cr, dest_image, draw_x, draw_y);
             cr->paint();
         }
 
@@ -338,8 +365,6 @@ class ImageOverlay : public Gtk::DrawingArea {
         return true;
     }
     
-
-
     private:
         Glib::RefPtr<Gdk::Pixbuf> background, overlay, rock, hole, dest_image;
         double img_x, img_y;
@@ -2230,6 +2255,163 @@ Gtk::Box* create_motor_column(std::vector<std::pair<Glib::ustring, CircleDrawing
 }
 
 
+Gdk::RGBA parse_color(const std::string& color_str) {
+    Gdk::RGBA color;
+    color.set(color_str);
+    return color;
+}
+
+
+std::string to_color_string(const Gdk::RGBA& color) {
+    return color.to_string();
+}
+
+
+void create_config_editor_window(const std::string& config_file) {
+    configWindow = new Gtk::Window();
+    configWindow->set_title("Configuration Editor");
+    configWindow->set_default_size(600, 600);
+
+    auto main_box = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_VERTICAL);
+    auto grid = Gtk::make_managed<Gtk::Grid>();
+    auto save_button = Gtk::make_managed<Gtk::Button>("Save");
+    auto light_color_button = Gtk::make_managed<Gtk::ColorButton>();
+    auto dark_color_button = Gtk::make_managed<Gtk::ColorButton>();
+    auto file_entry = Gtk::make_managed<Gtk::Entry>();
+    file_entry->set_text(config_file);
+    bool display_speed = false;
+    bool numbers_inside = false;
+    bool number_ticks = false;
+
+    std::map<std::string, Gtk::CheckButton*> bool_buttons;
+    std::string lightBackground;
+    std::string darkBackground;
+    Speedometer* testSpeedometer = new Speedometer("Test Speedometer");
+    testSpeedometer->set_size_request(200, 75);
+    testSpeedometer->set_display_speed(displaySpeed);
+    testSpeedometer->set_numbers_inside(numbersInside);
+    testSpeedometer->set_numbers_on_ticks(numberTicks);
+    auto speed_box = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_HORIZONTAL);
+    speed_box->set_size_request(250, 250);
+    speed_box->add(*testSpeedometer);
+
+    grid->attach(*Gtk::make_managed<Gtk::Label>("Config File:"), 0, 0, 1, 1);
+    grid->attach(*file_entry, 1, 0, 1, 1);
+
+    // Load config
+    std::ifstream file("../resources/" + config_file);
+    std::string line;
+    int row = 2;
+
+    std::set<std::string> speedometer_keys = {
+        "DISPLAY_SPEED",
+        "NUMBERS_INSIDE",
+        "NUMBER_TICKS"
+    };
+
+    while (std::getline(file, line)) {
+        std::istringstream ss(line);
+        std::string key, value;
+        if (std::getline(ss, key, '=') && std::getline(ss, value)) {
+            if (key == "LIGHT_BACKGROUND") {
+                lightBackground = value;
+                auto label = Gtk::make_managed<Gtk::Label>("LIGHT_BACKGROUND:");
+                light_color_button->set_rgba(parse_color(value));
+                grid->attach(*label, 0, row, 1, 1);
+                grid->attach(*light_color_button, 1, row, 1, 1);
+                row++;
+            }
+            else if (key == "DARK_BACKGROUND") {
+                darkBackground = value;
+                auto label = Gtk::make_managed<Gtk::Label>("DARK_BACKGROUND:");
+                dark_color_button->set_rgba(parse_color(value));
+                grid->attach(*label, 0, row, 1, 1);
+                grid->attach(*dark_color_button, 1, row, 1, 1);
+                row++;
+            }
+            else {
+                auto check = Gtk::make_managed<Gtk::CheckButton>(key);
+                check->set_active(value == "true");
+                bool_buttons[key] = check;
+                grid->attach(*check, 0, row, 2, 1);
+                row++;
+
+                if (speedometer_keys.count(key)) {
+                    check->signal_toggled().connect([=]() mutable{
+                        if (bool_buttons.count("DISPLAY_SPEED")){
+                            testSpeedometer->set_display_speed(bool_buttons["DISPLAY_SPEED"]->get_active());
+                            display_speed = bool_buttons["DISPLAY_SPEED"]->get_active();
+                        }
+                        if (bool_buttons.count("NUMBERS_INSIDE")){
+                            testSpeedometer->set_numbers_inside(bool_buttons["NUMBERS_INSIDE"]->get_active());
+                            numbers_inside = bool_buttons["NUMBERS_INSIDE"]->get_active();
+                        }
+                        if (bool_buttons.count("NUMBER_TICKS")){
+                            testSpeedometer->set_numbers_on_ticks(bool_buttons["NUMBER_TICKS"]->get_active());
+                            number_ticks = bool_buttons["NUMBER_TICKS"]->get_active();
+                        }
+                        if (configWindow) {
+                            configWindow->queue_draw();
+                        }
+                    });
+                }
+            }
+        }
+    }
+
+    // Save button logic
+    save_button->signal_clicked().connect([=]() {
+        std::ofstream outfile("../resources/" + file_entry->get_text());
+        for (const auto& [key, button] : bool_buttons) {
+            outfile << key << "=" << (button->get_active() ? "true" : "false") << "\n";
+        }
+        outfile << "LIGHT_BACKGROUND=" << to_color_string(light_color_button->get_rgba()) << "\n";
+        outfile << "DARK_BACKGROUND=" << to_color_string(dark_color_button->get_rgba()) << "\n";
+        
+        if (!lightBackground.empty() && !darkBackground.empty()) {
+            std::cout << lightBackground << std::endl;
+            std::cout << darkBackground << std::endl;
+            Gdk::RGBA color;
+            if(isLightMode)
+                color.set(to_color_string(light_color_button->get_rgba()));
+            else
+                color.set(to_color_string(dark_color_button->get_rgba()));
+            lightBackgroundColor = to_color_string(light_color_button->get_rgba());
+            darkBackgroundColor = to_color_string(dark_color_button->get_rgba());
+            // Update widget colors
+            if (talon1Circle) talon1Circle->set_background_color(color);
+            if (talon2Circle) talon2Circle->set_background_color(color);
+            if (talon3Circle) talon3Circle->set_background_color(color);
+            if (talon4Circle) talon4Circle->set_background_color(color);
+
+            if (falcon1Circle) falcon1Circle->set_background_color(color);
+            if (falcon2Circle) falcon2Circle->set_background_color(color);
+            if (falcon3Circle) falcon3Circle->set_background_color(color);
+            if (falcon4Circle) falcon4Circle->set_background_color(color);
+
+            // Apply dark/light theme override
+            auto css_provider = Gtk::CssProvider::create();
+            if(isLightMode)
+                css_provider->load_from_data(generateLightModeString(lightBackgroundColor));
+            else
+                css_provider->load_from_data(generateDarkModeString(darkBackgroundColor));
+            auto screen = Gdk::Screen::get_default();
+            Gtk::StyleContext::add_provider_for_screen(screen, css_provider, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+        }
+        displaySpeed = display_speed;
+        numbersInside = numbers_inside;
+        numberTicks = number_ticks;
+    });
+
+    main_box->pack_start(*grid);
+    main_box->add(*speed_box);
+    main_box->pack_start(*save_button, Gtk::PACK_SHRINK);
+    configWindow->add(*main_box);
+    configWindow->show_all_children();
+    configWindow->show_all();
+}
+
+
 void setupGUI(Glib::RefPtr<Gtk::Application> application) {
     // Create window instance
     window = new Gtk::Window();
@@ -2309,6 +2491,16 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
     toggleModeButton = Gtk::manage(new Gtk::Button("Toggle Dark/Light Mode"));
     toggleModeButton->signal_clicked().connect(sigc::ptr_fun(&toggleMode));
     toggleModeButton->set_name("dark_text");
+    toggleModeButton->set_size_request(100, 50);
+
+    settingsButton = Gtk::make_managed<Gtk::Button>();
+    auto image = Gtk::make_managed<Gtk::Image>("emblem-system", Gtk::ICON_SIZE_BUTTON);
+    settingsButton->set_image(*image);
+    settingsButton->set_tooltip_text("Open Settings");
+    settingsButton->signal_clicked().connect([]() {
+        create_config_editor_window(configFile);
+    });
+    settingsButton->set_size_request(50, 50);
 
     // Apply CSS
     auto css_provider = Gtk::CssProvider::create();
@@ -2384,6 +2576,7 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
     videoControlsBox->add(*videoControlsRightBox);
     videoControlsBox->add(*spacer);
     videoControlsBox->add(*toggleModeButton);
+    videoControlsBox->add(*settingsButton);
     videoTopLevelBox->add(*videoControlsBox);
 
     // Set size for address list box
@@ -3314,6 +3507,7 @@ void processArguments(int argc, char** argv){
             }
             else if(!strcmp("--config_file", argv[i])){
                 parseConfigFile(argv[i+1]);
+                create_config_editor_window(argv[i+1]);
                 return;
             }
         }

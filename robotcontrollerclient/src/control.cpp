@@ -35,6 +35,7 @@
 #include <opencv2/opencv.hpp>
 #include <map>
 #include <sstream>
+#include <curl/curl.h>
 
 #include "InfoFrame.hpp"
 #include "BinaryMessage.hpp"
@@ -1447,6 +1448,13 @@ std::string darkMode =
     "label, button, entry { color: #edf6fa; }\n"
     "button { border: 1px solid #edf6fa; background-color: transparent; }\n";
 
+std::string lightMode = 
+    "* { font-family: 'Proxima Nova'; font-weight: bold }\n"
+    "window { background-color: " + lightBackgroundColor + "; }\n"
+    "label, button, entry { color: #000000; }\n"
+    "button {  border: 1px solid #000000; background-color: #f0f0f0; }\n";
+
+
 std::string generateDarkModeString(const std::string& color) {
     return
         "* { font-family: 'Proxima Nova'; font-weight: bold; }\n"
@@ -1464,11 +1472,6 @@ std::string generateLightModeString(const std::string& color) {
     "label, button, entry { color: #000000; }\n"
     "button {  border: 1px solid #000000; background-color: #f0f0f0; }\n";
 }
-const std::string lightMode = 
-    "* { font-family: 'Proxima Nova'; font-weight: bold }\n"
-    "window { background-color: " + lightBackgroundColor + "; }\n"
-    "label, button, entry { color: #000000; }\n"
-    "button {  border: 1px solid #000000; background-color: #f0f0f0; }\n";
 
 
 bool isLightMode = true;
@@ -2177,8 +2180,32 @@ void shutdownDialog(Gtk::Window* parentWindow){
     }
 }
 
+std::string current_ip = "http://192.168.1.8";
+
+void send_servo_command(const std::string& direction) {
+    CURL* curl = curl_easy_init();
+    if (curl) {
+        std::string url = current_ip + "/action?go=" + direction;
+        curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT, 2L);  // Short timeout
+        CURLcode res = curl_easy_perform(curl);
+        if (res != CURLE_OK)
+            std::cerr << "curl_easy_perform() failed: " << curl_easy_strerror(res) << std::endl;
+        curl_easy_cleanup(curl);
+    }
+}
+
 
 bool on_key_release_event(GdkEventKey* key_event){
+    switch (key_event->keyval) {
+        case GDK_KEY_Left:
+        case GDK_KEY_Right:
+        case GDK_KEY_Up:
+        case GDK_KEY_Down:
+            send_servo_command("stop");
+            return false;
+            break;
+    }
     int messageSize=5;
     uint8_t command=2;// keyboard
     uint8_t message[messageSize];
@@ -2196,6 +2223,34 @@ bool on_key_release_event(GdkEventKey* key_event){
 
 
 bool on_key_press_event(GdkEventKey* key_event){
+    switch (key_event->keyval) {
+        case GDK_KEY_Left:
+            send_servo_command("left");
+            return false;
+            break;
+        case GDK_KEY_Right:
+            send_servo_command("right");
+            return false;
+            break;
+        case GDK_KEY_Up:
+            send_servo_command("up");
+            return false;
+            break;
+        case GDK_KEY_Down:
+            send_servo_command("down");
+            return false;
+            break;
+        case GDK_KEY_1:
+            current_ip = "http://192.168.1.8";
+            std::cout << "Switched to IP 1: " << current_ip << std::endl;
+            return false;
+            break;
+        case GDK_KEY_2:
+            current_ip = "http://192.168.1.9";
+            std::cout << "Switched to IP 2: " << current_ip << std::endl;
+            return false;
+            break;
+    }
     int messageSize=5;
     uint8_t command=2;// keyboard
     uint8_t message[messageSize];
@@ -2557,7 +2612,7 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
     videoStreamButton->set_name("dark_text");
 
     videoAddressListBox->set_size_request(200,30);
-    videoScrolledList->set_size_request(200,100);
+    videoScrolledList->set_size_request(200,75);
 
     videoConnectBox->add(*videoIPAddress);
     videoConnectBox->add(*videoIPAddressEntry);
@@ -3233,16 +3288,15 @@ void initArenaWindow(){
 
     // Style the overlay label
     auto css_provider = Gtk::CssProvider::create();
-    css_provider->load_from_data(R"(
-        * { font-family: 'Proxima Nova'; }
-        .overlay-text {
-            font-size: 30px;
-            background-color: #f0faf2;
-            padding: 5px;
-            margin: 10px;
-            border-radius: 3px;
-        }
-    )");
+    std::string format = "* { font-family: 'Proxima Nova'; }\n"
+        ".overlay-text {\n"
+            "font-size: 30px;\n"
+            "background-color: " + lightBackgroundColor + ";\n"
+            "padding: 5px;\n"
+            "margin: 10px;\n"
+            "border-radius: 3px;\n"
+        "}";
+    css_provider->load_from_data(format);
     awareness_label->get_style_context()->add_provider(
         css_provider,
         GTK_STYLE_PROVIDER_PRIORITY_APPLICATION

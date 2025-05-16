@@ -2069,11 +2069,12 @@ void connectToServer(){
     
     bytesRead = recvfrom( sock , buffer, 2048, 0, (struct sockaddr *)&serv_addr, &addr_len);
     std::cout << "Bytes read: " << bytesRead << std::endl;
-    if(bytesRead > 0)setConnectedState();
+    setConnectedState();
     std::string addressString = ORIN_IP;
     ipAddressEntry->set_text(addressString);
 
 }
+
 
 void disconnectFromServer(){
     Gtk::MessageDialog dialog(*window,"Disconnect now?",false,Gtk::MESSAGE_QUESTION,Gtk::BUTTONS_OK_CANCEL);
@@ -3702,22 +3703,19 @@ int main(int argc, char** argv) {
             std::cout << std::endl;
             continue;
         }
-        if (bytesRead == 0) {
-            std::cerr << "Server disconnected\n";
-            connected = false;
-            initialized = false;
-            close(sock);
-            continue;
-        }
-        else if (bytesRead < 0) {
-            perror("recv error");
-            connected = false;
-            initialized = false;
-            close(sock);
-            continue;
-        }
+        // if(bytesRead==0){
+        //     //std::cout << "Lost Connection" << std::endl;
+        //     setDisconnectedState();
+        //     if(messageBytesList.size() > 0){
+        //         messageBytesList.clear();
+        //     }
+        //     continue;
+        // }
+
+        //std::cout << "After Read" << std::endl;
+        
         //Fill the messageBytesList with the bytes read from the socket
-        if(bytesRead > 0){
+        if(bytesRead != -1){
         	std::cout << bytesRead << std::endl;
             for(int index=0;index<bytesRead;index++){
                 messageBytesList.push_back(buffer[index]);
@@ -3729,17 +3727,12 @@ int main(int argc, char** argv) {
             lastReceiveTime = std::chrono::high_resolution_clock::now();
         }
         else{
-            if(!initialized)
-                initialized = true;
-            else{
-                now = std::chrono::high_resolution_clock::now();
-                time_span = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastReceiveTime);
-                deltaTime = time_span.count();
-                if(deltaTime > 5.0 && connected){
-                    //setDisconnectedState();
-                }
+            now = std::chrono::high_resolution_clock::now();
+            time_span = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastReceiveTime);
+            deltaTime = time_span.count();
+            if(deltaTime > 5.0 && connected){
+                setDisconnectedState();
             }
-            
         }
         
         //std::cout << "Before hasMessage check" << std::endl;

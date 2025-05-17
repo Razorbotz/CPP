@@ -42,7 +42,7 @@
 
 #define PORT 31337 
 #define VIDEO_PORT 31338
-#define ORIN_IP "192.168.1.109"
+#define ORIN_IP "192.168.1.6"
 #define NANO_IP "192.168.1.5"
 
 
@@ -133,6 +133,7 @@ bool videoConnected=false;
 Gtk::Window* arenaWindow;
 Gtk::Window* sensorsWindow;
 Gtk::Window* configWindow;
+int monitor_count = 0;
 
 std::string configFile = "config.txt";
 
@@ -311,7 +312,7 @@ class ImageOverlay : public Gtk::DrawingArea {
         cr->save();
         
         double cam_offset_x = 20.0; // meters * 160
-        double cam_offset_y = 0.0;
+        double cam_offset_y = 60.0;
 
         double cos_theta = std::cos(rotation_angle);
         double sin_theta = std::sin(rotation_angle);
@@ -567,6 +568,10 @@ CircleDrawingArea* falcon1Circle;
 CircleDrawingArea* falcon2Circle;
 CircleDrawingArea* falcon3Circle;
 CircleDrawingArea* falcon4Circle;
+CircleDrawingArea* lowerFalcon1Circle;
+CircleDrawingArea* lowerFalcon2Circle;
+CircleDrawingArea* lowerFalcon3Circle;
+CircleDrawingArea* lowerFalcon4Circle;
 
 class MultiMotorGraph : public Gtk::Box {
     public:
@@ -1112,9 +1117,9 @@ private:
 
 Speedometer* leftSpeedometer;
 Speedometer* rightSpeedometer;
-bool displaySpeed = false;
-bool numbersInside = false;
-bool numberTicks = false;
+bool displaySpeed = true;
+bool numbersInside = true;
+bool numberTicks = true;
 
 
 class VideoWidget : public Gtk::DrawingArea {
@@ -1434,6 +1439,14 @@ void setBackgroundColors(Gdk::RGBA color){
         falcon3Circle->set_background_color(color);
     if(falcon4Circle)
         falcon4Circle->set_background_color(color);
+    if(lowerFalcon1Circle)
+        lowerFalcon1Circle->set_background_color(color);
+    if(lowerFalcon2Circle)
+        lowerFalcon2Circle->set_background_color(color);
+    if(lowerFalcon3Circle)
+        lowerFalcon3Circle->set_background_color(color);
+    if(lowerFalcon4Circle)
+        lowerFalcon4Circle->set_background_color(color);
 }
 
 
@@ -1542,6 +1555,14 @@ CircleDrawingArea* getFalconCircle(const std::string& label) {
     if (label == "Falcon 2") return falcon2Circle;
     if (label == "Falcon 3") return falcon3Circle;
     if (label == "Falcon 4") return falcon4Circle;
+    return nullptr;
+}
+
+CircleDrawingArea* getLowerFalconCircle(const std::string& label) {
+    if (label == "Falcon 1") return lowerFalcon1Circle;
+    if (label == "Falcon 2") return lowerFalcon2Circle;
+    if (label == "Falcon 3") return lowerFalcon3Circle;
+    if (label == "Falcon 4") return lowerFalcon4Circle;
     return nullptr;
 }
 
@@ -1655,6 +1676,10 @@ void handleFalconElements(const std::string& label, const std::vector<Element>& 
             if(label == "Falcon 1" || label == "Falcon 3"){
                 rightSpeedometer->set_speed(percent * 100.0);
             }
+        }
+        else if (element.label == "Error"){
+            bool error = element.data.front().boolean;
+            updateCircleColor(getLowerFalconCircle(label), error);
         }
     }
 }
@@ -1854,6 +1879,10 @@ void setDisconnectedState(){
         updateCircleColor(falcon2Circle, black);
         updateCircleColor(falcon3Circle, black);
         updateCircleColor(falcon4Circle, black);
+        updateCircleColor(lowerFalcon1Circle, black);
+        updateCircleColor(lowerFalcon2Circle, black);
+        updateCircleColor(lowerFalcon3Circle, black);
+        updateCircleColor(lowerFalcon4Circle, black);
     }
 }
 
@@ -2199,10 +2228,10 @@ void send_servo_command(const std::string& direction) {
 
 bool on_key_release_event(GdkEventKey* key_event){
     switch (key_event->keyval) {
-        case GDK_KEY_Left:
-        case GDK_KEY_Right:
-        case GDK_KEY_Up:
-        case GDK_KEY_Down:
+        case GDK_KEY_u:
+        case GDK_KEY_i:
+        case GDK_KEY_o:
+        case GDK_KEY_p:
             send_servo_command("stop");
             return false;
             break;
@@ -2225,19 +2254,19 @@ bool on_key_release_event(GdkEventKey* key_event){
 
 bool on_key_press_event(GdkEventKey* key_event){
     switch (key_event->keyval) {
-        case GDK_KEY_Left:
+        case GDK_KEY_u:
             send_servo_command("left");
             return false;
             break;
-        case GDK_KEY_Right:
+        case GDK_KEY_i:
             send_servo_command("right");
             return false;
             break;
-        case GDK_KEY_Up:
+        case GDK_KEY_o:
             send_servo_command("up");
             return false;
             break;
-        case GDK_KEY_Down:
+        case GDK_KEY_p:
             send_servo_command("down");
             return false;
             break;
@@ -2310,6 +2339,19 @@ Gtk::Box* create_motor_column(std::vector<std::pair<Glib::ustring, CircleDrawing
     return column;
 }
 
+
+Gtk::Box* create_lower_motor_column(std::vector<std::pair<Glib::ustring, CircleDrawingArea**>> items, bool right = false) {
+    auto column = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
+    column->set_size_request(250, 200);
+    column->set_hexpand(false);
+    column->set_vexpand(false);
+
+    for (size_t i = 0; i < items.size(); ++i) {
+        column->add(*create_labeled_box(items[i].first, *items[i].second, right));
+    }
+
+    return column;
+}
 
 Gdk::RGBA parse_color(const std::string& color_str) {
     Gdk::RGBA color;
@@ -2445,6 +2487,10 @@ void create_config_editor_window(const std::string& config_file) {
             if (falcon3Circle) falcon3Circle->set_background_color(color);
             if (falcon4Circle) falcon4Circle->set_background_color(color);
 
+            if (lowerFalcon1Circle) lowerFalcon1Circle->set_background_color(color);
+            if (lowerFalcon2Circle) lowerFalcon2Circle->set_background_color(color);
+            if (lowerFalcon3Circle) lowerFalcon3Circle->set_background_color(color);
+            if (lowerFalcon4Circle) lowerFalcon4Circle->set_background_color(color);
             // Apply dark/light theme override
             auto css_provider = Gtk::CssProvider::create();
             if(isLightMode)
@@ -2672,7 +2718,8 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
         Gtk::Box* innerMiddleBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
         innerRightBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
         bottomLowerBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
-
+        Gtk::Box* lowerLeftBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
+        Gtk::Box* lowerRightBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
         
         innerLeftBox = create_motor_column({
             {"Talon 1", &talon1Circle},
@@ -2682,9 +2729,9 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
         }, initArmPos, true);
 
         auto cameraBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
-        cameraBox->set_size_request(1400, 800);
+        cameraBox->set_size_request(1600, 1000);
         videoArea = Gtk::manage(new VideoWidget());
-        videoArea->set_size_request(1400, 800);
+        videoArea->set_size_request(1600, 1000);
         //videoArea->set_hexpand(true);
         //videoArea->set_vexpand(true);
         cameraBox->add(*videoArea);
@@ -2704,6 +2751,14 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
 
         bottomBox->add(*bottomInnerBox);
         initRoll();
+
+        lowerLeftBox  = create_lower_motor_column({
+            {"Falcon 1", &lowerFalcon1Circle},
+            {"Falcon 2", &lowerFalcon2Circle}
+        });
+
+        bottomLowerBox->add(*lowerLeftBox);
+
         leftSpeedometer = Gtk::manage(new Speedometer("Left Speedometer"));
         leftSpeedometer->set_size_request(200, 75);
         leftSpeedometer->set_display_speed(displaySpeed);
@@ -2717,6 +2772,13 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
         rightSpeedometer->set_numbers_inside(numbersInside);
         rightSpeedometer->set_numbers_on_ticks(numberTicks); 
         bottomLowerBox->add(*rightSpeedometer);
+
+        lowerRightBox  = create_lower_motor_column({
+            {"Falcon 3", &lowerFalcon3Circle},
+            {"Falcon 4", &lowerFalcon4Circle}
+        });
+
+        bottomLowerBox->add(*lowerRightBox);
 
         initPitch();
         bottomLowerBox->set_halign(Gtk::ALIGN_CENTER);
@@ -2749,7 +2811,17 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
 
 void initSensorsWindow() {
     sensorsWindow = new Gtk::Window();
-    sensorsWindow->maximize();
+    if(monitor_count == 3){
+        auto display = Gdk::Display::get_default();
+        auto third_monitor = display->get_monitor(2);
+        Gdk::Rectangle third_monitor_geometry;
+        third_monitor->get_geometry(third_monitor_geometry);
+        sensorsWindow->set_default_size(third_monitor_geometry.get_width(), third_monitor_geometry.get_height());
+        sensorsWindow->move(third_monitor_geometry.get_x(), third_monitor_geometry.get_y());
+    }
+    else{
+        sensorsWindow->maximize();
+    }
 
     Gtk::Box* mainBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
     mainBox->property_margin().set_value(10);
@@ -3224,7 +3296,17 @@ void initArenaWindow(){
     arenaWindow = new Gtk::Window();
     arenaWindow->set_title("Arena Map/Cams");
 
-    arenaWindow->maximize();
+    if(monitor_count == 3){
+        auto display = Gdk::Display::get_default();
+        auto second_monitor = display->get_monitor(1);
+        Gdk::Rectangle second_monitor_geometry;
+        second_monitor->get_geometry(second_monitor_geometry);
+        arenaWindow->move(second_monitor_geometry.get_x(), second_monitor_geometry.get_y());
+        arenaWindow->set_default_size(second_monitor_geometry.get_width(), second_monitor_geometry.get_height());
+    }
+    else{
+        arenaWindow->maximize();
+    }
 
     try {
         auto icon = "../resources/razorbotz.png";
@@ -3423,7 +3505,7 @@ void videoMain(){
 
         cv::Mat display_img;
         try {
-            cv::resize(decoded_frame, display_img, cv::Size(1400, 800), 0, 0, cv::INTER_LINEAR);
+            cv::resize(decoded_frame, display_img, cv::Size(1600, 1000), 0, 0, cv::INTER_LINEAR);
         }
         catch (const cv::Exception& e) {
             std::cerr << "OpenCV exception during resize: " << e.what() << std::endl;
@@ -3572,7 +3654,7 @@ void processArguments(int argc, char** argv){
 
 void moveWindows(){
     auto display = Gdk::Display::get_default();
-    int monitor_count = display->get_n_monitors();
+    monitor_count = display->get_n_monitors();
     if(monitor_count == 1){
         auto primary_monitor = display->get_monitor(0);
         Gdk::Rectangle primary_monitor_geometry;
@@ -3581,19 +3663,7 @@ void moveWindows(){
         window->show();
         window->raise();
     }
-    if(monitor_count == 3){
-        auto second_monitor = display->get_monitor(1);
-        Gdk::Rectangle second_monitor_geometry;
-        second_monitor->get_geometry(second_monitor_geometry);
-        arenaWindow->move(second_monitor_geometry.get_x(), second_monitor_geometry.get_y());
-        arenaWindow->show();
-
-        auto third_monitor = display->get_monitor(2);
-        Gdk::Rectangle third_monitor_geometry;
-        third_monitor->get_geometry(third_monitor_geometry);
-        sensorsWindow->move(third_monitor_geometry.get_x(), third_monitor_geometry.get_y());
-        sensorsWindow->show();
-    }
+    
 }
 
 
@@ -3603,12 +3673,12 @@ int main(int argc, char** argv) {
     Glib::RefPtr<Gtk::Application> application = Gtk::Application::create(argc, argv, "edu.uark.razorbotz");
     processArguments(argc, argv);
     setupGUI(application);
+    moveWindows();
     if(!noArena)
         initArenaWindow();
     if(!noVideo)
         initSensorsWindow();
     initGUI();
-    moveWindows();
 
     
     //Start a thread to listen to updates from the robot

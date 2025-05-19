@@ -2098,7 +2098,6 @@ void connectToServer(){
     
     bytesRead = recvfrom( sock , buffer, 2048, 0, (struct sockaddr *)&serv_addr, &addr_len);
     std::cout << "Bytes read: " << bytesRead << std::endl;
-    setConnectedState();
     std::string addressString = ORIN_IP;
     ipAddressEntry->set_text(addressString);
 
@@ -2342,7 +2341,7 @@ Gtk::Box* create_motor_column(std::vector<std::pair<Glib::ustring, CircleDrawing
 
 Gtk::Box* create_lower_motor_column(std::vector<std::pair<Glib::ustring, CircleDrawingArea**>> items, bool right = false) {
     auto column = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
-    column->set_size_request(250, 200);
+    column->set_size_request(200, 200);
     column->set_hexpand(false);
     column->set_vexpand(false);
 
@@ -3673,13 +3672,12 @@ int main(int argc, char** argv) {
     Glib::RefPtr<Gtk::Application> application = Gtk::Application::create(argc, argv, "edu.uark.razorbotz");
     processArguments(argc, argv);
     setupGUI(application);
-    moveWindows();
     if(!noArena)
         initArenaWindow();
     if(!noVideo)
         initSensorsWindow();
+    moveWindows();
     initGUI();
-
     
     //Start a thread to listen to updates from the robot
     // std::thread broadcastListenThread(broadcastListen);
@@ -3750,13 +3748,6 @@ int main(int argc, char** argv) {
             newFrameAvailable = false;
         }
 
-        if(!connected){
-            if(messageBytesList.size() > 0){
-                messageBytesList.clear();
-            }
-            continue;
-        }
-
         //std::cout << "Before Read" << std::endl;
 
         //Avoid blocking if we hear nothing
@@ -3771,6 +3762,15 @@ int main(int argc, char** argv) {
                 buffer[index] = 0;
             }
             std::cout << std::endl;
+            setConnectedState();
+            lastReceiveTime = std::chrono::high_resolution_clock::now();
+            continue;
+        }
+
+        if(!connected){
+            if(messageBytesList.size() > 0){
+                messageBytesList.clear();
+            }
             continue;
         }
         // if(bytesRead==0){

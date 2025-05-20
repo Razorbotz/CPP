@@ -1175,8 +1175,7 @@ public:
                 8,
                 width,
                 height,
-                pixbuf_rowstride,
-                destroy_pixbuf_data
+                pixbuf_rowstride
             );
         }
         queue_draw();

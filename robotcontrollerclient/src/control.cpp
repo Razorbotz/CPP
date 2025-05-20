@@ -119,6 +119,7 @@ Gtk::Window* window;
 int sock = 0; 
 bool connected=false;
 bool silentRunning=false;
+bool initialized = false;
 
 bool initVals = false;
 bool threeMonitors = false;
@@ -1122,155 +1123,110 @@ bool numbersInside = true;
 bool numberTicks = true;
 
 
+extern "C" void destroy_pixbuf_data(const guint8* data) {
+    delete[] data;
+}
+
 class VideoWidget : public Gtk::DrawingArea {
 public:
-    VideoWidget() {
-        // You might want to set a minimum or default size for the widget
-        // set_size_request(320, 240);
-    }
+    VideoWidget() {}
 
     void setFrame(const cv::Mat& frame) {
         std::lock_guard<std::mutex> lock(frameMutex);
         if (frame.empty()) {
-            latestFrame.release(); // Ensure latestFrame is properly empty
+            latestFrame.release();
+            currentPixbuf.reset();
         } else {
-            // Clone the frame to ensure this widget has its own copy.
-            // This is important for thread safety if the frame comes from another thread.
             latestFrame = frame.clone();
+
+            // Convert to RGB if needed
+            cv::Mat frameToDisplay_CV = latestFrame;
+            if (frameToDisplay_CV.channels() == 1) {
+                cv::cvtColor(frameToDisplay_CV, frameToDisplay_CV, cv::COLOR_GRAY2RGB);
+            } else if (frameToDisplay_CV.channels() == 4) {
+                cv::cvtColor(frameToDisplay_CV, frameToDisplay_CV, cv::COLOR_BGRA2RGB);
+            } else if (frameToDisplay_CV.channels() == 3) {
+                cv::cvtColor(frameToDisplay_CV, frameToDisplay_CV, cv::COLOR_BGR2RGB);
+            }
+
+            int width = frameToDisplay_CV.cols;
+            int height = frameToDisplay_CV.rows;
+            int cv_channels = frameToDisplay_CV.channels();
+            int pixbuf_rowstride = width * cv_channels;
+            size_t data_size = static_cast<size_t>(height) * pixbuf_rowstride;
+
+            // Allocate buffer for Gdk::Pixbuf data.
+            guchar* copiedData = new guchar[data_size];
+            if (frameToDisplay_CV.isContinuous()) {
+                std::memcpy(copiedData, frameToDisplay_CV.data, data_size);
+            } else {
+                for (int r = 0; r < height; ++r) {
+                    std::memcpy(copiedData + r * pixbuf_rowstride,
+                                frameToDisplay_CV.data + r * frameToDisplay_CV.step,
+                                static_cast<size_t>(width) * cv_channels);
+                }
+            }
+
+            // Create pixbuf and let it manage the buffer
+            currentPixbuf = Gdk::Pixbuf::create_from_data(
+                static_cast<const guint8*>(copiedData),
+                Gdk::COLORSPACE_RGB,
+                false,
+                8,
+                width,
+                height,
+                pixbuf_rowstride,
+                destroy_pixbuf_data
+            );
         }
-        queue_draw(); // Request a redraw to display the new frame
+        queue_draw();
     }
 
 protected:
     bool on_draw(const Cairo::RefPtr<Cairo::Context>& cr) override {
         std::lock_guard<std::mutex> lock(frameMutex);
-        Gtk::Allocation allocation = get_allocation(); // Get current widget dimensions
+        Gtk::Allocation allocation = get_allocation();
 
-        if (latestFrame.empty()) {
-            // If no frame, draw a dark background or a "No Video" message
-            cr->set_source_rgb(0.1, 0.1, 0.1); // Dark gray
+        if (!currentPixbuf) {
+            cr->set_source_rgb(0.1, 0.1, 0.1);
             cr->rectangle(0, 0, allocation.get_width(), allocation.get_height());
             cr->fill();
             return true;
         }
 
-        // Assume `latestFrame` contains the compressed image data received from the server
-        // Step 1: Receive the compressed data (this happens earlier in your code)
-        // Step 2: Decompress the frame using OpenCV
-        cv::Mat frameToDisplay_CV;
+        int width = currentPixbuf->get_width();
+        int height = currentPixbuf->get_height();
+        int widget_width = allocation.get_width();
+        int widget_height = allocation.get_height();
 
-        try {
-            // Decompress the image using OpenCV (assuming `latestFrame` contains the compressed data)
-            frameToDisplay_CV = latestFrame.clone();
-            if (frameToDisplay_CV.empty()) {
-                return true;
-            }
-        } catch (const std::exception& e) {
-            return true;
+        double scale_ratio_x = (width > 0) ? static_cast<double>(widget_width) / width : 1.0;
+        double scale_ratio_y = (height > 0) ? static_cast<double>(widget_height) / height : 1.0;
+        double actual_scale_ratio = std::min(scale_ratio_x, scale_ratio_y);
+
+        int scaled_width = static_cast<int>(width * actual_scale_ratio);
+        int scaled_height = static_cast<int>(height * actual_scale_ratio);
+
+        double draw_x = (widget_width - scaled_width) / 2.0;
+        double draw_y = (widget_height - scaled_height) / 2.0;
+
+        Glib::RefPtr<Gdk::Pixbuf> scaled_pixbuf = currentPixbuf;
+        if (scaled_width > 0 && scaled_height > 0 &&
+            (scaled_width != width || scaled_height != height)) {
+            scaled_pixbuf = currentPixbuf->scale_simple(
+                scaled_width, scaled_height, Gdk::INTERP_BILINEAR);
         }
 
-        // Ensure conversion was successful and resulted in a 3-channel, 8-bit unsigned Mat
-        if (frameToDisplay_CV.channels() == 1) {
-            cv::cvtColor(frameToDisplay_CV, frameToDisplay_CV, cv::COLOR_GRAY2RGB);
-        } else if (frameToDisplay_CV.channels() == 4) {
-            cv::cvtColor(frameToDisplay_CV, frameToDisplay_CV, cv::COLOR_BGRA2RGB);
-        } else if (frameToDisplay_CV.channels() == 3) {
-            cv::cvtColor(frameToDisplay_CV, frameToDisplay_CV, cv::COLOR_BGR2RGB);
-        }
-
-        const int width = frameToDisplay_CV.cols;
-        const int height = frameToDisplay_CV.rows;
-        const int cv_channels = frameToDisplay_CV.channels(); // Should be 3 (RGB)
-
-        // Rowstride for the Gdk::Pixbuf, reflecting tightly packed data in `copiedData`
-        const int pixbuf_rowstride = width * cv_channels;
-
-        // Allocate buffer for Gdk::Pixbuf data.
-        // This buffer will be owned and freed by the Gdk::Pixbuf via the destroy notifier.
-        size_t data_size = static_cast<size_t>(height) * pixbuf_rowstride;
-        guchar* copiedData = nullptr;
-        try {
-            copiedData = new guchar[data_size];
-        } catch (const std::bad_alloc& /*e*/) {
-            draw_error_rect(cr, allocation, 0.3, 0.3, 0.3); // Dark gray for alloc failure
-            return true;
-        }
-
-        // Copy pixel data from the OpenCV Mat to our allocated buffer.
-        // This ensures `copiedData` is packed as expected by `pixbuf_rowstride`.
-        if (frameToDisplay_CV.isContinuous()) {
-            std::memcpy(copiedData, frameToDisplay_CV.data, data_size);
-        } else {
-            // If the cv::Mat data is not continuous (e.g., an ROI with padding),
-            // copy row by row to create a tightly packed buffer.
-            for (int r = 0; r < height; ++r) {
-                std::memcpy(copiedData + r * pixbuf_rowstride,                // Dest: current row in packed buffer
-                            frameToDisplay_CV.data + r * frameToDisplay_CV.step, // Src: current row in cv::Mat
-                            static_cast<size_t>(width) * cv_channels);      // Bytes per row
-            }
-        }
-
-        Glib::RefPtr<Gdk::Pixbuf> pixbuf;
-        try {
-            pixbuf = Gdk::Pixbuf::create_from_data(
-                copiedData,             // Raw pixel data
-                Gdk::COLORSPACE_RGB,    // Colorspace
-                false,                  // has_alpha
-                8,                      // bits_per_sample
-                width,                  // Image width
-                height,                 // Image height
-                pixbuf_rowstride        // Rowstride for copiedData
-            );
-        } catch (const Glib::Error& /*ex*/) {
-            delete[] copiedData; // IMPORTANT: If Pixbuf creation fails, destroy_fn is not set, free manually.
-            draw_error_rect(cr, allocation, 0.0, 1.0, 0.0); // Green for Pixbuf creation error
-            return true;
-        }
-
-        if (pixbuf) {
-            const int widget_width = allocation.get_width();
-            const int widget_height = allocation.get_height();
-
-            double scale_ratio_x = (width > 0) ? static_cast<double>(widget_width) / width : 1.0;
-            double scale_ratio_y = (height > 0) ? static_cast<double>(widget_height) / height : 1.0;
-            double actual_scale_ratio = std::min(scale_ratio_x, scale_ratio_y);
-
-            int scaled_width = static_cast<int>(width * actual_scale_ratio);
-            int scaled_height = static_cast<int>(height * actual_scale_ratio);
-
-            double draw_x = (widget_width - scaled_width) / 2.0;
-            double draw_y = (widget_height - scaled_height) / 2.0;
-            
-            if (scaled_width > 0 && scaled_height > 0) {
-                Glib::RefPtr<Gdk::Pixbuf> scaled_pixbuf = pixbuf->scale_simple(
-                    scaled_width, scaled_height, Gdk::INTERP_BILINEAR);
-
-                if (scaled_pixbuf) {
-                    Gdk::Cairo::set_source_pixbuf(cr, scaled_pixbuf, draw_x, draw_y);
-                } else {
-                    Gdk::Cairo::set_source_pixbuf(cr, pixbuf, draw_x, draw_y);
-                }
-            } else {
-                Gdk::Cairo::set_source_pixbuf(cr, pixbuf, draw_x, draw_y);
-            }
+        if (scaled_pixbuf) {
+            Gdk::Cairo::set_source_pixbuf(cr, scaled_pixbuf, draw_x, draw_y);
             cr->paint();
-        } else {
-            draw_error_rect(cr, allocation, 0.0, 0.0, 1.0); // Blue for unexpected null pixbuf
         }
-
         return true;
     }
 
-
 private:
-    void draw_error_rect(const Cairo::RefPtr<Cairo::Context>& cr, const Gtk::Allocation& alloc, double r, double g, double b) {
-        cr->set_source_rgb(r, g, b);
-        cr->rectangle(0, 0, alloc.get_width(), alloc.get_height());
-        cr->fill();
-    }
-
     cv::Mat latestFrame;
     std::mutex frameMutex;
+    Glib::RefPtr<Gdk::Pixbuf> currentPixbuf;
 };
 
 VideoWidget* videoArea;
@@ -1732,13 +1688,19 @@ void handleGenericElements(InfoFrame* frame, const std::vector<Element>& element
         else if (element.type == TYPE::UINT8)     frame->setItem(element.label, value.uint8);
         else if (element.type == TYPE::INT8)      frame->setItem(element.label, value.int8);
         else if (element.type == TYPE::UINT16) {
-            float val = value.uint16 / 100.0f;
-            if (element.label == "Bus Voltage" && val < 15.0f) {
-                frame->setBackground(element.label, "#FF0000");
-                frame->setTextColor(element.label, "white", true);
+            if(element.label == "Bus Voltage" || element.label == "Output Current"){
+                float val = value.uint16 / 100.0f;
+                if (element.label == "Bus Voltage" && val < 15.0f) {
+                    frame->setBackground(element.label, "#FF0000");
+                    frame->setTextColor(element.label, "white", true);
+                }
+                else updateBackgroundColor(frame, element.label);
+                frame->setItem(element.label, val);
             }
-            else updateBackgroundColor(frame, element.label);
-            frame->setItem(element.label, val);
+            else{
+                frame->setItem(element.label, value.uint16);
+            }
+
         }
         else if (element.type == TYPE::INT16)     frame->setItem(element.label, value.int16);
         else if (element.type == TYPE::UINT32)    frame->setItem(element.label, value.uint32);
@@ -1854,6 +1816,7 @@ void setDisconnectedState(){
     ipAddressEntry->set_editable(true);
     connected=false;
     silentRunning = true;
+    initialized = false;
 
     if (connected) {
         if (sock > 0) {
@@ -2100,7 +2063,7 @@ void connectToServer(){
     std::cout << "Bytes read: " << bytesRead << std::endl;
     std::string addressString = ORIN_IP;
     ipAddressEntry->set_text(addressString);
-
+    initialized = true;
 }
 
 
@@ -3729,7 +3692,6 @@ int main(int argc, char** argv) {
     now = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> time_span = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastTransmitTime);
     double deltaTime = time_span.count();
-    bool initialized = false;
     
     std::list<uint8_t> messageBytesList; //List to store incoming bytes
     uint8_t message[256];
@@ -3747,6 +3709,9 @@ int main(int argc, char** argv) {
             }
             newFrameAvailable = false;
         }
+
+        if(!initialized)
+            continue;
 
         //std::cout << "Before Read" << std::endl;
 

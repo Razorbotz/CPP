@@ -1175,7 +1175,10 @@ public:
                 8,
                 width,
                 height,
-                pixbuf_rowstride
+                pixbuf_rowstride,
+                [](const guint8* data){
+                    delete[] data;
+                }
             );
         }
         queue_draw();

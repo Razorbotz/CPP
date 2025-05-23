@@ -40,6 +40,14 @@
 #include "InfoFrame.hpp"
 #include "BinaryMessage.hpp"
 
+/*
+TODO: 
+Fix crash on video start
+Fix random seg faults
+Add ability to switch between Orin and Nano
+Update settings menu with an example InfoFrame?
+*/
+
 #define PORT 31337 
 #define VIDEO_PORT 31338
 #define ORIN_IP "192.168.1.6"
@@ -562,9 +570,7 @@ class CircleDrawingArea : public Gtk::DrawingArea{
     };
 
 CircleDrawingArea* talon1Circle;
-CircleDrawingArea* talon2Circle;
 CircleDrawingArea* talon3Circle;
-CircleDrawingArea* talon4Circle;
 CircleDrawingArea* falcon1Circle;
 CircleDrawingArea* falcon2Circle;
 CircleDrawingArea* falcon3Circle;
@@ -1382,12 +1388,8 @@ void initBucketPos(){
 void setBackgroundColors(Gdk::RGBA color){
     if(talon1Circle)
         talon1Circle->set_background_color(color);
-    if(talon2Circle)
-        talon2Circle->set_background_color(color);
     if(talon3Circle)
         talon3Circle->set_background_color(color);
-    if(talon4Circle)
-        talon4Circle->set_background_color(color);
 
     if(falcon1Circle)
         falcon1Circle->set_background_color(color);
@@ -1495,15 +1497,13 @@ void updateBackgroundColor(Gtk::Box* box, bool synced){
     }
 }
 
-const std::set<std::string> talonLabels = {"Talon 1", "Talon 2", "Talon 3", "Talon 4"};
+const std::set<std::string> talonLabels = {"Talon 1", "Talon 3"};
 const std::set<std::string> falconLabels = {"Falcon 1", "Falcon 2", "Falcon 3", "Falcon 4"};
 
 
 CircleDrawingArea* getTalonCircle(const std::string& label) {
     if (label == "Talon 1") return talon1Circle;
-    if (label == "Talon 2") return talon2Circle;
     if (label == "Talon 3") return talon3Circle;
-    if (label == "Talon 4") return talon4Circle;
     return nullptr;
 }
 
@@ -1577,17 +1577,9 @@ void handleTalonElements(const std::string& label, const std::vector<Element>& e
                 left_arm_pos = pos;
                 left_arm->set_height_ratio((920 - pos) / 920.0);
             }
-            else if (label == "Talon 2") {
-                right_arm_pos = pos;
-                right_arm->set_height_ratio((920 - pos) / 920.0);
-            }
             else if (label == "Talon 3") {
                 left_bucket_pos = pos;
                 left_bucket->set_height_ratio((700 - pos) / 700.0);
-            }
-            else if (label == "Talon 4") {
-                right_bucket_pos = pos;
-                right_bucket->set_height_ratio((700 - pos) / 700.0);
             }
 
             bool synced = std::abs(left_arm_pos - right_arm_pos) > 50;
@@ -1837,9 +1829,7 @@ void setDisconnectedState(){
         Gdk::RGBA black;
         black.set_rgba(0.0, 0.0, 0.0, 1.0);
         updateCircleColor(talon1Circle, black);
-        updateCircleColor(talon2Circle, black);
         updateCircleColor(talon3Circle, black);
-        updateCircleColor(talon4Circle, black);
         updateCircleColor(falcon1Circle, black);
         updateCircleColor(falcon2Circle, black);
         updateCircleColor(falcon3Circle, black);
@@ -2442,9 +2432,7 @@ void create_config_editor_window(const std::string& config_file) {
             darkBackgroundColor = to_color_string(dark_color_button->get_rgba());
             // Update widget colors
             if (talon1Circle) talon1Circle->set_background_color(color);
-            if (talon2Circle) talon2Circle->set_background_color(color);
             if (talon3Circle) talon3Circle->set_background_color(color);
-            if (talon4Circle) talon4Circle->set_background_color(color);
 
             if (falcon1Circle) falcon1Circle->set_background_color(color);
             if (falcon2Circle) falcon2Circle->set_background_color(color);
@@ -2687,9 +2675,7 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
         
         innerLeftBox = create_motor_column({
             {"Talon 1", &talon1Circle},
-            {"Talon 2", &talon2Circle},
-            {"Talon 3", &talon3Circle},
-            {"Talon 4", &talon4Circle}
+            {"Talon 3", &talon3Circle}
         }, initArmPos, true);
 
         auto cameraBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
@@ -2719,7 +2705,7 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
         lowerLeftBox  = create_lower_motor_column({
             {"Falcon 1", &lowerFalcon1Circle},
             {"Falcon 2", &lowerFalcon2Circle}
-        });
+        }, true);
 
         bottomLowerBox->add(*lowerLeftBox);
 
@@ -2791,7 +2777,7 @@ void initSensorsWindow() {
     mainBox->property_margin().set_value(10);
 
     // Create motor name vectors
-    std::vector<std::string> talonNames = {"Talon 1", "Talon 2", "Talon 3", "Talon 4"};
+    std::vector<std::string> talonNames = {"Talon 1", "Talon 3" };
     std::vector<std::string> falconNames = {"Falcon 1", "Falcon 2", "Falcon 3", "Falcon 4"};
     std::vector<std::string> linearNames = {"Linear 1", "Linear 2"};
 
@@ -3015,15 +3001,20 @@ void videoBroadcastListen(){
     char databuf[1024];
     int datalen = sizeof(databuf);
     while(true){
-        if(read(sd, databuf, datalen) >= 0) {
-            std::string message(databuf);
-            if(!contains(videoRobotList,message)) {
-                RemoteRobot remoteRobot;
-                remoteRobot.tag=message; 
-                time(&remoteRobot.lastSeenTime);
-                videoRobotList.push_back(remoteRobot);
+        try{
+            if(read(sd, databuf, datalen) >= 0) {
+                std::string message(databuf);
+                if(!contains(videoRobotList,message)) {
+                    RemoteRobot remoteRobot;
+                    remoteRobot.tag=message; 
+                    time(&remoteRobot.lastSeenTime);
+                    videoRobotList.push_back(remoteRobot);
+                }
+                update(videoRobotList,message);
             }
-            update(videoRobotList,message);
+        }
+        catch(std::exception e){
+            std::cout << "Caught exception: " << e.what() << " in videoBroadcastLisetn" << std::endl;
         }
     }
 }
@@ -3163,9 +3154,7 @@ void createLinearMessage(std::string name){
 void initGUI() {
     if(initVals){
         createTalonMessage("Talon 1");
-        createTalonMessage("Talon 2");
         createTalonMessage("Talon 3");
-        createTalonMessage("Talon 4");
       
         createTalonMessage("Falcon 1");
         createTalonMessage("Falcon 2");
@@ -3173,9 +3162,7 @@ void initGUI() {
         createTalonMessage("Falcon 4");
         
         createLinearMessage("Linear 1");
-        createLinearMessage("Linear 2");
         createLinearMessage("Linear 3");
-        createLinearMessage("Linear 4");
         
         initRoll();
         initPitch();

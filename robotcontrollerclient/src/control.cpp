@@ -152,7 +152,10 @@ Gtk::Image* roll_image;
 
 double pitch_rotation_angle = 0.0;
 Glib::RefPtr<Gdk::Pixbuf> pitch_pixbuf;
+Glib::RefPtr<Gdk::Pixbuf> lvl_pixbuf;
 Gtk::Image* pitch_image;
+Gtk::Image* lvl_image;
+
 
 double MULTIPLIER_X = 1100.0 / 6.88;
 double MULTIPLIER_Y = 800.0 / 5.0;
@@ -217,7 +220,7 @@ DrawingArea* right_bucket;
 DrawingArea* left_bucket;
 Gtk::Box* armBox;
 Gtk::Box* bucketBox;
-bool arm_init = false, bucket_init = false, roll_init = false, pitch_init = false;
+bool arm_init = false, bucket_init = false, roll_init = false, pitch_init = false, bucketLevel_init = false;
 
 int right_arm_pos = 0, left_arm_pos = 0, right_bucket_pos = 0, left_bucket_pos = 0;
 
@@ -1295,6 +1298,33 @@ void initPitch(){
         Glib::RefPtr<Gdk::Pixbuf> newpitchpixbuf = rotate_image(pitch_pixbuf, pitch_rotation_angle, 200, 200);
         pitch_image->set(newpitchpixbuf);
         pitch_init = true;
+        window->show_all();
+    }
+}
+
+void initBucketLvl(){
+    if(!bucketLevel_init){
+        Gtk::Box* padding = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
+        padding->set_size_request(100, 100);
+        bottomLowerBox->add(*padding);
+        lvl_image = Gtk::manage(new Gtk::Image());
+        try{
+            lvl_pixbuf = Gdk::Pixbuf::create_from_file("../resources/bucket.png");
+        }
+        catch(const Glib::FileError& e){
+            g_print("Failed to load image: %s\n", e.what().c_str());
+            return;
+        }
+
+        if(noVideo)
+            sensorBox->add(*lvl_image);
+        else
+            bottomLowerBox->add(*lvl_image);
+
+
+        Glib::RefPtr<Gdk::Pixbuf> newlvlpixbuf = rotate_image(lvl_pixbuf, 0, 200, 200);
+        lvl_image->set(newlvlpixbuf);
+        bucketLevel_init = true;
         window->show_all();
     }
 }

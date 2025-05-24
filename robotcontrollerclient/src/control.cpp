@@ -2485,6 +2485,16 @@ void create_config_editor_window(const std::string& config_file) {
         displaySpeed = display_speed;
         numbersInside = numbers_inside;
         numberTicks = number_ticks;
+        if(rightSpeedometer){
+            rightSpeedometer->set_display_speed(displaySpeed);
+            rightSpeedometer->set_numbers_inside(numbersInside);
+            rightSpeedometer->set_numbers_on_ticks(numberTicks);
+        }
+        if(leftSpeedometer){
+            leftSpeedometer->set_display_speed(displaySpeed);
+            leftSpeedometer->set_numbers_inside(numbersInside);
+            leftSpeedometer->set_numbers_on_ticks(numberTicks);
+        }
     });
 
     main_box->pack_start(*grid);

@@ -19,6 +19,16 @@ void InfoFrame::addItem(std::string itemName){
     this->show_all();
 }
 
+void InfoFrame::removeItem(std::string itemName) {
+    for (auto it = itemList.begin(); it != itemList.end(); ++it) {
+        if ((*it)->getName() == itemName) {
+            this->contentsBox->remove(*(*it));
+            itemList.erase(it);
+            break;
+        }
+    }
+}
+
 void InfoFrame::setItem(std::string itemName, std::string itemValue){
     for(std::shared_ptr<InfoItem> infoItem:itemList){
         if(infoItem->getName()==itemName){

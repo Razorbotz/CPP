@@ -18,6 +18,7 @@ public:
 	public:
 	InfoFrame(std::string frameName);
 	void addItem(std::string itemName);
+    void removeItem(std::string itemName);
 	void setItem(std::string itemName, std::string itemValue);
     void setItem(std::string itemName, bool itemValue);
     void setItem(std::string itemName, int itemValue);

@@ -2388,6 +2388,20 @@ void create_config_editor_window(const std::string& config_file) {
         "NUMBER_TICKS"
     };
 
+    std::vector<std::string> talon_keys = {
+    "Device ID", "Bus Voltage", "Output Current", "Output Percent",
+    "Temperature", "Sensor Position", "Sensor Velocity", "Max Current"
+    };
+    std::vector<std::string> falcon_keys = talon_keys;
+
+    std::map<std::string, bool> config_values;
+
+    // Pre-populate config map with defaults
+    for (const auto& key : talon_keys)
+        config_values["SHOW_TALON_" + key] = true;
+    for (const auto& key : falcon_keys)
+        config_values["SHOW_FALCON_" + key] = true;
+
     while (std::getline(file, line)) {
         std::istringstream ss(line);
         std::string key, value;
@@ -2441,11 +2455,65 @@ void create_config_editor_window(const std::string& config_file) {
         }
     }
 
+    Gtk::FlowBox* sensorsBox = Gtk::manage(new Gtk::FlowBox());
+    sensorsBox->set_orientation(Gtk::ORIENTATION_HORIZONTAL);
+
+    auto addConditionalElements = [&](const std::string& prefix, BinaryMessage& msg, InfoFrame* frame) {
+        for (const Element& el : msg.getObject().elementList) {
+            std::string key = "SHOW_" + prefix + "_" + el.label;
+            if (bool_buttons.count(key) == 0 || bool_buttons[key]->get_active()) {
+                addElementToInfoFrame(frame, el);
+            }
+        }
+    };
+
+    BinaryMessage talonMessage("Test Talon");
+    talonMessage.addElementUInt8("Device ID", 0);
+    talonMessage.addElementUInt16("Bus Voltage", 1600);
+    talonMessage.addElementUInt16("Output Current", 0);
+    talonMessage.addElementFloat32("Output Percent", 0.0);
+    talonMessage.addElementUInt8("Temperature", 0);
+    talonMessage.addElementUInt16("Sensor Position", 0);
+    talonMessage.addElementInt8("Sensor Velocity", 0);
+    talonMessage.addElementFloat32("Max Current", 0.0);
+
+    InfoFrame* talonFrame = Gtk::manage(new InfoFrame("Test Talon"));
+    addConditionalElements("TALON", talonMessage, talonFrame);
+    sensorsBox->add(*talonFrame);
+    talonFrame->show();
+
+    BinaryMessage falconMessage("Test Falcon");
+    falconMessage.addElementUInt8("Device ID", 0);
+    falconMessage.addElementUInt16("Bus Voltage", 1600);
+    falconMessage.addElementUInt16("Output Current", 0);
+    falconMessage.addElementFloat32("Output Percent", 0.0);
+    falconMessage.addElementUInt8("Temperature", 0);
+    falconMessage.addElementUInt16("Sensor Position", 0);
+    falconMessage.addElementInt8("Sensor Velocity", 0);
+    falconMessage.addElementFloat32("Max Current", 0.0);
+    InfoFrame* falconFrame = Gtk::manage(new InfoFrame("Test Falcon"));
+    addConditionalElements("FALCON", falconMessage, falconFrame);
+    
+    for (const auto& [key, enabled] : config_values) {
+        if (key.find("SHOW_TALON_") == 0 || key.find("SHOW_FALCON_") == 0) {
+            auto check = Gtk::make_managed<Gtk::CheckButton>(key);
+            check->set_active(enabled);
+            bool_buttons[key] = check;
+            grid->attach(*check, 0, row, 2, 1);
+            row++;
+        }
+    }
+    
+
+    sensorsBox->add(*falconFrame);
+    falconFrame->show();
+
     // Save button logic
     save_button->signal_clicked().connect([=]() {
         std::ofstream outfile("../resources/" + file_entry->get_text());
         for (const auto& [key, button] : bool_buttons) {
             outfile << key << "=" << (button->get_active() ? "true" : "false") << "\n";
+            std::cout << key << " " << button->get_active() << std::endl;
         }
         outfile << "LIGHT_BACKGROUND=" << to_color_string(light_color_button->get_rgba()) << "\n";
         outfile << "DARK_BACKGROUND=" << to_color_string(dark_color_button->get_rgba()) << "\n";
@@ -2506,6 +2574,7 @@ void create_config_editor_window(const std::string& config_file) {
     });
 
     main_box->pack_start(*grid);
+    speed_box->add(*sensorsBox);
     main_box->add(*speed_box);
     main_box->pack_start(*save_button, Gtk::PACK_SHRINK);
     configWindow->add(*main_box);

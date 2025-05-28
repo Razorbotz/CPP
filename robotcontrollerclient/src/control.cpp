@@ -2361,9 +2361,6 @@ void create_config_editor_window(const std::string& config_file) {
     auto dark_color_button = Gtk::make_managed<Gtk::ColorButton>();
     auto file_entry = Gtk::make_managed<Gtk::Entry>();
     file_entry->set_text(config_file);
-    bool display_speed = false;
-    bool numbers_inside = false;
-    bool number_ticks = false;
 
     std::map<std::string, Gtk::CheckButton*> bool_buttons;
     std::string lightBackground;
@@ -2419,18 +2416,21 @@ void create_config_editor_window(const std::string& config_file) {
                 row++;
 
                 if (speedometer_keys.count(key)) {
-                    check->signal_toggled().connect([=]() mutable{
-                        if (bool_buttons.count("DISPLAY_SPEED")){
-                            testSpeedometer->set_display_speed(bool_buttons["DISPLAY_SPEED"]->get_active());
-                            display_speed = bool_buttons["DISPLAY_SPEED"]->get_active();
+                    check->signal_toggled().connect([=]() mutable {
+                        if (bool_buttons.count("DISPLAY_SPEED")) {
+                            displaySpeed = bool_buttons["DISPLAY_SPEED"]->get_active();
+                            testSpeedometer->set_display_speed(displaySpeed);
+                            std::cout << "Display speed:" << displaySpeed << std::endl;
                         }
-                        if (bool_buttons.count("NUMBERS_INSIDE")){
-                            testSpeedometer->set_numbers_inside(bool_buttons["NUMBERS_INSIDE"]->get_active());
-                            numbers_inside = bool_buttons["NUMBERS_INSIDE"]->get_active();
+                        if (bool_buttons.count("NUMBERS_INSIDE")) {
+                            numbersInside = bool_buttons["NUMBERS_INSIDE"]->get_active();
+                            testSpeedometer->set_numbers_inside(numbersInside);
+                            std::cout << "NUMBERS_INSIDE:" << numbersInside << std::endl;
                         }
-                        if (bool_buttons.count("NUMBER_TICKS")){
-                            testSpeedometer->set_numbers_on_ticks(bool_buttons["NUMBER_TICKS"]->get_active());
-                            number_ticks = bool_buttons["NUMBER_TICKS"]->get_active();
+                        if (bool_buttons.count("NUMBER_TICKS")) {
+                            numberTicks = bool_buttons["NUMBER_TICKS"]->get_active();
+                            testSpeedometer->set_numbers_on_ticks(numberTicks);
+                            std::cout << "numberTicks:" << numberTicks << std::endl;
                         }
                         if (configWindow) {
                             configWindow->queue_draw();
@@ -2482,18 +2482,26 @@ void create_config_editor_window(const std::string& config_file) {
             auto screen = Gdk::Screen::get_default();
             Gtk::StyleContext::add_provider_for_screen(screen, css_provider, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
         }
-        displaySpeed = display_speed;
-        numbersInside = numbers_inside;
-        numberTicks = number_ticks;
+        displaySpeed = bool_buttons.at("DISPLAY_SPEED")->get_active();
+        numbersInside = bool_buttons.at("NUMBERS_INSIDE")->get_active();
+        numberTicks = bool_buttons.at("NUMBER_TICKS")->get_active();
+        std::cout << "displaySpeed:" << displaySpeed << std::endl;
+        std::cout << "numbersInside:" << numbersInside << std::endl;
+        std::cout << "numberTicks:" << numberTicks << std::endl;
+
+        
         if(rightSpeedometer){
             rightSpeedometer->set_display_speed(displaySpeed);
             rightSpeedometer->set_numbers_inside(numbersInside);
             rightSpeedometer->set_numbers_on_ticks(numberTicks);
+            rightSpeedometer->queue_draw();
+
         }
         if(leftSpeedometer){
             leftSpeedometer->set_display_speed(displaySpeed);
             leftSpeedometer->set_numbers_inside(numbersInside);
             leftSpeedometer->set_numbers_on_ticks(numberTicks);
+            leftSpeedometer->queue_draw();
         }
     });
 

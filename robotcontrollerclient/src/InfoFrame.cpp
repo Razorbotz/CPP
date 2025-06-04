@@ -221,3 +221,8 @@ void InfoFrame::setTextColor(std::string itemName, std::string color, bool bold)
         }
     }
 }
+
+void InfoFrame::addWidget(Gtk::Widget& widget) {
+    contentsBox->pack_start(widget, Gtk::PACK_SHRINK);
+    show_all();
+}

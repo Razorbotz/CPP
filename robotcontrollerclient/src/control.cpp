@@ -2365,6 +2365,53 @@ void add_tooltip(Gtk::CheckButton* check, const std::string& key) {
 }
 
 
+void update_info_frame_element(Gtk::CheckButton* check_button, InfoFrame* frame, const std::string& element_name, int default_value) {
+    if (check_button->get_active()) {
+        frame->setItem(element_name, default_value);
+    }
+    else {
+        frame->removeItem(element_name);
+    }
+}
+
+void update_info_frame_element(Gtk::CheckButton* check_button, InfoFrame* frame, const std::string& element_name, float default_value) {
+    if (check_button->get_active()) {
+        frame->setItem(element_name, default_value);
+    }
+    else {
+        frame->removeItem(element_name);
+    }
+}
+
+void update_info_frame_element(Gtk::CheckButton* check_button, InfoFrame* frame, const std::string& element_name, double default_value) {
+    if (check_button->get_active()) {
+        frame->setItem(element_name, default_value);
+    }
+    else {
+        frame->removeItem(element_name);
+    }
+}
+
+void update_info_frame_element(Gtk::CheckButton* check_button, InfoFrame* frame, const std::string& element_name, bool default_value) {
+    if (check_button->get_active()) {
+        frame->setItem(element_name, default_value);
+    }
+    else {
+        frame->removeItem(element_name);
+    }
+}
+
+void update_info_frame_element(Gtk::CheckButton* check_button, InfoFrame* frame, const std::string& element_name, std::string default_value) {
+    if (check_button->get_active()) {
+        frame->setItem(element_name, default_value);
+    }
+    else {
+        frame->removeItem(element_name);
+    }
+}
+
+
+
 void create_config_editor_window(const std::string& config_file) {
     configWindow = new Gtk::Window();
     configWindow->set_title("Configuration Editor");
@@ -2410,20 +2457,38 @@ void create_config_editor_window(const std::string& config_file) {
     };
     std::vector<std::string> falcon_keys = talon_keys;
 
+    std::vector<std::string> linear_keys = {
+        "Motor Number", "Speed", "Potentiometer", "Time Without Change",
+        "Max", "Min", "Error", "At Min", "At Max", "Distance", "Sensorless"
+    };
+
+    std::vector<std::string> power_keys = {
+        "Voltage", "Temp", "Current 0", "Current 1", "Current 2",
+        "Current 3", "Current 3", "Current 4", "Current 5", "Current 6"
+    };
+
+    std::vector<std::string> power2_keys = {
+        "Current 7", "Current 8", "Current 9", "Current 10", "Current 11",
+        "Current 12", "Current 13", "Current 14", "Current 15"
+    };
+
+    std::vector<std::string> autonomy_keys = {
+        "Robot State", "Excavation State", "Error State", "Diagnostics State", 
+        "Tilt State", "Dump State", "Level Bucket", "Level Arms", "Dest X", "Dest Z"
+    };
+
+    std::vector<std::string> zed_keys = {
+        "X", "Y", "Z", "roll", "pitch", "yaw", "aruco"
+    };
+
+    std::vector<std::string> communication_keys = {
+        "RSSI", "Wi-Fi", "CAN Bus", "Interface", "RX packets", "TX packets"
+    };
+
     std::map<std::string, bool> config_values;
 
-    // Pre-populate config map with defaults
-    for (const auto& key : talon_keys){
-        if(!bool_buttons.count("SHOW_TALON_" + key))
-            config_values["SHOW_TALON_" + key] = true;
-    }
-    for (const auto& key : falcon_keys){
-        if(!bool_buttons.count("SHOW_FALCON_" + key))
-            config_values["SHOW_FALCON_" + key] = true;
-    }
-
     Gtk::FlowBox* sensorsBox = Gtk::manage(new Gtk::FlowBox());
-    sensorsBox->set_orientation(Gtk::ORIENTATION_HORIZONTAL);
+    sensorsBox->set_orientation(Gtk::ORIENTATION_VERTICAL);
 
     auto addConditionalElements = [&](const std::string& prefix, BinaryMessage& msg, InfoFrame* frame) {
         for (const Element& el : msg.getObject().elementList) {
@@ -2434,195 +2499,572 @@ void create_config_editor_window(const std::string& config_file) {
         }
     };
 
-    BinaryMessage talonMessage("Test Talon");
-    talonMessage.addElementUInt8("Device ID", 0);
-    talonMessage.addElementUInt16("Bus Voltage", 1600);
-    talonMessage.addElementUInt16("Output Current", 0);
-    talonMessage.addElementFloat32("Output Percent", 0.0);
-    talonMessage.addElementUInt8("Temperature", 0);
-    talonMessage.addElementUInt16("Sensor Position", 0);
-    talonMessage.addElementInt8("Sensor Velocity", 0);
-    talonMessage.addElementFloat32("Max Current", 0.0);
+    auto createTestFrame = [&](const std::string& name, const std::string& prefix, InfoFrame*& frameRef, Gtk::Box* box) {
+        BinaryMessage message(name);
+        message.addElementUInt8("Device ID", 0);
+        message.addElementUInt16("Bus Voltage", 1600);
+        message.addElementUInt16("Output Current", 0);
+        message.addElementFloat32("Output Percent", 0.0);
+        message.addElementUInt8("Temperature", 0);
+        message.addElementUInt16("Sensor Position", 0);
+        message.addElementInt8("Sensor Velocity", 0);
+        message.addElementFloat32("Max Current", 0.0);
 
-    InfoFrame* talonFrame = Gtk::manage(new InfoFrame("Test Talon"));
-    addConditionalElements("TALON", talonMessage, talonFrame);
-    sensorsBox->add(*talonFrame);
-    talonFrame->show();
+        frameRef = Gtk::manage(new InfoFrame(name));
+        addConditionalElements(prefix, message, frameRef);
+        box->add(*frameRef);
+        frameRef->show();
+    };
 
-    BinaryMessage falconMessage("Test Falcon");
-    falconMessage.addElementUInt8("Device ID", 0);
-    falconMessage.addElementUInt16("Bus Voltage", 1600);
-    falconMessage.addElementUInt16("Output Current", 0);
-    falconMessage.addElementFloat32("Output Percent", 0.0);
-    falconMessage.addElementUInt8("Temperature", 0);
-    falconMessage.addElementUInt16("Sensor Position", 0);
-    falconMessage.addElementInt8("Sensor Velocity", 0);
-    falconMessage.addElementFloat32("Max Current", 0.0);
+    auto createLinearFrame = [&](const std::string& name, const std::string& prefix, InfoFrame*& frameRef, Gtk::Box* box) {
+        BinaryMessage message(name);
+        message.addElementUInt8("Motor Number", (uint8_t)0);
+        message.addElementFloat32("Speed", 0.0);
+        message.addElementUInt16("Potentiometer", (uint16_t)0);
+        message.addElementUInt8("Time Without Change", (uint8_t)0);
+        message.addElementUInt16("Max", (uint16_t)0);
+        message.addElementUInt16("Min", (uint16_t)0);
+        message.addElementString("Error", "No Error");
+        message.addElementBoolean("At Min", false);
+        message.addElementBoolean("At Max", false);
+        message.addElementFloat32("Distance", 0.0);
+        message.addElementBoolean("Sensorless", false);
+
+        frameRef = Gtk::manage(new InfoFrame(name));
+        addConditionalElements(prefix, message, frameRef);
+        box->add(*frameRef);
+        frameRef->show();
+    };
+
+    auto createAutonomyFrame = [&](const std::string& name, const std::string& prefix, InfoFrame*& frameRef, Gtk::Box* box) {
+        BinaryMessage message(name);
+        message.addElementString("Robot State", "Initial");
+        message.addElementString("Excavation State", "Initial");
+        message.addElementString("Error State", "Initial");
+        message.addElementString("Diagnostics State", "Initial");
+        message.addElementString("Tilt State", "Initial");
+        message.addElementString("Dump State", "Initial");
+        message.addElementString("Level Bucket", "Initial");
+        message.addElementString("Level Arms", "Initial");
+        message.addElementFloat32("Dest X", 0.0);
+        message.addElementFloat32("Dest Z", 0.0);
+
+        frameRef = Gtk::manage(new InfoFrame(name));
+        addConditionalElements(prefix, message, frameRef);
+        box->add(*frameRef);
+        frameRef->show();
+    };
+
+    auto createZedFrame = [&](const std::string& name, const std::string& prefix, InfoFrame*& frameRef, Gtk::Box* box) {
+        BinaryMessage message(name);
+        message.addElementFloat32("X", 0.0);
+        message.addElementFloat32("Y", 0.0);
+        message.addElementFloat32("Z", 0.0);
+        message.addElementFloat32("roll", 0.0);
+        message.addElementFloat32("pitch", 0.0);
+        message.addElementFloat32("yaw", 0.0);
+        message.addElementBoolean("aruco", false);
+
+        frameRef = Gtk::manage(new InfoFrame(name));
+        addConditionalElements(prefix, message, frameRef);
+        box->add(*frameRef);
+        frameRef->show();
+    };
+
+    auto createCommunicationFrame = [&](const std::string& name, const std::string& prefix, InfoFrame*& frameRef, Gtk::Box* box) {
+        BinaryMessage message(name);
+        message.addElementInt32("RSSI", 0);
+        message.addElementString("Wi-Fi", "NORMAL");
+        message.addElementString("Interface", "can0");
+        message.addElementInt32("RX packets", 0);
+        message.addElementInt32("TX packets", 0);
+
+        frameRef = Gtk::manage(new InfoFrame(name));
+        addConditionalElements(prefix, message, frameRef);
+        box->add(*frameRef);
+        frameRef->show();
+    };
+
+    auto createPowerFrame = [&](const std::string& name, const std::string& prefix, InfoFrame*& frameRef, Gtk::Box* box) {
+        BinaryMessage message(name);
+        message.addElementFloat32("Voltage", 0.0);
+        message.addElementFloat32("Temp", 0.0);
+        message.addElementFloat32("Current 0", 0.0);
+        message.addElementFloat32("Current 1", 0.0);
+        message.addElementFloat32("Current 2", 0.0);
+        message.addElementFloat32("Current 3", 0.0);
+        message.addElementFloat32("Current 4", 0.0);
+        message.addElementFloat32("Current 5", 0.0);
+        message.addElementFloat32("Current 6", 0.0);
     
-    InfoFrame* falconFrame = Gtk::manage(new InfoFrame("Test Falcon"));
-    addConditionalElements("FALCON", falconMessage, falconFrame);
-    sensorsBox->add(*falconFrame);
-    falconFrame->show();
+        frameRef = Gtk::manage(new InfoFrame(name));
+        addConditionalElements(prefix, message, frameRef);
+        box->add(*frameRef);
+        frameRef->show();
+    };
+
+    auto createPower2Frame = [&](const std::string& name, const std::string& prefix, InfoFrame*& frameRef, Gtk::Box* box) {
+        BinaryMessage message(name);
+        message.addElementFloat32("Current 7", 0.0);
+        message.addElementFloat32("Current 8", 0.0);
+        message.addElementFloat32("Current 9", 0.0);
+        message.addElementFloat32("Current 10", 0.0);
+        message.addElementFloat32("Current 11", 0.0);
+        message.addElementFloat32("Current 12", 0.0);
+        message.addElementFloat32("Current 13", 0.0);
+        message.addElementFloat32("Current 14", 0.0);
+        message.addElementFloat32("Current 15", 0.0);
+
+        frameRef = Gtk::manage(new InfoFrame(name));
+        addConditionalElements(prefix, message, frameRef);
+        box->add(*frameRef);
+        frameRef->show();
+    };
+
+    InfoFrame* talonFrame = nullptr;
+    InfoFrame* falconFrame = nullptr;
+    Gtk::Box* talonBox = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_HORIZONTAL);
+    Gtk::Box* falconBox = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_HORIZONTAL);
+    createTestFrame("Test Talon", "TALON", talonFrame, talonBox);
+    createTestFrame("Test Falcon", "FALCON", falconFrame, falconBox);
+
+    InfoFrame* linearFrame = nullptr;
+    Gtk::Box* linearBox = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_HORIZONTAL);
+    createLinearFrame("Test Linear", "LINEAR", linearFrame, linearBox);
+
+    InfoFrame* autonomyFrame = nullptr;
+    Gtk::Box* autonomyBox = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_HORIZONTAL);
+    createAutonomyFrame("Test Linear", "AUTONOMY", autonomyFrame, autonomyBox);
+
+    InfoFrame* zedFrame = nullptr;
+    Gtk::Box* zedBox = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_HORIZONTAL);
+    createZedFrame("Test Linear", "ZED", zedFrame, zedBox);
+
+    InfoFrame* communicationFrame = nullptr;
+    Gtk::Box* communicationBox = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_HORIZONTAL);
+    createCommunicationFrame("Test Linear", "COMMUNICATION", communicationFrame, communicationBox);
+
+    InfoFrame* powerFrame = nullptr;
+    Gtk::Box* powerBox = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_HORIZONTAL);
+    createPowerFrame("Test Linear", "POWER", powerFrame, powerBox);
+
+    InfoFrame* power2Frame = nullptr;
+    Gtk::Box* power2Box = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_HORIZONTAL);
+    createPower2Frame("Test Linear", "POWER2", power2Frame, power2Box);
+    
+    InfoFrame* testTalonFrame = Gtk::manage(new InfoFrame("Talon"));
+    talonBox->add(*testTalonFrame);
+    
+    InfoFrame* testFalconFrame = Gtk::manage(new InfoFrame("Falcon"));
+    falconBox->add(*testFalconFrame);
+
+    InfoFrame* testLinearFrame = Gtk::manage(new InfoFrame("Linear"));
+    linearBox->add(*testLinearFrame);
+
+    InfoFrame* testAutonomyFrame = Gtk::manage(new InfoFrame("Autonomy"));
+    autonomyBox->add(*testAutonomyFrame);
+
+    InfoFrame* testZedFrame = Gtk::manage(new InfoFrame("Zed"));
+    zedBox->add(*testZedFrame);
+
+    InfoFrame* testCommunicationFrame = Gtk::manage(new InfoFrame("Communication"));
+    communicationBox->add(*testCommunicationFrame);
+
+    InfoFrame* testPowerFrame = Gtk::manage(new InfoFrame("Power"));
+    powerBox->add(*testPowerFrame);
+
+    InfoFrame* testPower2Frame = Gtk::manage(new InfoFrame("Power2"));
+    power2Box->add(*testPower2Frame);
+    
+    sensorsBox->add(*talonBox);
+    sensorsBox->add(*falconBox);
+    sensorsBox->add(*linearBox);
+    sensorsBox->add(*autonomyBox);
+    sensorsBox->add(*zedBox);
+    sensorsBox->add(*communicationBox);
+    sensorsBox->add(*powerBox);
+    sensorsBox->add(*power2Box);
+
+    auto setup_info_frame_toggle = [&](const std::string& prefix, const std::string& element_name, auto default_value) {
+        std::string key = "SHOW_" + prefix + "_" + element_name;
+        if (bool_buttons.count(key)) {
+            Gtk::CheckButton* check = bool_buttons[key];
+            check->signal_toggled().connect([=]() mutable {
+                InfoFrame* target_frame;
+                if(prefix == "TALON")
+                    target_frame = talonFrame;
+                else if(prefix == "FALCON")
+                    target_frame = falconFrame;
+                else if(prefix == "LINEAR")
+                    target_frame = linearFrame;
+                else if(prefix == "AUTONOMY")
+                    target_frame = autonomyFrame;
+                else if(prefix == "ZED")
+                    target_frame = zedFrame;
+                else if(prefix == "COMMUNICATION")
+                    target_frame = communicationFrame;
+                else if(prefix == "POWER")
+                    target_frame = powerFrame;
+                else if(prefix == "POWER2")
+                    target_frame = power2Frame;
+                else
+                    target_frame = talonFrame;
+                if (target_frame) {
+                    update_info_frame_element(check, target_frame, element_name, default_value);
+                    if (configWindow) configWindow->queue_draw();
+                }
+            });
+            InfoFrame* target_frame;
+            if(prefix == "TALON")
+                target_frame = talonFrame;
+            else if(prefix == "FALCON")
+                target_frame = falconFrame;
+            else if(prefix == "LINEAR")
+                target_frame = linearFrame;
+            else if(prefix == "AUTONOMY")
+                target_frame = autonomyFrame;
+            else if(prefix == "ZED")
+                target_frame = zedFrame;
+            else if(prefix == "COMMUNICATION")
+                target_frame = communicationFrame;
+            else if(prefix == "POWER")
+                target_frame = powerFrame;
+            else if(prefix == "POWER2")
+                target_frame = power2Frame;
+            else
+                target_frame = talonFrame;
+            if (target_frame) {
+                update_info_frame_element(check, target_frame, element_name, default_value);
+            }
+        }
+    };
+
+    auto add_color_setting = [&](const std::string& label_text, const std::string& color_value, Gtk::ColorButton* color_button) {
+        auto label = Gtk::make_managed<Gtk::Label>(label_text + ":");
+        color_button->set_rgba(parse_color(color_value));
+        grid->attach(*label, 0, row, 1, 1);
+        grid->attach(*color_button, 1, row, 1, 1);
+        row++;
+    };
+
+    auto connect_speedometer_toggle = [&](Gtk::CheckButton* check, const std::string& key) {
+        check->signal_toggled().connect([=]() mutable {
+            bool active = check->get_active();
+            if (key == "DISPLAY_SPEED") {
+                displaySpeed = active;
+                testSpeedometer->set_display_speed(active);
+            }
+            else if (key == "NUMBERS_INSIDE") {
+                numbersInside = active;
+                testSpeedometer->set_numbers_inside(active);
+            }
+            else if (key == "NUMBER_TICKS") {
+                numberTicks = active;
+                testSpeedometer->set_numbers_on_ticks(active);
+            }
+            std::cout << key << ": " << active << std::endl;
+            if (configWindow) configWindow->queue_draw();
+        });
+    };
+
+    auto create_falcon_checkbox = [&](const std::string& prefix, const std::string& key, bool active) {
+        std::string full_key = "SHOW_" + prefix + "_" + key;
+        if (bool_buttons.count(full_key) == 0) {
+            auto check = Gtk::make_managed<Gtk::CheckButton>(full_key);
+            check->set_active(active);
+            bool_buttons[full_key] = check;
+            testFalconFrame->addWidget(*check);
+            row++;
+            add_tooltip(check, full_key);
+
+            if (key == "Device ID" || key == "Temperature" ||
+                key == "Sensor Position" || key == "Sensor Velocity") {
+                setup_info_frame_toggle(prefix, key, 0);
+            } else {
+                setup_info_frame_toggle(prefix, key, 0.0f);
+            }
+        }
+    };
+    
+    auto create_talon_checkbox = [&](const std::string& prefix, const std::string& key, bool active) {
+        std::string full_key = "SHOW_" + prefix + "_" + key;
+        if (bool_buttons.count(full_key) == 0) {
+            auto check = Gtk::make_managed<Gtk::CheckButton>(full_key);
+            check->set_active(active);
+            bool_buttons[full_key] = check;
+            testTalonFrame->addWidget(*check);
+            row++;
+            add_tooltip(check, full_key);
+
+            if (key == "Device ID" || key == "Temperature" ||
+                key == "Sensor Position" || key == "Sensor Velocity") {
+                setup_info_frame_toggle(prefix, key, 0);
+            } else {
+                setup_info_frame_toggle(prefix, key, 0.0f);
+            }
+        }
+    };
+
+    auto create_linear_checkbox = [&](const std::string& prefix, const std::string& key, bool active) {
+        std::string full_key = "SHOW_" + prefix + "_" + key;
+        if (bool_buttons.count(full_key) == 0) {
+            auto check = Gtk::make_managed<Gtk::CheckButton>(full_key);
+            check->set_active(active);
+            bool_buttons[full_key] = check;
+            testLinearFrame->addWidget(*check);
+            row++;
+            add_tooltip(check, full_key);
+
+            if(key == "At Min" || key == "At Max" || key == "Sensorless"){
+                setup_info_frame_toggle(prefix, key, false);
+            }
+            else if (key == "Device ID" || key == "Temperature" ||
+                key == "Sensor Position" || key == "Sensor Velocity") {
+                setup_info_frame_toggle(prefix, key, 0);
+            } else {
+                setup_info_frame_toggle(prefix, key, 0.0f);
+            }
+        }
+    };
+
+    auto create_autonomy_checkbox = [&](const std::string& prefix, const std::string& key, bool active) {
+        std::string full_key = "SHOW_" + prefix + "_" + key;
+        if (bool_buttons.count(full_key) == 0) {
+            auto check = Gtk::make_managed<Gtk::CheckButton>(full_key);
+            check->set_active(active);
+            bool_buttons[full_key] = check;
+            testAutonomyFrame->addWidget(*check);
+            row++;
+            add_tooltip(check, full_key);
+
+            if(key == "Dest X" || key == "Dest Z"){
+                setup_info_frame_toggle(prefix, key, 0.0);
+            }
+            else {
+                setup_info_frame_toggle(prefix, key, "Initial");
+            }
+        }
+    };
+
+    auto create_zed_checkbox = [&](const std::string& prefix, const std::string& key, bool active) {
+        std::string full_key = "SHOW_" + prefix + "_" + key;
+        if (bool_buttons.count(full_key) == 0) {
+            auto check = Gtk::make_managed<Gtk::CheckButton>(full_key);
+            check->set_active(active);
+            bool_buttons[full_key] = check;
+            testZedFrame->addWidget(*check);
+            row++;
+            add_tooltip(check, full_key);
+
+            if(key == "aruco"){
+                setup_info_frame_toggle(prefix, key, false);
+            }
+            else {
+                setup_info_frame_toggle(prefix, key, 0.0);
+            }
+        }
+    };
+
+    auto create_communication_checkbox = [&](const std::string& prefix, const std::string& key, bool active) {
+        std::string full_key = "SHOW_" + prefix + "_" + key;
+        if (bool_buttons.count(full_key) == 0) {
+            auto check = Gtk::make_managed<Gtk::CheckButton>(full_key);
+            check->set_active(active);
+            bool_buttons[full_key] = check;
+            testCommunicationFrame->addWidget(*check);
+            row++;
+            add_tooltip(check, full_key);
+
+            if(key == "Wi-Fi" || key == "Interface"){
+                setup_info_frame_toggle(prefix, key, "Initial");
+            }
+            else {
+                setup_info_frame_toggle(prefix, key, 0);
+            }
+        }
+    };
+
+    auto create_power_checkbox = [&](const std::string& prefix, const std::string& key, bool active) {
+        std::string full_key = "SHOW_" + prefix + "_" + key;
+        if (bool_buttons.count(full_key) == 0) {
+            auto check = Gtk::make_managed<Gtk::CheckButton>(full_key);
+            check->set_active(active);
+            bool_buttons[full_key] = check;
+            testPowerFrame->addWidget(*check);
+            row++;
+            add_tooltip(check, full_key);
+
+            setup_info_frame_toggle(prefix, key, 0.0);
+        }
+    };
+
+    auto create_power2_checkbox = [&](const std::string& prefix, const std::string& key, bool active) {
+        std::string full_key = "SHOW_" + prefix + "_" + key;
+        if (bool_buttons.count(full_key) == 0) {
+            auto check = Gtk::make_managed<Gtk::CheckButton>(full_key);
+            check->set_active(active);
+            bool_buttons[full_key] = check;
+            testPower2Frame->addWidget(*check);
+            row++;
+            add_tooltip(check, full_key);
+
+            setup_info_frame_toggle(prefix, key, 0.0);
+        }
+    };
+
+    auto setup_info_toggle_if_needed = [&](const std::string& key, bool active) {
+        if (key.rfind("SHOW_TALON_", 0) == 0) {
+            create_talon_checkbox("TALON", key.substr(11), active);
+        }
+        else if (key.rfind("SHOW_FALCON_", 0) == 0) {
+            create_falcon_checkbox("FALCON", key.substr(12), active);
+        }
+        else if (key.rfind("SHOW_LINEAR_", 0) == 0) {
+            create_linear_checkbox("LINEAR", key.substr(12), active);
+        }
+        else if (key.rfind("SHOW_AUTONOMY_", 0) == 0) {
+            create_autonomy_checkbox("AUTONOMY", key.substr(14), active);
+        }
+        else if (key.rfind("SHOW_ZED_", 0) == 0) {
+            create_zed_checkbox("ZED", key.substr(9), active);
+        }
+        else if (key.rfind("SHOW_COMMUNICATION_", 0) == 0) {
+            create_communication_checkbox("COMMUNICATION", key.substr(19), active);
+        }
+        else if (key.rfind("SHOW_POWER_", 0) == 0) {
+            create_power_checkbox("POWER", key.substr(11), active);
+        }
+        else if (key.rfind("SHOW_POWER2_", 0) == 0) {
+            create_power2_checkbox("POWER2", key.substr(12), active);
+        }
+    };
 
     while (std::getline(file, line)) {
         std::istringstream ss(line);
         std::string key, value;
-        if (std::getline(ss, key, '=') && std::getline(ss, value)) {
-            if (key == "LIGHT_BACKGROUND") {
-                lightBackground = value;
-                auto label = Gtk::make_managed<Gtk::Label>("LIGHT_BACKGROUND:");
-                light_color_button->set_rgba(parse_color(value));
-                grid->attach(*label, 0, row, 1, 1);
-                grid->attach(*light_color_button, 1, row, 1, 1);
-                row++;
-            }
-            else if (key == "DARK_BACKGROUND") {
-                darkBackground = value;
-                auto label = Gtk::make_managed<Gtk::Label>("DARK_BACKGROUND:");
-                dark_color_button->set_rgba(parse_color(value));
-                grid->attach(*label, 0, row, 1, 1);
-                grid->attach(*dark_color_button, 1, row, 1, 1);
-                row++;
-            }
-            else {
+        if (!(std::getline(ss, key, '=') && std::getline(ss, value))) continue;
+
+        if (key == "LIGHT_BACKGROUND") {
+            lightBackground = value;
+            add_color_setting("LIGHT_BACKGROUND", value, light_color_button);
+        }
+        else if (key == "DARK_BACKGROUND") {
+            darkBackground = value;
+            add_color_setting("DARK_BACKGROUND", value, dark_color_button);
+        }
+        else {
+            if (key == "DISPLAY_SPEED" || key == "NUMBERS_INSIDE" || key == "NUMBER_TICKS") {
                 auto check = Gtk::make_managed<Gtk::CheckButton>(key);
                 check->set_active(value == "true");
                 bool_buttons[key] = check;
                 grid->attach(*check, 0, row, 2, 1);
                 row++;
                 add_tooltip(check, key);
-
-                check->signal_toggled().connect([=]() mutable {
-                    if (bool_buttons.count("DISPLAY_SPEED")) {
-                        displaySpeed = bool_buttons["DISPLAY_SPEED"]->get_active();
-                        testSpeedometer->set_display_speed(displaySpeed);
-                        std::cout << "Display speed:" << displaySpeed << std::endl;
-                    }
-                    if (bool_buttons.count("NUMBERS_INSIDE")) {
-                        numbersInside = bool_buttons["NUMBERS_INSIDE"]->get_active();
-                        testSpeedometer->set_numbers_inside(numbersInside);
-                        std::cout << "NUMBERS_INSIDE:" << numbersInside << std::endl;
-                    }
-                    if (bool_buttons.count("NUMBER_TICKS")) {
-                        numberTicks = bool_buttons["NUMBER_TICKS"]->get_active();
-                        testSpeedometer->set_numbers_on_ticks(numberTicks);
-                        std::cout << "numberTicks:" << numberTicks << std::endl;
-                    }
-                    if (configWindow) {
-                        configWindow->queue_draw();
-                    }
-                });
-
+                connect_speedometer_toggle(check, key);
+            }
+            else {
+                setup_info_toggle_if_needed(key, value == "true");
             }
         }
     }
-    
-    const std::vector<std::pair<std::string, double>> item_list = {
-        {"Device ID", 0},
-        {"Bus Voltage", 0.0},
-        {"Output Current", 0.0},
-        {"Output Percent", 0.0},
-        {"Temperature", 0},
-        {"Sensor Position", 0},
-        {"Sensor Velocity", 0},
-        {"Max Current", 0.0}
-    };
 
-    auto update_frame_items = [&](const std::string& prefix, auto* frame) {
-        for (const auto& item : item_list) {
-            std::string full_key = "SHOW_" + prefix + "_" + item.first;
-            if (bool_buttons.count(full_key)) {
-                if (bool_buttons[full_key]->get_active())
-                    frame->setItem(item.first, item.second);
-                else
-                    frame->removeItem(item.first);
-            }
-        }
-    };
+    for (const auto& device_key : talon_keys) {
+        create_falcon_checkbox("FALCON", device_key, true);
+        create_talon_checkbox("TALON", device_key, true);
+    }
 
-    for (const auto& kv : config_values) {
-        const auto& key = kv.first;
-        const auto& enabled = kv.second;
+    for (const auto& device_key : linear_keys){
+        create_linear_checkbox("LINEAR", device_key, true);
+    }
 
-        if (key.find("SHOW_TALON_") == 0 || key.find("SHOW_FALCON_") == 0) {
-            auto check = Gtk::make_managed<Gtk::CheckButton>(key);
-            check->set_active(enabled);
-            bool_buttons[key] = check;
-            grid->attach(*check, 0, row++, 2, 1);
+    for (const auto& device_key : autonomy_keys){
+        create_autonomy_checkbox("AUTONOMY", device_key, true);
+    }
 
-            check->signal_toggled().connect([&bool_buttons, &falconFrame, &talonFrame, &configWindow, &update_frame_items]() {
-                update_frame_items("FALCON", falconFrame);
-                update_frame_items("TALON", talonFrame);
-                if (configWindow)
-                    configWindow->queue_draw();
-            });
-        }
-    } 
+    for (const auto& device_key : zed_keys){
+        create_zed_checkbox("ZED", device_key, true);
+    }
 
-    // Save button logic
-    save_button->signal_clicked().connect([=]() {
+    for (const auto& device_key : communication_keys){
+        create_communication_checkbox("COMMUNICATION", device_key, true);
+    }
+
+    for (const auto& device_key : power_keys){
+        create_power_checkbox("POWER", device_key, true);
+    }
+
+    for (const auto& device_key : power2_keys){
+        create_power2_checkbox("POWER2", device_key, true);
+    }
+
+    if (bool_buttons.count("DISPLAY_SPEED")) {
+        displaySpeed = bool_buttons["DISPLAY_SPEED"]->get_active();
+        testSpeedometer->set_display_speed(displaySpeed);
+    }
+    if (bool_buttons.count("NUMBERS_INSIDE")) {
+        numbersInside = bool_buttons["NUMBERS_INSIDE"]->get_active();
+        testSpeedometer->set_numbers_inside(numbersInside);
+    }
+    if (bool_buttons.count("NUMBER_TICKS")) {
+        numberTicks = bool_buttons["NUMBER_TICKS"]->get_active();
+        testSpeedometer->set_numbers_on_ticks(numberTicks);
+    }
+
+    save_button->signal_clicked().connect([=]() mutable{
         std::ofstream outfile("../resources/" + file_entry->get_text());
         for (const auto& [key, button] : bool_buttons) {
-            outfile << key << "=" << (button->get_active() ? "true" : "false") << "\n";
-            std::cout << key << " " << button->get_active() << std::endl;
+            bool active = button->get_active();
+            outfile << key << "=" << (active ? "true" : "false") << "\n";
+            std::cout << key << " " << active << std::endl;
         }
-        outfile << "LIGHT_BACKGROUND=" << to_color_string(light_color_button->get_rgba()) << "\n";
-        outfile << "DARK_BACKGROUND=" << to_color_string(dark_color_button->get_rgba()) << "\n";
-        
+
+        const auto lightColorStr = to_color_string(light_color_button->get_rgba());
+        const auto darkColorStr = to_color_string(dark_color_button->get_rgba());
+        outfile << "LIGHT_BACKGROUND=" << lightColorStr << "\n";
+        outfile << "DARK_BACKGROUND=" << darkColorStr << "\n";
+
         if (!lightBackground.empty() && !darkBackground.empty()) {
-            std::cout << lightBackground << std::endl;
-            std::cout << darkBackground << std::endl;
-            Gdk::RGBA color;
-            if(isLightMode)
-                color.set(to_color_string(light_color_button->get_rgba()));
-            else
-                color.set(to_color_string(dark_color_button->get_rgba()));
-            lightBackgroundColor = to_color_string(light_color_button->get_rgba());
-            darkBackgroundColor = to_color_string(dark_color_button->get_rgba());
-            // Update widget colors
-            if (talon1Circle) talon1Circle->set_background_color(color);
-            if (talon3Circle) talon3Circle->set_background_color(color);
+            std::cout << lightBackground << "\n" << darkBackground << std::endl;
 
-            if (falcon1Circle) falcon1Circle->set_background_color(color);
-            if (falcon2Circle) falcon2Circle->set_background_color(color);
-            if (falcon3Circle) falcon3Circle->set_background_color(color);
-            if (falcon4Circle) falcon4Circle->set_background_color(color);
+            Gdk::RGBA selectedColor = isLightMode ? light_color_button->get_rgba() : dark_color_button->get_rgba();
+            lightBackgroundColor = lightColorStr;
+            darkBackgroundColor = darkColorStr;
 
-            if (lowerFalcon1Circle) lowerFalcon1Circle->set_background_color(color);
-            if (lowerFalcon2Circle) lowerFalcon2Circle->set_background_color(color);
-            if (lowerFalcon3Circle) lowerFalcon3Circle->set_background_color(color);
-            if (lowerFalcon4Circle) lowerFalcon4Circle->set_background_color(color);
-            // Apply dark/light theme override
+            std::vector<CircleDrawingArea*> circles = {
+                talon1Circle, talon3Circle,
+                falcon1Circle, falcon2Circle, falcon3Circle, falcon4Circle,
+                lowerFalcon1Circle, lowerFalcon2Circle, lowerFalcon3Circle, lowerFalcon4Circle
+            };
+            for (auto* circle : circles) {
+                if (circle) circle->set_background_color(selectedColor);
+            }
+
             auto css_provider = Gtk::CssProvider::create();
-            if(isLightMode)
-                css_provider->load_from_data(generateLightModeString(lightBackgroundColor));
-            else
-                css_provider->load_from_data(generateDarkModeString(darkBackgroundColor));
-            auto screen = Gdk::Screen::get_default();
-            Gtk::StyleContext::add_provider_for_screen(screen, css_provider, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+            const auto& css = isLightMode ? generateLightModeString(lightBackgroundColor)
+                                        : generateDarkModeString(darkBackgroundColor);
+            css_provider->load_from_data(css);
+            Gtk::StyleContext::add_provider_for_screen(
+                Gdk::Screen::get_default(), css_provider, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
         }
-        displaySpeed = bool_buttons.at("DISPLAY_SPEED")->get_active();
-        numbersInside = bool_buttons.at("NUMBERS_INSIDE")->get_active();
-        numberTicks = bool_buttons.at("NUMBER_TICKS")->get_active();
-        std::cout << "displaySpeed:" << displaySpeed << std::endl;
-        std::cout << "numbersInside:" << numbersInside << std::endl;
-        std::cout << "numberTicks:" << numberTicks << std::endl;
 
-        
-        if(rightSpeedometer){
-            rightSpeedometer->set_display_speed(displaySpeed);
-            rightSpeedometer->set_numbers_inside(numbersInside);
-            rightSpeedometer->set_numbers_on_ticks(numberTicks);
-            rightSpeedometer->queue_draw();
+        displaySpeed   = bool_buttons["DISPLAY_SPEED"]->get_active();
+        numbersInside  = bool_buttons["NUMBERS_INSIDE"]->get_active();
+        numberTicks    = bool_buttons["NUMBER_TICKS"]->get_active();
 
-        }
-        if(leftSpeedometer){
-            leftSpeedometer->set_display_speed(displaySpeed);
-            leftSpeedometer->set_numbers_inside(numbersInside);
-            leftSpeedometer->set_numbers_on_ticks(numberTicks);
-            leftSpeedometer->queue_draw();
+        std::cout << "displaySpeed:" << displaySpeed << "\n"
+                << "numbersInside:" << numbersInside << "\n"
+                << "numberTicks:" << numberTicks << std::endl;
+
+        for (auto* speedometer : {rightSpeedometer, leftSpeedometer}) {
+            if (speedometer) {
+                speedometer->set_display_speed(displaySpeed);
+                speedometer->set_numbers_inside(numbersInside);
+                speedometer->set_numbers_on_ticks(numberTicks);
+                speedometer->queue_draw();
+            }
         }
     });
+
 
     main_box->pack_start(*grid);
     speed_box->add(*sensorsBox);

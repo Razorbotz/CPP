@@ -36,6 +36,7 @@
 #include <map>
 #include <sstream>
 #include <curl/curl.h>
+#include <variant>
 
 #include "InfoFrame.hpp"
 #include "BinaryMessage.hpp"
@@ -145,6 +146,72 @@ Gtk::Window* configWindow;
 int monitor_count = 0;
 
 std::string configFile = "config.txt";
+
+std::set<std::string> speedometer_keys = {
+    "DISPLAY_SPEED",
+    "NUMBERS_INSIDE",
+    "NUMBER_TICKS"
+};
+
+std::vector<std::string> talon_keys = {
+"Device ID", "Bus Voltage", "Output Current", "Output Percent",
+"Temperature", "Sensor Position", "Sensor Velocity", "Max Current"
+};
+std::map<std::string, bool> talon_values;
+
+std::vector<std::string> falcon_keys = talon_keys;
+std::map<std::string, bool> falcon_values;
+
+std::vector<std::string> linear_keys = {
+    "Motor Number", "Speed", "Potentiometer", "Time Without Change",
+    "Max", "Min", "Error", "At Min", "At Max", "Distance", "Sensorless"
+};
+std::map<std::string, bool> linear_values;
+
+std::vector<std::string> power_keys = {
+    "Voltage", "Temp", "Current 0", "Current 1", "Current 2",
+    "Current 3", "Current 3", "Current 4", "Current 5", "Current 6"
+};
+std::map<std::string, bool> power_values;
+
+std::vector<std::string> power2_keys = {
+    "Current 7", "Current 8", "Current 9", "Current 10", "Current 11",
+    "Current 12", "Current 13", "Current 14", "Current 15"
+};
+std::map<std::string, bool> power2_values;
+
+std::vector<std::string> autonomy_keys = {
+    "Robot State", "Excavation State", "Error State", "Diagnostics State", 
+    "Tilt State", "Dump State", "Level Bucket", "Level Arms", "Dest X", "Dest Z"
+};
+std::map<std::string, bool> autonomy_values;
+
+std::vector<std::string> zed_keys = {
+    "X", "Y", "Z", "roll", "pitch", "yaw", "aruco"
+};
+std::map<std::string, bool> zed_values;
+
+std::vector<std::string> communication_keys = {
+    "RSSI", "Wi-Fi", "CAN Bus", "Interface", "RX packets", "TX packets"
+};
+std::map<std::string, bool> communication_values;
+
+void initialize_bool_map(std::map<std::string, bool>& map, const std::vector<std::string>& keys) {
+    for (const auto& key : keys) {
+        map[key] = true;
+    }
+}
+
+void initialize_maps(){
+    initialize_bool_map(talon_values, talon_keys);
+    initialize_bool_map(falcon_values, falcon_keys);
+    initialize_bool_map(linear_values, linear_keys);
+    initialize_bool_map(power_values, power_keys);
+    initialize_bool_map(power2_values, power2_keys);
+    initialize_bool_map(autonomy_values, autonomy_keys);
+    initialize_bool_map(zed_values, zed_keys);
+    initialize_bool_map(communication_values, communication_keys);
+}
 
 double roll_rotation_angle = 0.0;
 Glib::RefPtr<Gdk::Pixbuf> roll_pixbuf;
@@ -2337,6 +2404,7 @@ Gtk::Box* create_lower_motor_column(std::vector<std::pair<Glib::ustring, CircleD
     return column;
 }
 
+
 Gdk::RGBA parse_color(const std::string& color_str) {
     Gdk::RGBA color;
     color.set(color_str);
@@ -2364,58 +2432,111 @@ void add_tooltip(Gtk::CheckButton* check, const std::string& key) {
     }
 }
 
-
-void update_info_frame_element(Gtk::CheckButton* check_button, InfoFrame* frame, const std::string& element_name, int default_value) {
+template <typename T>
+void update_info_frame_element_initial(Gtk::CheckButton* check_button, InfoFrame* frame, const std::string& element_name, const T& default_value) {
     if (check_button->get_active()) {
         frame->setItem(element_name, default_value);
-    }
-    else {
+    } else {
         frame->removeItem(element_name);
     }
 }
 
-void update_info_frame_element(Gtk::CheckButton* check_button, InfoFrame* frame, const std::string& element_name, float default_value) {
-    if (check_button->get_active()) {
-        frame->setItem(element_name, default_value);
-    }
-    else {
-        frame->removeItem(element_name);
-    }
+void save_value(std::map<std::string, bool>& values, const std::string& value, bool active) {
+    std::cout << "here " << value << ": " << active << std::endl;
+    values[value] = active;
+    std::cout << "values[value]: " << values[value] << std::endl;
 }
 
-void update_info_frame_element(Gtk::CheckButton* check_button, InfoFrame* frame, const std::string& element_name, double default_value) {
-    if (check_button->get_active()) {
-        frame->setItem(element_name, default_value);
-    }
-    else {
-        frame->removeItem(element_name);
-    }
-}
+// Define element-adding lambdas keyed by prefix
+// This creates the binary messages associated with the string
+std::map<std::string, std::function<void(BinaryMessage&)>> element_adders = {
+    {"TALON", [](BinaryMessage& m) {
+        m.addElementUInt8("Device ID", 0);
+        m.addElementUInt16("Bus Voltage", 1600);
+        m.addElementUInt16("Output Current", 0);
+        m.addElementFloat32("Output Percent", 0.0);
+        m.addElementUInt8("Temperature", 0);
+        m.addElementUInt16("Sensor Position", 0);
+        m.addElementInt8("Sensor Velocity", 0);
+        m.addElementFloat32("Max Current", 0.0);
+    }},
+    {"FALCON", [](BinaryMessage& m) {
+        m.addElementUInt8("Device ID", 0);
+        m.addElementUInt16("Bus Voltage", 1600);
+        m.addElementUInt16("Output Current", 0);
+        m.addElementFloat32("Output Percent", 0.0);
+        m.addElementUInt8("Temperature", 0);
+        m.addElementUInt16("Sensor Position", 0);
+        m.addElementInt8("Sensor Velocity", 0);
+        m.addElementFloat32("Max Current", 0.0);
+    }},
+    {"LINEAR", [](BinaryMessage& m) {
+        m.addElementUInt8("Motor Number", (uint8_t)0);
+        m.addElementFloat32("Speed", 0.0);
+        m.addElementUInt16("Potentiometer", (uint16_t)0);
+        m.addElementUInt8("Time Without Change", (uint8_t)0);
+        m.addElementUInt16("Max", (uint16_t)0);
+        m.addElementUInt16("Min", (uint16_t)0);
+        m.addElementString("Error", "No Error");
+        m.addElementBoolean("At Min", false);
+        m.addElementBoolean("At Max", false);
+        m.addElementFloat32("Distance", 0.0);
+        m.addElementBoolean("Sensorless", false);
+    }},
+    {"AUTONOMY", [](BinaryMessage& m) {
+        m.addElementString("Robot State", "Initial");
+        m.addElementString("Excavation State", "Initial");
+        m.addElementString("Error State", "Initial");
+        m.addElementString("Diagnostics State", "Initial");
+        m.addElementString("Tilt State", "Initial");
+        m.addElementString("Dump State", "Initial");
+        m.addElementString("Level Bucket", "Initial");
+        m.addElementString("Level Arms", "Initial");
+        m.addElementFloat32("Dest X", 0.0);
+        m.addElementFloat32("Dest Z", 0.0);
+    }},
+    {"ZED", [](BinaryMessage& m) {
+        m.addElementFloat32("X", 0.0);
+        m.addElementFloat32("Y", 0.0);
+        m.addElementFloat32("Z", 0.0);
+        m.addElementFloat32("roll", 0.0);
+        m.addElementFloat32("pitch", 0.0);
+        m.addElementFloat32("yaw", 0.0);
+        m.addElementBoolean("aruco", false);
+    }},
+    {"COMMUNICATION", [](BinaryMessage& m) {
+        m.addElementInt32("RSSI", 0);
+        m.addElementString("Wi-Fi", "NORMAL");
+        m.addElementString("Interface", "can0");
+        m.addElementInt32("RX packets", 0);
+        m.addElementInt32("TX packets", 0);
+    }},
+    {"POWER", [](BinaryMessage& m) {
+        for (int i = 0; i <= 6; ++i) {
+            m.addElementFloat32("Current " + std::to_string(i), 0.0);
+        }
+        m.addElementFloat32("Voltage", 0.0);
+        m.addElementFloat32("Temp", 0.0);
+    }},
+    {"POWER2", [](BinaryMessage& m) {
+        for (int i = 7; i <= 15; ++i) {
+            m.addElementFloat32("Current " + std::to_string(i), 0.0);
+        }
+    }}
+};
 
-void update_info_frame_element(Gtk::CheckButton* check_button, InfoFrame* frame, const std::string& element_name, bool default_value) {
-    if (check_button->get_active()) {
-        frame->setItem(element_name, default_value);
-    }
-    else {
-        frame->removeItem(element_name);
-    }
-}
+std::map<std::string, Gtk::CheckButton*> bool_buttons;
 
-void update_info_frame_element(Gtk::CheckButton* check_button, InfoFrame* frame, const std::string& element_name, std::string default_value) {
-    if (check_button->get_active()) {
-        frame->setItem(element_name, default_value);
-    }
-    else {
-        frame->removeItem(element_name);
-    }
-}
-
-
-
+// TODO:
+// Fix formatting of the config window
+// Allow drag and drop reordering of the items in the lists
+// Allow movement of the locations of each item in the GUI?
 void create_config_editor_window(const std::string& config_file) {
     configWindow = new Gtk::Window();
     configWindow->set_title("Configuration Editor");
     configWindow->set_default_size(600, 600);
+    auto scrolledWindow = Gtk::make_managed<Gtk::ScrolledWindow>();
+    scrolledWindow->set_policy(Gtk::POLICY_AUTOMATIC, Gtk::POLICY_AUTOMATIC);
 
     auto main_box = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_VERTICAL);
     auto grid = Gtk::make_managed<Gtk::Grid>();
@@ -2425,7 +2546,6 @@ void create_config_editor_window(const std::string& config_file) {
     auto file_entry = Gtk::make_managed<Gtk::Entry>();
     file_entry->set_text(config_file);
 
-    std::map<std::string, Gtk::CheckButton*> bool_buttons;
     std::string lightBackground;
     std::string darkBackground;
     Speedometer* testSpeedometer = new Speedometer("Test Speedometer");
@@ -2433,9 +2553,12 @@ void create_config_editor_window(const std::string& config_file) {
     testSpeedometer->set_display_speed(displaySpeed);
     testSpeedometer->set_numbers_inside(numbersInside);
     testSpeedometer->set_numbers_on_ticks(numberTicks);
+    auto outer_box = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_VERTICAL);
     auto speed_box = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_HORIZONTAL);
+    auto speed_options_box = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_VERTICAL);
     speed_box->set_size_request(250, 250);
     speed_box->add(*testSpeedometer);
+    speed_box->add(*speed_options_box);
 
     grid->attach(*Gtk::make_managed<Gtk::Label>("Config File:"), 0, 0, 1, 1);
     grid->attach(*file_entry, 1, 0, 1, 1);
@@ -2445,300 +2568,161 @@ void create_config_editor_window(const std::string& config_file) {
     std::string line;
     int row = 2;
 
-    std::set<std::string> speedometer_keys = {
-        "DISPLAY_SPEED",
-        "NUMBERS_INSIDE",
-        "NUMBER_TICKS"
-    };
-
-    std::vector<std::string> talon_keys = {
-    "Device ID", "Bus Voltage", "Output Current", "Output Percent",
-    "Temperature", "Sensor Position", "Sensor Velocity", "Max Current"
-    };
-    std::vector<std::string> falcon_keys = talon_keys;
-
-    std::vector<std::string> linear_keys = {
-        "Motor Number", "Speed", "Potentiometer", "Time Without Change",
-        "Max", "Min", "Error", "At Min", "At Max", "Distance", "Sensorless"
-    };
-
-    std::vector<std::string> power_keys = {
-        "Voltage", "Temp", "Current 0", "Current 1", "Current 2",
-        "Current 3", "Current 3", "Current 4", "Current 5", "Current 6"
-    };
-
-    std::vector<std::string> power2_keys = {
-        "Current 7", "Current 8", "Current 9", "Current 10", "Current 11",
-        "Current 12", "Current 13", "Current 14", "Current 15"
-    };
-
-    std::vector<std::string> autonomy_keys = {
-        "Robot State", "Excavation State", "Error State", "Diagnostics State", 
-        "Tilt State", "Dump State", "Level Bucket", "Level Arms", "Dest X", "Dest Z"
-    };
-
-    std::vector<std::string> zed_keys = {
-        "X", "Y", "Z", "roll", "pitch", "yaw", "aruco"
-    };
-
-    std::vector<std::string> communication_keys = {
-        "RSSI", "Wi-Fi", "CAN Bus", "Interface", "RX packets", "TX packets"
-    };
-
     std::map<std::string, bool> config_values;
 
     Gtk::FlowBox* sensorsBox = Gtk::manage(new Gtk::FlowBox());
-    sensorsBox->set_orientation(Gtk::ORIENTATION_VERTICAL);
+    sensorsBox->set_orientation(Gtk::ORIENTATION_HORIZONTAL);
+    sensorsBox->set_size_request(1000, -1);
+
 
     auto addConditionalElements = [&](const std::string& prefix, BinaryMessage& msg, InfoFrame* frame) {
         for (const Element& el : msg.getObject().elementList) {
             std::string key = "SHOW_" + prefix + "_" + el.label;
+            std::cout << key << std::endl;
+            std::cout << "bool_buttons ptr: " << &bool_buttons << ", size: " << bool_buttons.size() << std::endl;
+
             if (bool_buttons.count(key) == 0 || bool_buttons[key]->get_active()) {
+                std::cout << "here" << std::endl;
                 addElementToInfoFrame(frame, el);
             }
+
         }
     };
 
-    auto createTestFrame = [&](const std::string& name, const std::string& prefix, InfoFrame*& frameRef, Gtk::Box* box) {
+    // Single generic frame creation function
+    // Given a name, prefix
+    auto createFrame = [&](const std::string& name, const std::string& prefix, InfoFrame*& frameRef, Gtk::Box* box) {
         BinaryMessage message(name);
-        message.addElementUInt8("Device ID", 0);
-        message.addElementUInt16("Bus Voltage", 1600);
-        message.addElementUInt16("Output Current", 0);
-        message.addElementFloat32("Output Percent", 0.0);
-        message.addElementUInt8("Temperature", 0);
-        message.addElementUInt16("Sensor Position", 0);
-        message.addElementInt8("Sensor Velocity", 0);
-        message.addElementFloat32("Max Current", 0.0);
+
+        auto adder_it = element_adders.find(prefix);
+        if (adder_it != element_adders.end()) {
+            adder_it->second(message);
+        }
+        else {
+            std::cerr << "Warning: No element adder for prefix " << prefix << std::endl;
+        }
 
         frameRef = Gtk::manage(new InfoFrame(name));
         addConditionalElements(prefix, message, frameRef);
+
         box->add(*frameRef);
         frameRef->show();
     };
 
-    auto createLinearFrame = [&](const std::string& name, const std::string& prefix, InfoFrame*& frameRef, Gtk::Box* box) {
-        BinaryMessage message(name);
-        message.addElementUInt8("Motor Number", (uint8_t)0);
-        message.addElementFloat32("Speed", 0.0);
-        message.addElementUInt16("Potentiometer", (uint16_t)0);
-        message.addElementUInt8("Time Without Change", (uint8_t)0);
-        message.addElementUInt16("Max", (uint16_t)0);
-        message.addElementUInt16("Min", (uint16_t)0);
-        message.addElementString("Error", "No Error");
-        message.addElementBoolean("At Min", false);
-        message.addElementBoolean("At Max", false);
-        message.addElementFloat32("Distance", 0.0);
-        message.addElementBoolean("Sensorless", false);
+    auto update_info_frame_element = [&](Gtk::CheckButton* check_button, const std::string& name, const std::string& prefix, InfoFrame*& frameRef) {
+        if (check_button->get_active()) {
+            frameRef->removeAllItems();
+            BinaryMessage message(name);
+            std::cout << "_" << prefix << "_" << std::endl;
+            std::cout << "Looking for prefix: '" << prefix << "'" << std::endl;
+            std::cout << "element_adders size: " << element_adders.size() << std::endl;
+            for (const auto& [key, _] : element_adders) {
+                std::cout << " - '" << key << "'" << std::endl;
+            }
 
-        frameRef = Gtk::manage(new InfoFrame(name));
-        addConditionalElements(prefix, message, frameRef);
-        box->add(*frameRef);
-        frameRef->show();
+            auto adder_it = element_adders.find(prefix);
+            if (adder_it != element_adders.end()) {
+                adder_it->second(message);
+                addConditionalElements(prefix, message, frameRef);
+                frameRef->show();
+            }
+            else {
+                std::cerr << "Warning: No element adder for prefix " << prefix << std::endl;
+            }
+            frameRef->show_all();
+        }
+        else {
+            frameRef->removeItem(name);
+        }
+        
     };
 
-    auto createAutonomyFrame = [&](const std::string& name, const std::string& prefix, InfoFrame*& frameRef, Gtk::Box* box) {
-        BinaryMessage message(name);
-        message.addElementString("Robot State", "Initial");
-        message.addElementString("Excavation State", "Initial");
-        message.addElementString("Error State", "Initial");
-        message.addElementString("Diagnostics State", "Initial");
-        message.addElementString("Tilt State", "Initial");
-        message.addElementString("Dump State", "Initial");
-        message.addElementString("Level Bucket", "Initial");
-        message.addElementString("Level Arms", "Initial");
-        message.addElementFloat32("Dest X", 0.0);
-        message.addElementFloat32("Dest Z", 0.0);
+    // Define frames and boxes
+    InfoFrame *talonFrame = nullptr, *falconFrame = nullptr, *linearFrame = nullptr,
+            *autonomyFrame = nullptr, *zedFrame = nullptr, *communicationFrame = nullptr,
+            *powerFrame = nullptr, *power2Frame = nullptr;
 
-        frameRef = Gtk::manage(new InfoFrame(name));
-        addConditionalElements(prefix, message, frameRef);
-        box->add(*frameRef);
-        frameRef->show();
+    Gtk::Box *talonBox = nullptr, *falconBox = nullptr, *linearBox = nullptr,
+            *autonomyBox = nullptr, *zedBox = nullptr, *communicationBox = nullptr,
+            *powerBox = nullptr, *power2Box = nullptr;
+
+    InfoFrame *optionsTalonFrame = nullptr, *optionsFalconFrame = nullptr, *optionsLinearFrame = nullptr,
+            *optionsAutonomyFrame = nullptr, *optionsZedFrame = nullptr, *optionsCommunicationFrame = nullptr,
+            *optionsPowerFrame = nullptr, *optionsPower2Frame = nullptr;
+
+    // Frame entry struct
+    struct FrameEntry {
+        std::string label; // Label to put on the Infoframe
+        std::string prefix; // Prefix to prepend to all of the options to differentiate
+        InfoFrame** frame_ptr; // Frame to display the items in the InfoFrame
+        Gtk::Box** box_ptr; // Box to hold both the display frame and the options frame
+        InfoFrame** options_frame_ptr; // Options InfoFrame
     };
 
-    auto createZedFrame = [&](const std::string& name, const std::string& prefix, InfoFrame*& frameRef, Gtk::Box* box) {
-        BinaryMessage message(name);
-        message.addElementFloat32("X", 0.0);
-        message.addElementFloat32("Y", 0.0);
-        message.addElementFloat32("Z", 0.0);
-        message.addElementFloat32("roll", 0.0);
-        message.addElementFloat32("pitch", 0.0);
-        message.addElementFloat32("yaw", 0.0);
-        message.addElementBoolean("aruco", false);
-
-        frameRef = Gtk::manage(new InfoFrame(name));
-        addConditionalElements(prefix, message, frameRef);
-        box->add(*frameRef);
-        frameRef->show();
+    std::vector<FrameEntry> frame_entries = {
+        {"Talon",         "TALON",         &talonFrame,         &talonBox,         &optionsTalonFrame},
+        {"Falcon",        "FALCON",        &falconFrame,        &falconBox,        &optionsFalconFrame},
+        {"Linear",        "LINEAR",        &linearFrame,        &linearBox,        &optionsLinearFrame},
+        {"Autonomy",      "AUTONOMY",      &autonomyFrame,      &autonomyBox,      &optionsAutonomyFrame},
+        {"Zed",           "ZED",           &zedFrame,           &zedBox,           &optionsZedFrame},
+        {"Communication", "COMMUNICATION", &communicationFrame, &communicationBox, &optionsCommunicationFrame},
+        {"Power",         "POWER",         &powerFrame,         &powerBox,         &optionsPowerFrame},
+        {"Power2",        "POWER2",        &power2Frame,        &power2Box,        &optionsPower2Frame},
     };
 
-    auto createCommunicationFrame = [&](const std::string& name, const std::string& prefix, InfoFrame*& frameRef, Gtk::Box* box) {
-        BinaryMessage message(name);
-        message.addElementInt32("RSSI", 0);
-        message.addElementString("Wi-Fi", "NORMAL");
-        message.addElementString("Interface", "can0");
-        message.addElementInt32("RX packets", 0);
-        message.addElementInt32("TX packets", 0);
+    // Create all frames & boxes in a loop
+    for (auto& entry : frame_entries) {
+        *(entry.box_ptr) = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_HORIZONTAL);
+        createFrame(entry.label, entry.prefix, *(entry.frame_ptr), *(entry.box_ptr));
 
-        frameRef = Gtk::manage(new InfoFrame(name));
-        addConditionalElements(prefix, message, frameRef);
-        box->add(*frameRef);
-        frameRef->show();
+        *(entry.options_frame_ptr) = Gtk::manage(new InfoFrame(entry.prefix.substr(0, 1) + entry.prefix.substr(1) + " Options"));
+        (*(entry.box_ptr))->add(*(*(entry.options_frame_ptr)));
+
+        sensorsBox->add(*(*(entry.box_ptr)));
+    }
+
+    // Lambda to get the InfoFrame associated with the passed prefix
+    auto get_info_frame_for_prefix = [&](const std::string& prefix) -> InfoFrame* {
+        static const std::unordered_map<std::string, InfoFrame*> frame_map = {
+            {"TALON",         talonFrame},
+            {"FALCON",        falconFrame},
+            {"LINEAR",        linearFrame},
+            {"AUTONOMY",      autonomyFrame},
+            {"ZED",           zedFrame},
+            {"COMMUNICATION", communicationFrame},
+            {"POWER",         powerFrame},
+            {"POWER2",        power2Frame},
+        };
+        auto it = frame_map.find(prefix);
+        return (it != frame_map.end()) ? it->second : talonFrame;
     };
 
-    auto createPowerFrame = [&](const std::string& name, const std::string& prefix, InfoFrame*& frameRef, Gtk::Box* box) {
-        BinaryMessage message(name);
-        message.addElementFloat32("Voltage", 0.0);
-        message.addElementFloat32("Temp", 0.0);
-        message.addElementFloat32("Current 0", 0.0);
-        message.addElementFloat32("Current 1", 0.0);
-        message.addElementFloat32("Current 2", 0.0);
-        message.addElementFloat32("Current 3", 0.0);
-        message.addElementFloat32("Current 4", 0.0);
-        message.addElementFloat32("Current 5", 0.0);
-        message.addElementFloat32("Current 6", 0.0);
-    
-        frameRef = Gtk::manage(new InfoFrame(name));
-        addConditionalElements(prefix, message, frameRef);
-        box->add(*frameRef);
-        frameRef->show();
-    };
-
-    auto createPower2Frame = [&](const std::string& name, const std::string& prefix, InfoFrame*& frameRef, Gtk::Box* box) {
-        BinaryMessage message(name);
-        message.addElementFloat32("Current 7", 0.0);
-        message.addElementFloat32("Current 8", 0.0);
-        message.addElementFloat32("Current 9", 0.0);
-        message.addElementFloat32("Current 10", 0.0);
-        message.addElementFloat32("Current 11", 0.0);
-        message.addElementFloat32("Current 12", 0.0);
-        message.addElementFloat32("Current 13", 0.0);
-        message.addElementFloat32("Current 14", 0.0);
-        message.addElementFloat32("Current 15", 0.0);
-
-        frameRef = Gtk::manage(new InfoFrame(name));
-        addConditionalElements(prefix, message, frameRef);
-        box->add(*frameRef);
-        frameRef->show();
-    };
-
-    InfoFrame* talonFrame = nullptr;
-    InfoFrame* falconFrame = nullptr;
-    Gtk::Box* talonBox = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_HORIZONTAL);
-    Gtk::Box* falconBox = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_HORIZONTAL);
-    createTestFrame("Test Talon", "TALON", talonFrame, talonBox);
-    createTestFrame("Test Falcon", "FALCON", falconFrame, falconBox);
-
-    InfoFrame* linearFrame = nullptr;
-    Gtk::Box* linearBox = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_HORIZONTAL);
-    createLinearFrame("Test Linear", "LINEAR", linearFrame, linearBox);
-
-    InfoFrame* autonomyFrame = nullptr;
-    Gtk::Box* autonomyBox = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_HORIZONTAL);
-    createAutonomyFrame("Test Linear", "AUTONOMY", autonomyFrame, autonomyBox);
-
-    InfoFrame* zedFrame = nullptr;
-    Gtk::Box* zedBox = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_HORIZONTAL);
-    createZedFrame("Test Linear", "ZED", zedFrame, zedBox);
-
-    InfoFrame* communicationFrame = nullptr;
-    Gtk::Box* communicationBox = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_HORIZONTAL);
-    createCommunicationFrame("Test Linear", "COMMUNICATION", communicationFrame, communicationBox);
-
-    InfoFrame* powerFrame = nullptr;
-    Gtk::Box* powerBox = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_HORIZONTAL);
-    createPowerFrame("Test Linear", "POWER", powerFrame, powerBox);
-
-    InfoFrame* power2Frame = nullptr;
-    Gtk::Box* power2Box = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_HORIZONTAL);
-    createPower2Frame("Test Linear", "POWER2", power2Frame, power2Box);
-    
-    InfoFrame* testTalonFrame = Gtk::manage(new InfoFrame("Talon"));
-    talonBox->add(*testTalonFrame);
-    
-    InfoFrame* testFalconFrame = Gtk::manage(new InfoFrame("Falcon"));
-    falconBox->add(*testFalconFrame);
-
-    InfoFrame* testLinearFrame = Gtk::manage(new InfoFrame("Linear"));
-    linearBox->add(*testLinearFrame);
-
-    InfoFrame* testAutonomyFrame = Gtk::manage(new InfoFrame("Autonomy"));
-    autonomyBox->add(*testAutonomyFrame);
-
-    InfoFrame* testZedFrame = Gtk::manage(new InfoFrame("Zed"));
-    zedBox->add(*testZedFrame);
-
-    InfoFrame* testCommunicationFrame = Gtk::manage(new InfoFrame("Communication"));
-    communicationBox->add(*testCommunicationFrame);
-
-    InfoFrame* testPowerFrame = Gtk::manage(new InfoFrame("Power"));
-    powerBox->add(*testPowerFrame);
-
-    InfoFrame* testPower2Frame = Gtk::manage(new InfoFrame("Power2"));
-    power2Box->add(*testPower2Frame);
-    
-    sensorsBox->add(*talonBox);
-    sensorsBox->add(*falconBox);
-    sensorsBox->add(*linearBox);
-    sensorsBox->add(*autonomyBox);
-    sensorsBox->add(*zedBox);
-    sensorsBox->add(*communicationBox);
-    sensorsBox->add(*powerBox);
-    sensorsBox->add(*power2Box);
-
+    // Lambda to create a checkbox for a given option. The prefix is used to find the InfoFrame
+    // associated with that option, then the key is added to a CheckButton. When the button is
+    // pressed, the target frame will add or remove the item.
     auto setup_info_frame_toggle = [&](const std::string& prefix, const std::string& element_name, auto default_value) {
         std::string key = "SHOW_" + prefix + "_" + element_name;
         if (bool_buttons.count(key)) {
             Gtk::CheckButton* check = bool_buttons[key];
+            InfoFrame* target_frame = get_info_frame_for_prefix(prefix);
+
+            if (target_frame) {
+                config_values[key] = check->get_active(); 
+                update_info_frame_element_initial(check, target_frame, element_name, default_value);
+            }
+
             check->signal_toggled().connect([=]() mutable {
-                InfoFrame* target_frame;
-                if(prefix == "TALON")
-                    target_frame = talonFrame;
-                else if(prefix == "FALCON")
-                    target_frame = falconFrame;
-                else if(prefix == "LINEAR")
-                    target_frame = linearFrame;
-                else if(prefix == "AUTONOMY")
-                    target_frame = autonomyFrame;
-                else if(prefix == "ZED")
-                    target_frame = zedFrame;
-                else if(prefix == "COMMUNICATION")
-                    target_frame = communicationFrame;
-                else if(prefix == "POWER")
-                    target_frame = powerFrame;
-                else if(prefix == "POWER2")
-                    target_frame = power2Frame;
-                else
-                    target_frame = talonFrame;
-                if (target_frame) {
-                    update_info_frame_element(check, target_frame, element_name, default_value);
+                InfoFrame* tf = get_info_frame_for_prefix(prefix);
+                if (tf) {
+                    config_values[key] = check->get_active();
+                    update_info_frame_element(check, element_name, prefix, tf);
                     if (configWindow) configWindow->queue_draw();
                 }
             });
-            InfoFrame* target_frame;
-            if(prefix == "TALON")
-                target_frame = talonFrame;
-            else if(prefix == "FALCON")
-                target_frame = falconFrame;
-            else if(prefix == "LINEAR")
-                target_frame = linearFrame;
-            else if(prefix == "AUTONOMY")
-                target_frame = autonomyFrame;
-            else if(prefix == "ZED")
-                target_frame = zedFrame;
-            else if(prefix == "COMMUNICATION")
-                target_frame = communicationFrame;
-            else if(prefix == "POWER")
-                target_frame = powerFrame;
-            else if(prefix == "POWER2")
-                target_frame = power2Frame;
-            else
-                target_frame = talonFrame;
-            if (target_frame) {
-                update_info_frame_element(check, target_frame, element_name, default_value);
-            }
         }
     };
 
+    // Lambda to create the color option picker and add it to the grid
     auto add_color_setting = [&](const std::string& label_text, const std::string& color_value, Gtk::ColorButton* color_button) {
         auto label = Gtk::make_managed<Gtk::Label>(label_text + ":");
         color_button->set_rgba(parse_color(color_value));
@@ -2747,8 +2731,10 @@ void create_config_editor_window(const std::string& config_file) {
         row++;
     };
 
+    // Lambda to add the on click functionality to the speedometer options
     auto connect_speedometer_toggle = [&](Gtk::CheckButton* check, const std::string& key) {
         check->signal_toggled().connect([=]() mutable {
+            std::cout << "here" << std::endl;
             bool active = check->get_active();
             if (key == "DISPLAY_SPEED") {
                 displaySpeed = active;
@@ -2763,179 +2749,112 @@ void create_config_editor_window(const std::string& config_file) {
                 testSpeedometer->set_numbers_on_ticks(active);
             }
             std::cout << key << ": " << active << std::endl;
-            if (configWindow) configWindow->queue_draw();
+            if(testSpeedometer)testSpeedometer->queue_draw();
+
         });
     };
 
-    auto create_falcon_checkbox = [&](const std::string& prefix, const std::string& key, bool active) {
-        std::string full_key = "SHOW_" + prefix + "_" + key;
-        if (bool_buttons.count(full_key) == 0) {
-            auto check = Gtk::make_managed<Gtk::CheckButton>(full_key);
-            check->set_active(active);
-            bool_buttons[full_key] = check;
-            testFalconFrame->addWidget(*check);
-            row++;
-            add_tooltip(check, full_key);
+    // This holds the prefix of the checkbox, the InfoFrame, and a function that returns the
+    // default values based on the string key. This is slightly confusing syntax, but reduces
+    // the size of the codebase by a lot and allows for more flexibility with new types.
+    struct CheckboxConfig {
+        std::string prefix;
+        InfoFrame* frame;
+        std::function<std::variant<bool, int, float, std::string>(const std::string&)> default_value_func;
 
+        CheckboxConfig(const std::string& p, InfoFrame* f,
+                    std::function<std::variant<bool, int, float, std::string>(const std::string&)> func)
+            : prefix(p), frame(f), default_value_func(std::move(func)) {}
+    };
+
+    std::map<std::string, CheckboxConfig> checkbox_configs = {
+        {"FALCON", CheckboxConfig("FALCON", optionsFalconFrame, [](const std::string& key) {
             if (key == "Device ID" || key == "Temperature" ||
-                key == "Sensor Position" || key == "Sensor Velocity") {
-                setup_info_frame_toggle(prefix, key, 0);
-            } else {
-                setup_info_frame_toggle(prefix, key, 0.0f);
-            }
-        }
-    };
-    
-    auto create_talon_checkbox = [&](const std::string& prefix, const std::string& key, bool active) {
-        std::string full_key = "SHOW_" + prefix + "_" + key;
-        if (bool_buttons.count(full_key) == 0) {
-            auto check = Gtk::make_managed<Gtk::CheckButton>(full_key);
-            check->set_active(active);
-            bool_buttons[full_key] = check;
-            testTalonFrame->addWidget(*check);
-            row++;
-            add_tooltip(check, full_key);
-
+                key == "Sensor Position" || key == "Sensor Velocity")
+                return std::variant<bool, int, float, std::string>{0};
+            return std::variant<bool, int, float, std::string>{0.0f};
+        })},
+        {"TALON", CheckboxConfig("TALON", optionsTalonFrame, [](const std::string& key) {
             if (key == "Device ID" || key == "Temperature" ||
-                key == "Sensor Position" || key == "Sensor Velocity") {
-                setup_info_frame_toggle(prefix, key, 0);
-            } else {
-                setup_info_frame_toggle(prefix, key, 0.0f);
-            }
-        }
+                key == "Sensor Position" || key == "Sensor Velocity")
+                return std::variant<bool, int, float, std::string>{0};
+            return std::variant<bool, int, float, std::string>{0.0f};
+        })},
+        {"LINEAR", CheckboxConfig("LINEAR", optionsLinearFrame, [](const std::string& key) {
+            if (key == "At Min" || key == "At Max" || key == "Sensorless")
+                return std::variant<bool, int, float, std::string>{false};
+            if (key == "Device ID" || key == "Temperature" ||
+                key == "Sensor Position" || key == "Sensor Velocity")
+                return std::variant<bool, int, float, std::string>{0};
+            return std::variant<bool, int, float, std::string>{0.0f};
+        })},
+        {"AUTONOMY", CheckboxConfig("AUTONOMY", optionsAutonomyFrame, [](const std::string& key) {
+            if (key == "Dest X" || key == "Dest Z")
+                return std::variant<bool, int, float, std::string>{0.0f};
+            return std::variant<bool, int, float, std::string>{std::string("Initial")};
+        })},
+        {"ZED", CheckboxConfig("ZED", optionsZedFrame, [](const std::string& key) {
+            if (key == "aruco")
+                return std::variant<bool, int, float, std::string>{false};
+            return std::variant<bool, int, float, std::string>{0.0f};
+        })},
+        {"COMMUNICATION", CheckboxConfig("COMMUNICATION", optionsCommunicationFrame, [](const std::string& key) {
+            if (key == "Wi-Fi" || key == "Interface")
+                return std::variant<bool, int, float, std::string>{std::string("Initial")};
+            return std::variant<bool, int, float, std::string>{0};
+        })},
+        {"POWER", CheckboxConfig("POWER", optionsPowerFrame, [](const std::string&) {
+            return std::variant<bool, int, float, std::string>{0.0f};
+        })},
+        {"POWER2", CheckboxConfig("POWER2", optionsPower2Frame, [](const std::string&) {
+            return std::variant<bool, int, float, std::string>{0.0f};
+        })}
     };
 
-    auto create_linear_checkbox = [&](const std::string& prefix, const std::string& key, bool active) {
+    // This lambda creates a checkbox if it doesn't exist, then sets the value to true.
+    // It also adds the tooltip if it has one and sets up the toggle with the default value.
+    auto create_checkbox = [&](const std::string& prefix, const std::string& key, bool active) {
         std::string full_key = "SHOW_" + prefix + "_" + key;
-        if (bool_buttons.count(full_key) == 0) {
-            auto check = Gtk::make_managed<Gtk::CheckButton>(full_key);
-            check->set_active(active);
-            bool_buttons[full_key] = check;
-            testLinearFrame->addWidget(*check);
-            row++;
-            add_tooltip(check, full_key);
+        if (bool_buttons.count(full_key) != 0) return;
 
-            if(key == "At Min" || key == "At Max" || key == "Sensorless"){
-                setup_info_frame_toggle(prefix, key, false);
-            }
-            else if (key == "Device ID" || key == "Temperature" ||
-                key == "Sensor Position" || key == "Sensor Velocity") {
-                setup_info_frame_toggle(prefix, key, 0);
-            } else {
-                setup_info_frame_toggle(prefix, key, 0.0f);
-            }
-        }
+        auto check = Gtk::make_managed<Gtk::CheckButton>(key);
+        check->set_active(active);
+        bool_buttons[full_key] = check;
+        add_tooltip(check, full_key);
+
+        auto& cfg = checkbox_configs.at(prefix);
+        cfg.frame->addWidget(*check);
+        std::visit([&](auto&& val) {
+            setup_info_frame_toggle(prefix, key, val);
+        }, cfg.default_value_func(key));
     };
 
-    auto create_autonomy_checkbox = [&](const std::string& prefix, const std::string& key, bool active) {
-        std::string full_key = "SHOW_" + prefix + "_" + key;
-        if (bool_buttons.count(full_key) == 0) {
-            auto check = Gtk::make_managed<Gtk::CheckButton>(full_key);
-            check->set_active(active);
-            bool_buttons[full_key] = check;
-            testAutonomyFrame->addWidget(*check);
-            row++;
-            add_tooltip(check, full_key);
-
-            if(key == "Dest X" || key == "Dest Z"){
-                setup_info_frame_toggle(prefix, key, 0.0);
-            }
-            else {
-                setup_info_frame_toggle(prefix, key, "Initial");
-            }
-        }
-    };
-
-    auto create_zed_checkbox = [&](const std::string& prefix, const std::string& key, bool active) {
-        std::string full_key = "SHOW_" + prefix + "_" + key;
-        if (bool_buttons.count(full_key) == 0) {
-            auto check = Gtk::make_managed<Gtk::CheckButton>(full_key);
-            check->set_active(active);
-            bool_buttons[full_key] = check;
-            testZedFrame->addWidget(*check);
-            row++;
-            add_tooltip(check, full_key);
-
-            if(key == "aruco"){
-                setup_info_frame_toggle(prefix, key, false);
-            }
-            else {
-                setup_info_frame_toggle(prefix, key, 0.0);
-            }
-        }
-    };
-
-    auto create_communication_checkbox = [&](const std::string& prefix, const std::string& key, bool active) {
-        std::string full_key = "SHOW_" + prefix + "_" + key;
-        if (bool_buttons.count(full_key) == 0) {
-            auto check = Gtk::make_managed<Gtk::CheckButton>(full_key);
-            check->set_active(active);
-            bool_buttons[full_key] = check;
-            testCommunicationFrame->addWidget(*check);
-            row++;
-            add_tooltip(check, full_key);
-
-            if(key == "Wi-Fi" || key == "Interface"){
-                setup_info_frame_toggle(prefix, key, "Initial");
-            }
-            else {
-                setup_info_frame_toggle(prefix, key, 0);
-            }
-        }
-    };
-
-    auto create_power_checkbox = [&](const std::string& prefix, const std::string& key, bool active) {
-        std::string full_key = "SHOW_" + prefix + "_" + key;
-        if (bool_buttons.count(full_key) == 0) {
-            auto check = Gtk::make_managed<Gtk::CheckButton>(full_key);
-            check->set_active(active);
-            bool_buttons[full_key] = check;
-            testPowerFrame->addWidget(*check);
-            row++;
-            add_tooltip(check, full_key);
-
-            setup_info_frame_toggle(prefix, key, 0.0);
-        }
-    };
-
-    auto create_power2_checkbox = [&](const std::string& prefix, const std::string& key, bool active) {
-        std::string full_key = "SHOW_" + prefix + "_" + key;
-        if (bool_buttons.count(full_key) == 0) {
-            auto check = Gtk::make_managed<Gtk::CheckButton>(full_key);
-            check->set_active(active);
-            bool_buttons[full_key] = check;
-            testPower2Frame->addWidget(*check);
-            row++;
-            add_tooltip(check, full_key);
-
-            setup_info_frame_toggle(prefix, key, 0.0);
-        }
-    };
-
+    // Lambda that finds the prefix and then creates a checkbox witht that prefix and
+    // option
     auto setup_info_toggle_if_needed = [&](const std::string& key, bool active) {
         if (key.rfind("SHOW_TALON_", 0) == 0) {
-            create_talon_checkbox("TALON", key.substr(11), active);
+            create_checkbox("TALON", key.substr(11), active);
         }
         else if (key.rfind("SHOW_FALCON_", 0) == 0) {
-            create_falcon_checkbox("FALCON", key.substr(12), active);
+            create_checkbox("FALCON", key.substr(12), active);
         }
         else if (key.rfind("SHOW_LINEAR_", 0) == 0) {
-            create_linear_checkbox("LINEAR", key.substr(12), active);
+            create_checkbox("LINEAR", key.substr(12), active);
         }
         else if (key.rfind("SHOW_AUTONOMY_", 0) == 0) {
-            create_autonomy_checkbox("AUTONOMY", key.substr(14), active);
+            create_checkbox("AUTONOMY", key.substr(14), active);
         }
         else if (key.rfind("SHOW_ZED_", 0) == 0) {
-            create_zed_checkbox("ZED", key.substr(9), active);
+            create_checkbox("ZED", key.substr(9), active);
         }
         else if (key.rfind("SHOW_COMMUNICATION_", 0) == 0) {
-            create_communication_checkbox("COMMUNICATION", key.substr(19), active);
+            create_checkbox("COMMUNICATION", key.substr(19), active);
         }
         else if (key.rfind("SHOW_POWER_", 0) == 0) {
-            create_power_checkbox("POWER", key.substr(11), active);
+            create_checkbox("POWER", key.substr(11), active);
         }
         else if (key.rfind("SHOW_POWER2_", 0) == 0) {
-            create_power2_checkbox("POWER2", key.substr(12), active);
+            create_checkbox("POWER2", key.substr(12), active);
         }
     };
 
@@ -2957,8 +2876,7 @@ void create_config_editor_window(const std::string& config_file) {
                 auto check = Gtk::make_managed<Gtk::CheckButton>(key);
                 check->set_active(value == "true");
                 bool_buttons[key] = check;
-                grid->attach(*check, 0, row, 2, 1);
-                row++;
+                speed_options_box->add(*check);
                 add_tooltip(check, key);
                 connect_speedometer_toggle(check, key);
             }
@@ -2968,34 +2886,22 @@ void create_config_editor_window(const std::string& config_file) {
         }
     }
 
-    for (const auto& device_key : talon_keys) {
-        create_falcon_checkbox("FALCON", device_key, true);
-        create_talon_checkbox("TALON", device_key, true);
-    }
+    // Lambda that iterates through all of the keys in a given set and creates checkboxes
+    // for each item with a default value of true
+    auto create_checkboxes = [](const auto& keys, auto&& func, const std::string& label) {
+        for (const auto& key : keys) {
+            func(label, key, true);
+        }
+    };
 
-    for (const auto& device_key : linear_keys){
-        create_linear_checkbox("LINEAR", device_key, true);
-    }
-
-    for (const auto& device_key : autonomy_keys){
-        create_autonomy_checkbox("AUTONOMY", device_key, true);
-    }
-
-    for (const auto& device_key : zed_keys){
-        create_zed_checkbox("ZED", device_key, true);
-    }
-
-    for (const auto& device_key : communication_keys){
-        create_communication_checkbox("COMMUNICATION", device_key, true);
-    }
-
-    for (const auto& device_key : power_keys){
-        create_power_checkbox("POWER", device_key, true);
-    }
-
-    for (const auto& device_key : power2_keys){
-        create_power2_checkbox("POWER2", device_key, true);
-    }
+    create_checkboxes(talon_keys,         create_checkbox,        "FALCON");
+    create_checkboxes(talon_keys,         create_checkbox,         "TALON");
+    create_checkboxes(linear_keys,        create_checkbox,        "LINEAR");
+    create_checkboxes(autonomy_keys,      create_checkbox,      "AUTONOMY");
+    create_checkboxes(zed_keys,           create_checkbox,           "ZED");
+    create_checkboxes(communication_keys, create_checkbox, "COMMUNICATION");
+    create_checkboxes(power_keys,         create_checkbox,         "POWER");
+    create_checkboxes(power2_keys,        create_checkbox,        "POWER2");
 
     if (bool_buttons.count("DISPLAY_SPEED")) {
         displaySpeed = bool_buttons["DISPLAY_SPEED"]->get_active();
@@ -3010,12 +2916,40 @@ void create_config_editor_window(const std::string& config_file) {
         testSpeedometer->set_numbers_on_ticks(numberTicks);
     }
 
+    auto save_values = [](const std::string& key, bool active){
+        if (key.rfind("SHOW_TALON_", 0) == 0) {
+            save_value(talon_values, key.substr(11), active);
+        }
+        else if (key.rfind("SHOW_FALCON_", 0) == 0) {
+            save_value(falcon_values, key.substr(12), active);
+        }
+        else if (key.rfind("SHOW_LINEAR_", 0) == 0) {
+            save_value(linear_values, key.substr(12), active);
+        }
+        else if (key.rfind("SHOW_AUTONOMY_", 0) == 0) {
+            save_value(autonomy_values, key.substr(14), active);
+        }
+        else if (key.rfind("SHOW_ZED_", 0) == 0) {
+            save_value(zed_values, key.substr(9), active);
+        }
+        else if (key.rfind("SHOW_COMMUNICATION_", 0) == 0) {
+            save_value(communication_values, key.substr(19), active);
+        }
+        else if (key.rfind("SHOW_POWER_", 0) == 0) {
+            save_value(power_values, key.substr(11), active);
+        }
+        else if (key.rfind("SHOW_POWER2_", 0) == 0) {
+            save_value(power2_values, key.substr(12), active);
+        }
+    };
+
     save_button->signal_clicked().connect([=]() mutable{
         std::ofstream outfile("../resources/" + file_entry->get_text());
         for (const auto& [key, button] : bool_buttons) {
             bool active = button->get_active();
             outfile << key << "=" << (active ? "true" : "false") << "\n";
             std::cout << key << " " << active << std::endl;
+            save_values(key, active);
         }
 
         const auto lightColorStr = to_color_string(light_color_button->get_rgba());
@@ -3063,20 +2997,30 @@ void create_config_editor_window(const std::string& config_file) {
                 speedometer->queue_draw();
             }
         }
+        for (const auto& key : talon_keys) {
+            auto it = talon_values.find(key);
+            if (it != talon_values.end()) {
+                std::cout << key << ": " << (it->second ? "true" : "false") << std::endl;
+            } else {
+                std::cout << key << ": not found in map" << std::endl;
+            }
+        }
     });
 
-
     main_box->pack_start(*grid);
-    speed_box->add(*sensorsBox);
-    main_box->add(*speed_box);
+    outer_box->add(*speed_box);
+    outer_box->add(*sensorsBox);
+    main_box->add(*outer_box);
     main_box->pack_start(*save_button, Gtk::PACK_SHRINK);
-    configWindow->add(*main_box);
+    scrolledWindow->add(*main_box);
+    configWindow->add(*scrolledWindow);
     configWindow->show_all_children();
     configWindow->show_all();
 }
 
 
 void setupGUI(Glib::RefPtr<Gtk::Application> application) {
+    initialize_maps();
     // Create window instance
     window = new Gtk::Window();
     window->maximize();

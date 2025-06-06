@@ -28,7 +28,7 @@ public:
                 infoItem->setValue(itemValue);
                 return;
             }
-        }    
+        }
         addItem(itemName);
         if (!itemList.empty() && itemList.back()->getName() == itemName) {
             itemList.back()->setValue(itemValue);

@@ -22,7 +22,7 @@ void InfoItem::setDecimalPlaces(int places){
     decimalPlaces = places;
 }
 
-void InfoItem::setValue(std::string& value) {
+void InfoItem::setValue(std::string value) {
     valueLabel->set_text(value);
 }
 

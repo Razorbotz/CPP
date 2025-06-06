@@ -1771,8 +1771,70 @@ void handleAutonomyElements(const std::string& label, const std::vector<Element>
 }
 
 
-void handleGenericElements(InfoFrame* frame, const std::vector<Element>& elements) {
+std::map<std::string, bool> getMap(std::string label){
+    if(label.rfind("Talon", 0) == 0){
+        return talon_values;
+    }
+    if(label.rfind("Falcon", 0) == 0){
+        return falcon_values;
+    }
+    if(label.rfind("Linear", 0) == 0){
+        return linear_values;
+    }
+    if(label.rfind("Autonomy", 0) == 0){
+        return autonomy_values;
+    }
+    if(label.rfind("Communication", 0) == 0){
+        return communication_values;
+    }
+    if(label.rfind("Power2", 0) == 0){
+        return power2_values;
+    }
+    if(label.rfind("Power", 0) == 0){
+        return power_values;
+    }
+    if(label.rfind("Zed", 0) == 0){
+        return zed_values;
+    }
+    return talon_values;
+}
+
+
+std::vector<std::string> getKeys(std::string label){
+    if(label.rfind("Talon", 0) == 0){
+        return talon_keys;
+    }
+    if(label.rfind("Falcon", 0) == 0){
+        return falcon_keys;
+    }
+    if(label.rfind("Linear", 0) == 0){
+        return linear_keys;
+    }
+    if(label.rfind("Autonomy", 0) == 0){
+        return autonomy_keys;
+    }
+    if(label.rfind("Communication", 0) == 0){
+        return communication_keys;
+    }
+    if(label.rfind("Power2", 0) == 0){
+        return power2_keys;
+    }
+    if(label.rfind("Power", 0) == 0){
+        return power_keys;
+    }
+    if(label.rfind("Zed", 0) == 0){
+        return zed_keys;
+    }
+    return talon_keys;
+}
+
+
+void handleGenericElements(std::string label, InfoFrame* frame, const std::vector<Element>& elements) {
+    std::map<std::string, bool> values = getMap(label);
     for (const auto& element : elements) {
+        auto it = values.find(element.label);
+        if(it == values.end() || !it->second)
+            continue;
         const auto& value = element.data.front();
 
         if (element.type == TYPE::BOOLEAN)       frame->setItem(element.label, value.boolean);
@@ -1806,6 +1868,7 @@ void handleGenericElements(InfoFrame* frame, const std::vector<Element>& element
             frame->setItem(element.label, text);
         }
     }
+    frame->show_all();
 }
 
 const std::unordered_set<std::string> validLabels = {
@@ -1818,7 +1881,6 @@ const std::unordered_set<std::string> validLabels = {
 void addElementToInfoFrame(InfoFrame* frame, const Element& element) {
     frame->addItem(element.label);
     const auto& data = element.data.front();
-
     switch (element.type) {
         case TYPE::BOOLEAN:   frame->setItem(element.label, data.boolean); break;
         case TYPE::INT8:      frame->setItem(element.label, data.int8); break;
@@ -1846,6 +1908,19 @@ void addElementToInfoFrame(InfoFrame* frame, const Element& element) {
     }
 }
 
+
+void addElementToInfoFrame(std::string label, InfoFrame* frame, const Element& element) {
+    std::map<std::string, bool> values = getMap(label);
+    auto it = values.find(element.label);
+    bool end = it == values.end();
+    if(it == values.end() || !it->second){
+        return;
+    }
+
+    addElementToInfoFrame(frame, element);
+}
+
+
 void updateGUI(BinaryMessage& message) {
     std::string label = message.getLabel();
 
@@ -1870,7 +1945,7 @@ void updateGUI(BinaryMessage& message) {
             handleAutonomyElements(label, elements);
         }
 
-        handleGenericElements(frame, elements);
+        handleGenericElements(label, frame, elements);
         return;
     }
     if (!validLabels.count(label)) return;
@@ -1892,7 +1967,100 @@ void updateGUI(BinaryMessage& message) {
     }
 
     sensorBox->add(*infoFrame);
-    infoFrame->show();
+    infoFrame->show_all();
+}
+
+
+void createTalonMessage(std::string name){
+    BinaryMessage talonMessage(name);
+    if(initVals){
+        talonMessage.addElementUInt8("Device ID",(uint8_t)0);
+        talonMessage.addElementUInt16("Bus Voltage",1600);
+        talonMessage.addElementUInt16("Output Current",0);
+        talonMessage.addElementFloat32("Output Percent",0.0);
+        talonMessage.addElementUInt8("Temperature",(uint8_t)0);
+        talonMessage.addElementUInt16("Sensor Position",(uint8_t)0);
+        talonMessage.addElementInt8("Sensor Velocity",(uint8_t)0);
+        talonMessage.addElementFloat32("Max Current", 0.0);
+    }
+    updateGUI(talonMessage);
+}
+
+
+void createLinearMessage(std::string name){
+    BinaryMessage linearMessage(name);
+    if(initVals){
+        linearMessage.addElementUInt8("Motor Number", (uint8_t)0);
+        linearMessage.addElementFloat32("Speed", 0.0);
+        linearMessage.addElementUInt16("Potentiometer", (uint16_t)0);
+        linearMessage.addElementUInt8("Time Without Change", (uint8_t)0);
+        linearMessage.addElementUInt16("Max", (uint16_t)0);
+        linearMessage.addElementUInt16("Min", (uint16_t)0);
+        linearMessage.addElementString("Error", "No Error");
+        linearMessage.addElementBoolean("At Min", false);
+        linearMessage.addElementBoolean("At Max", false);
+        linearMessage.addElementFloat32("Distance", 0.0);
+        linearMessage.addElementBoolean("Sensorless", false);
+    }
+    updateGUI(linearMessage);
+}
+
+
+void initGUI() {
+    if(initVals){
+        createTalonMessage("Talon 1");
+        createTalonMessage("Talon 3");
+      
+        createTalonMessage("Falcon 1");
+        createTalonMessage("Falcon 2");
+        createTalonMessage("Falcon 3");
+        createTalonMessage("Falcon 4");
+        
+        createLinearMessage("Linear 1");
+        createLinearMessage("Linear 3");
+        
+        initRoll();
+        initPitch();
+        initArmPos();
+        initBucketPos();
+        
+        BinaryMessage communicationMessage("Communication");
+        updateGUI(communicationMessage);
+        
+        BinaryMessage autonomyMessage("Autonomy");
+        updateGUI(autonomyMessage);
+        
+        BinaryMessage zedMessage("Zed");
+        updateGUI(zedMessage);
+    
+        BinaryMessage powerMessage("Power");
+        updateGUI(powerMessage);
+    
+        BinaryMessage powerMessage2("Power2");
+        updateGUI(powerMessage2);
+    }
+    
+    // Ensure proper initial display
+    window->set_default_size(1200, 900);
+    window->show_all();
+}
+
+
+void updateGUI(){
+    for (InfoFrame* frame : infoFrameList) {
+        std::string label = frame->get_label();
+        frame->removeAllItems();
+        std::map<std::string, bool> values = getMap(label);
+        std::vector<std::string> keys = getKeys(label);
+        for (const std::string& key : keys) {
+            auto it = values.find(key);
+            if (it != values.end() && it->second) {
+                frame->addItem(key);
+            }
+        }
+    }
+
+    initGUI();
 }
 
 
@@ -2435,16 +2603,17 @@ void add_tooltip(Gtk::CheckButton* check, const std::string& key) {
 template <typename T>
 void update_info_frame_element_initial(Gtk::CheckButton* check_button, InfoFrame* frame, const std::string& element_name, const T& default_value) {
     if (check_button->get_active()) {
+        std::cout << "Adding " << element_name << std::endl;
         frame->setItem(element_name, default_value);
     } else {
+        std::cout << "Removin " << element_name << std::endl;
         frame->removeItem(element_name);
+
     }
 }
 
 void save_value(std::map<std::string, bool>& values, const std::string& value, bool active) {
-    std::cout << "here " << value << ": " << active << std::endl;
     values[value] = active;
-    std::cout << "values[value]: " << values[value] << std::endl;
 }
 
 // Define element-adding lambdas keyed by prefix
@@ -2525,6 +2694,25 @@ std::map<std::string, std::function<void(BinaryMessage&)>> element_adders = {
     }}
 };
 
+InfoFrame *talonFrame = nullptr, *falconFrame = nullptr, *linearFrame = nullptr,
+    *autonomyFrame = nullptr, *zedFrame = nullptr, *communicationFrame = nullptr,
+    *powerFrame = nullptr, *power2Frame = nullptr;
+
+std::unordered_map<std::string, InfoFrame*> frame_map;
+void setup_frame_map() {
+    frame_map = {
+        {"TALON",         talonFrame},
+        {"FALCON",        falconFrame},
+        {"LINEAR",        linearFrame},
+        {"AUTONOMY",      autonomyFrame},
+        {"ZED",           zedFrame},
+        {"COMMUNICATION", communicationFrame},
+        {"POWER",         powerFrame},
+        {"POWER2",        power2Frame},
+    };
+}
+
+
 std::map<std::string, Gtk::CheckButton*> bool_buttons;
 
 // TODO:
@@ -2578,11 +2766,9 @@ void create_config_editor_window(const std::string& config_file) {
     auto addConditionalElements = [&](const std::string& prefix, BinaryMessage& msg, InfoFrame* frame) {
         for (const Element& el : msg.getObject().elementList) {
             std::string key = "SHOW_" + prefix + "_" + el.label;
-            std::cout << key << std::endl;
-            std::cout << "bool_buttons ptr: " << &bool_buttons << ", size: " << bool_buttons.size() << std::endl;
 
             if (bool_buttons.count(key) == 0 || bool_buttons[key]->get_active()) {
-                std::cout << "here" << std::endl;
+                std::cout << "Adding element: " << key << std::endl;
                 addElementToInfoFrame(frame, el);
             }
 
@@ -2606,25 +2792,19 @@ void create_config_editor_window(const std::string& config_file) {
         addConditionalElements(prefix, message, frameRef);
 
         box->add(*frameRef);
-        frameRef->show();
+        frameRef->show_all();
     };
 
     auto update_info_frame_element = [&](Gtk::CheckButton* check_button, const std::string& name, const std::string& prefix, InfoFrame*& frameRef) {
         if (check_button->get_active()) {
             frameRef->removeAllItems();
             BinaryMessage message(name);
-            std::cout << "_" << prefix << "_" << std::endl;
-            std::cout << "Looking for prefix: '" << prefix << "'" << std::endl;
-            std::cout << "element_adders size: " << element_adders.size() << std::endl;
-            for (const auto& [key, _] : element_adders) {
-                std::cout << " - '" << key << "'" << std::endl;
-            }
 
             auto adder_it = element_adders.find(prefix);
             if (adder_it != element_adders.end()) {
                 adder_it->second(message);
                 addConditionalElements(prefix, message, frameRef);
-                frameRef->show();
+                frameRef->show_all();
             }
             else {
                 std::cerr << "Warning: No element adder for prefix " << prefix << std::endl;
@@ -2633,15 +2813,12 @@ void create_config_editor_window(const std::string& config_file) {
         }
         else {
             frameRef->removeItem(name);
+            frameRef->show_all();
         }
         
     };
 
     // Define frames and boxes
-    InfoFrame *talonFrame = nullptr, *falconFrame = nullptr, *linearFrame = nullptr,
-            *autonomyFrame = nullptr, *zedFrame = nullptr, *communicationFrame = nullptr,
-            *powerFrame = nullptr, *power2Frame = nullptr;
-
     Gtk::Box *talonBox = nullptr, *falconBox = nullptr, *linearBox = nullptr,
             *autonomyBox = nullptr, *zedBox = nullptr, *communicationBox = nullptr,
             *powerBox = nullptr, *power2Box = nullptr;
@@ -2681,21 +2858,14 @@ void create_config_editor_window(const std::string& config_file) {
         sensorsBox->add(*(*(entry.box_ptr)));
     }
 
+    setup_frame_map();
+
     // Lambda to get the InfoFrame associated with the passed prefix
     auto get_info_frame_for_prefix = [&](const std::string& prefix) -> InfoFrame* {
-        static const std::unordered_map<std::string, InfoFrame*> frame_map = {
-            {"TALON",         talonFrame},
-            {"FALCON",        falconFrame},
-            {"LINEAR",        linearFrame},
-            {"AUTONOMY",      autonomyFrame},
-            {"ZED",           zedFrame},
-            {"COMMUNICATION", communicationFrame},
-            {"POWER",         powerFrame},
-            {"POWER2",        power2Frame},
-        };
         auto it = frame_map.find(prefix);
         return (it != frame_map.end()) ? it->second : talonFrame;
     };
+
 
     // Lambda to create a checkbox for a given option. The prefix is used to find the InfoFrame
     // associated with that option, then the key is added to a CheckButton. When the button is
@@ -2709,13 +2879,18 @@ void create_config_editor_window(const std::string& config_file) {
             if (target_frame) {
                 config_values[key] = check->get_active(); 
                 update_info_frame_element_initial(check, target_frame, element_name, default_value);
+                target_frame->show_all();
+                target_frame->queue_draw();
             }
 
             check->signal_toggled().connect([=]() mutable {
                 InfoFrame* tf = get_info_frame_for_prefix(prefix);
                 if (tf) {
                     config_values[key] = check->get_active();
+                    std::cout << key << check->get_active() << std::endl;
                     update_info_frame_element(check, element_name, prefix, tf);
+                    tf->show_all();
+                    tf->queue_draw();
                     if (configWindow) configWindow->queue_draw();
                 }
             });
@@ -2734,7 +2909,6 @@ void create_config_editor_window(const std::string& config_file) {
     // Lambda to add the on click functionality to the speedometer options
     auto connect_speedometer_toggle = [&](Gtk::CheckButton* check, const std::string& key) {
         check->signal_toggled().connect([=]() mutable {
-            std::cout << "here" << std::endl;
             bool active = check->get_active();
             if (key == "DISPLAY_SPEED") {
                 displaySpeed = active;
@@ -2862,7 +3036,7 @@ void create_config_editor_window(const std::string& config_file) {
         std::istringstream ss(line);
         std::string key, value;
         if (!(std::getline(ss, key, '=') && std::getline(ss, value))) continue;
-
+        std::cout << "Read " << key << " " << value << std::endl;
         if (key == "LIGHT_BACKGROUND") {
             lightBackground = value;
             add_color_setting("LIGHT_BACKGROUND", value, light_color_button);
@@ -2884,6 +3058,35 @@ void create_config_editor_window(const std::string& config_file) {
                 setup_info_toggle_if_needed(key, value == "true");
             }
         }
+    }
+
+    auto it = bool_buttons.find("DISPLAY_SPEED");
+    if(it == bool_buttons.end()){
+        lightBackground = "#FFFFFF";
+        add_color_setting("LIGHT_BACKGROUND", "#FFFFFF", light_color_button);
+        darkBackground = "#000000";
+        add_color_setting("DARK_BACKGROUND", "#000000", dark_color_button);
+        
+        auto check = Gtk::make_managed<Gtk::CheckButton>("DISPLAY_SPEED");
+        check->set_active(true);
+        bool_buttons["DISPLAY_SPEED"] = check;
+        speed_options_box->add(*check);
+        add_tooltip(check, "DISPLAY_SPEED");
+        connect_speedometer_toggle(check, "DISPLAY_SPEED");
+        
+        check = Gtk::make_managed<Gtk::CheckButton>("NUMBERS_INSIDE");
+        check->set_active(true);
+        bool_buttons["NUMBERS_INSIDE"] = check;
+        speed_options_box->add(*check);
+        add_tooltip(check, "NUMBERS_INSIDE");
+        connect_speedometer_toggle(check, "NUMBERS_INSIDE");
+        
+        check = Gtk::make_managed<Gtk::CheckButton>("NUMBER_TICKS");
+        check->set_active(true);
+        bool_buttons["NUMBER_TICKS"] = check;
+        speed_options_box->add(*check);
+        add_tooltip(check, "NUMBER_TICKS");
+        connect_speedometer_toggle(check, "NUMBER_TICKS");
     }
 
     // Lambda that iterates through all of the keys in a given set and creates checkboxes
@@ -2943,14 +3146,36 @@ void create_config_editor_window(const std::string& config_file) {
         }
     };
 
+    auto write_values = [](std::ofstream& outfile, const std::string& label, const std::string& prefix){
+        std::map<std::string, bool> values = getMap(label);
+        std::vector<std::string> keys = getKeys(label);
+        for (const std::string& key : keys) {
+            auto it = values.find(key);
+            if (it != values.end()) {
+                bool active = it->second;
+                outfile << "SHOW_" << prefix << "_" << key << "=" << (active ? "true" : "false") << "\n";
+                std::cout << "SHOW_" << prefix << "_" << key << " " << active << std::endl;
+            }
+        }
+        
+    };
+
     save_button->signal_clicked().connect([=]() mutable{
         std::ofstream outfile("../resources/" + file_entry->get_text());
+        
         for (const auto& [key, button] : bool_buttons) {
             bool active = button->get_active();
-            outfile << key << "=" << (active ? "true" : "false") << "\n";
-            std::cout << key << " " << active << std::endl;
             save_values(key, active);
         }
+
+        write_values(outfile, "Talon", "TALON");
+        write_values(outfile, "Falcon", "FALCON");
+        write_values(outfile, "Linear", "LINEAR");
+        write_values(outfile, "Autonomy", "AUTONOMY");
+        write_values(outfile, "Communication", "COMMUNICATION");
+        write_values(outfile, "Power2", "POWER2");
+        write_values(outfile, "Power", "POWER");
+        write_values(outfile, "Zed", "ZED");
 
         const auto lightColorStr = to_color_string(light_color_button->get_rgba());
         const auto darkColorStr = to_color_string(dark_color_button->get_rgba());
@@ -2997,14 +3222,12 @@ void create_config_editor_window(const std::string& config_file) {
                 speedometer->queue_draw();
             }
         }
-        for (const auto& key : talon_keys) {
-            auto it = talon_values.find(key);
-            if (it != talon_values.end()) {
-                std::cout << key << ": " << (it->second ? "true" : "false") << std::endl;
-            } else {
-                std::cout << key << ": not found in map" << std::endl;
-            }
-        }
+        updateGUI();
+    });
+    
+    configWindow->signal_hide().connect([]() {
+        std::cout << "Cleared bool_buttons" << std::endl;
+        bool_buttons.clear();
     });
 
     main_box->pack_start(*grid);
@@ -3668,80 +3891,6 @@ void adjustVideoRobotList(){
             --index;
         }
     }
-}
-
-void createTalonMessage(std::string name){
-    BinaryMessage talonMessage(name);
-    if(initVals){
-        talonMessage.addElementUInt8("Device ID",(uint8_t)0);
-        talonMessage.addElementUInt16("Bus Voltage",1600);
-        talonMessage.addElementUInt16("Output Current",0);
-        talonMessage.addElementFloat32("Output Percent",0.0);
-        talonMessage.addElementUInt8("Temperature",(uint8_t)0);
-        talonMessage.addElementUInt16("Sensor Position",(uint8_t)0);
-        talonMessage.addElementInt8("Sensor Velocity",(uint8_t)0);
-        talonMessage.addElementFloat32("Max Current", 0.0);
-    }
-    updateGUI(talonMessage);
-}
-
-
-void createLinearMessage(std::string name){
-    BinaryMessage linearMessage(name);
-    if(initVals){
-        linearMessage.addElementUInt8("Motor Number", (uint8_t)0);
-        linearMessage.addElementFloat32("Speed", 0.0);
-        linearMessage.addElementUInt16("Potentiometer", (uint16_t)0);
-        linearMessage.addElementUInt8("Time Without Change", (uint8_t)0);
-        linearMessage.addElementUInt16("Max", (uint16_t)0);
-        linearMessage.addElementUInt16("Min", (uint16_t)0);
-        linearMessage.addElementString("Error", "No Error");
-        linearMessage.addElementBoolean("At Min", false);
-        linearMessage.addElementBoolean("At Max", false);
-        linearMessage.addElementFloat32("Distance", 0.0);
-        linearMessage.addElementBoolean("Sensorless", false);
-    }
-    updateGUI(linearMessage);
-}
-
-
-void initGUI() {
-    if(initVals){
-        createTalonMessage("Talon 1");
-        createTalonMessage("Talon 3");
-      
-        createTalonMessage("Falcon 1");
-        createTalonMessage("Falcon 2");
-        createTalonMessage("Falcon 3");
-        createTalonMessage("Falcon 4");
-        
-        createLinearMessage("Linear 1");
-        createLinearMessage("Linear 3");
-        
-        initRoll();
-        initPitch();
-        initArmPos();
-        initBucketPos();
-        
-        BinaryMessage communicationMessage("Communication");
-        updateGUI(communicationMessage);
-        
-        BinaryMessage autonomyMessage("Autonomy");
-        updateGUI(autonomyMessage);
-        
-        BinaryMessage zedMessage("Zed");
-        updateGUI(zedMessage);
-    
-        BinaryMessage powerMessage("Power");
-        updateGUI(powerMessage);
-    
-        BinaryMessage powerMessage2("Power2");
-        updateGUI(powerMessage2);
-    }
-    
-    // Ensure proper initial display
-    window->set_default_size(1200, 900);
-    window->show_all();
 }
 
 int key = 0x2C;

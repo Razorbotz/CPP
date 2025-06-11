@@ -46,6 +46,9 @@ TODO:
 Fix crash on video start
 Fix random seg faults
 Add ability to switch between Orin and Nano
+Map Issues:
+Cosmic map isn't drawing robot in correct location
+Robot isn't drawing in correct location, need to offset for camera position
 
 */
 
@@ -1880,7 +1883,8 @@ std::map<std::string, std::vector<std::string>*> key_vectors = {
     {"Communication", &communication_keys},
     {"Power2", &power2_keys},
     {"Power", &power_keys},
-    {"Zed", &zed_keys}
+    {"Zed", &zed_keys},
+    {"Test", &talon_keys}
 };
 
 std::vector<std::string> getKeys(const std::string& label) {
@@ -2686,9 +2690,9 @@ std::map<std::string, std::vector<ElementInfo>> element_definitions = {
         {ElementType::UInt16, "Bus Voltage"},
         {ElementType::UInt16, "Output Current"},
         {ElementType::Float32, "Output Percent"},
+        {ElementType::Int8, "Sensor Velocity"},
         {ElementType::UInt8, "Temperature"},
         {ElementType::UInt16, "Sensor Position"},
-        {ElementType::Int8, "Sensor Velocity"},
         {ElementType::Float32, "Max Current"}
     }},
     {"FALCON", {
@@ -2763,6 +2767,16 @@ std::map<std::string, std::vector<ElementInfo>> element_definitions = {
         {ElementType::Float32, "Current 13"},
         {ElementType::Float32, "Current 14"},
         {ElementType::Float32, "Current 15"}
+    }},
+    {"TEST", {
+        {ElementType::UInt8, "Device ID"},
+        {ElementType::UInt16, "Bus Voltage"},
+        {ElementType::UInt16, "Output Current"},
+        {ElementType::Float32, "Output Percent"},
+        {ElementType::Int8, "Sensor Velocity"},
+        {ElementType::UInt8, "Temperature"},
+        {ElementType::UInt16, "Sensor Position"},
+        {ElementType::Float32, "Max Current"}
     }}
 };
 
@@ -2790,6 +2804,9 @@ std::string getNameFromPrefix(std::string label){
     }
     if(label.rfind("ZED", 0) == 0){
         return "Zed";
+    }
+    if(label.rfind("TEST", 0) == 0){
+        return "Test";
     }
     return "Talon";
 }
@@ -2831,7 +2848,7 @@ void populateBinaryMessage(const std::string& prefix, BinaryMessage& message) {
 
 InfoFrame *talonFrame = nullptr, *falconFrame = nullptr, *linearFrame = nullptr,
     *autonomyFrame = nullptr, *zedFrame = nullptr, *communicationFrame = nullptr,
-    *powerFrame = nullptr, *power2Frame = nullptr;
+    *powerFrame = nullptr, *power2Frame = nullptr, *testFrame = nullptr;
 
 std::unordered_map<std::string, InfoFrame*> frame_map;
 void setup_frame_map() {
@@ -2844,9 +2861,78 @@ void setup_frame_map() {
         {"COMMUNICATION", communicationFrame},
         {"POWER",         powerFrame},
         {"POWER2",        power2Frame},
+        {"TEST", testFrame},
     };
 }
 
+class ListColumns : public Gtk::TreeModel::ColumnRecord {
+public:
+    ListColumns() {
+        add(col_active);
+        add(col_text);
+    }
+    Gtk::TreeModelColumn<bool> col_active;
+    Gtk::TreeModelColumn<Glib::ustring> col_text;
+};
+
+ListColumns columns;
+
+// Create the reorderable checkbox list widget
+Gtk::Widget* create_reorderable_checkbox_list(
+    std::map<std::string, bool>& items_map,
+    Glib::RefPtr<Gtk::ListStore>& list_store_out) {
+
+    auto box = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_VERTICAL);
+    auto scrolled_window = Gtk::make_managed<Gtk::ScrolledWindow>();
+    auto tree_view = Gtk::make_managed<Gtk::TreeView>();
+
+    auto list_store = Gtk::ListStore::create(columns);
+    list_store_out = list_store;
+
+    tree_view->set_model(list_store);
+
+    // Checkbox column
+    auto cell_toggle = Gtk::make_managed<Gtk::CellRendererToggle>();
+    cell_toggle->property_activatable() = true;  // Allow user interaction
+    int col_index_toggle = tree_view->append_column("Active", *cell_toggle);
+    Gtk::TreeViewColumn* col_toggle = tree_view->get_column(col_index_toggle - 1);
+    if (col_toggle)
+        col_toggle->add_attribute(cell_toggle->property_active(), columns.col_active);
+
+    // Text column
+    tree_view->append_column("Item", columns.col_text);
+
+    // Make rows reorderable by dragging
+    tree_view->set_reorderable();
+
+    // Fill the list store from the map
+    for (const auto& [key, value] : items_map) {
+        auto row = *(list_store->append());
+        row[columns.col_text] = key;
+        row[columns.col_active] = value;
+    }
+
+    // Connect toggled signal to update both ListStore and map
+    cell_toggle->signal_toggled().connect([list_store, &items_map](const Glib::ustring& path) {
+        if (auto iter = list_store->get_iter(path)) {
+            bool active = (*iter)[columns.col_active];
+            active = !active;
+            (*iter)[columns.col_active] = active;
+
+            Glib::ustring ukey = (*iter)[columns.col_text];
+            std::string key = ukey.raw();
+            std::cout << "Pressed key " << key << " Status = " << active << std::endl;
+            items_map[key] = active;
+        }
+    });
+
+    scrolled_window->set_policy(Gtk::POLICY_AUTOMATIC, Gtk::POLICY_AUTOMATIC);
+    scrolled_window->set_min_content_height(300);
+    scrolled_window->add(*tree_view);
+    box->pack_start(*scrolled_window, Gtk::PACK_EXPAND_WIDGET);
+
+    return box;
+}
 
 std::map<std::string, Gtk::CheckButton*> bool_buttons;
 
@@ -2860,6 +2946,17 @@ void create_config_editor_window(const std::string& config_file) {
     configWindow->set_default_size(600, 600);
     auto scrolledWindow = Gtk::make_managed<Gtk::ScrolledWindow>();
     scrolledWindow->set_policy(Gtk::POLICY_AUTOMATIC, Gtk::POLICY_AUTOMATIC);
+
+    Glib::RefPtr<Gtk::ListStore> list_store;
+    auto scroller_box = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_VERTICAL);
+    Gtk::Widget* widget = create_reorderable_checkbox_list(talon_values, list_store);
+    scroller_box->add(*widget);
+    Gtk::Widget* widget2 = create_reorderable_checkbox_list(falcon_values, list_store);
+    scroller_box->add(*widget2);
+    Gtk::Widget* widget3 = create_reorderable_checkbox_list(linear_values, list_store);
+    scroller_box->add(*widget3);
+    Gtk::Widget* widget4 = create_reorderable_checkbox_list(autonomy_values, list_store);
+    //scroller_box->add(*widget4);
 
     auto main_box = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_VERTICAL);
     auto grid = Gtk::make_managed<Gtk::Grid>();
@@ -2942,11 +3039,11 @@ void create_config_editor_window(const std::string& config_file) {
     // Define frames and boxes
     Gtk::Box *talonBox = nullptr, *falconBox = nullptr, *linearBox = nullptr,
             *autonomyBox = nullptr, *zedBox = nullptr, *communicationBox = nullptr,
-            *powerBox = nullptr, *power2Box = nullptr;
+            *powerBox = nullptr, *power2Box = nullptr, *testBox = nullptr;
 
     InfoFrame *optionsTalonFrame = nullptr, *optionsFalconFrame = nullptr, *optionsLinearFrame = nullptr,
             *optionsAutonomyFrame = nullptr, *optionsZedFrame = nullptr, *optionsCommunicationFrame = nullptr,
-            *optionsPowerFrame = nullptr, *optionsPower2Frame = nullptr;
+            *optionsPowerFrame = nullptr, *optionsPower2Frame = nullptr, *optionsTestFrame;
 
     // Frame entry struct
     struct FrameEntry {
@@ -2966,6 +3063,7 @@ void create_config_editor_window(const std::string& config_file) {
         {"Communication", "COMMUNICATION", &communicationFrame, &communicationBox, &optionsCommunicationFrame},
         {"Power",         "POWER",         &powerFrame,         &powerBox,         &optionsPowerFrame},
         {"Power2",        "POWER2",        &power2Frame,        &power2Box,        &optionsPower2Frame},
+        {"Test",          "TEST",          &testFrame,          &testBox,          &optionsTestFrame},
     };
 
     // Create all frames & boxes in a loop
@@ -3356,6 +3454,8 @@ void create_config_editor_window(const std::string& config_file) {
     outer_box->add(*sensorsBox);
     main_box->add(*outer_box);
     main_box->pack_start(*save_button, Gtk::PACK_SHRINK);
+    optionsTestFrame->addWidget(*widget4);
+    main_box->add(*scroller_box);
     scrolledWindow->add(*main_box);
     configWindow->add(*scrolledWindow);
     configWindow->show_all_children();

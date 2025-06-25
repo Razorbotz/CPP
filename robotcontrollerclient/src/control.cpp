@@ -1783,7 +1783,7 @@ void handleAutonomyElements(const std::string& label, const std::vector<Element>
 }
 
 
-std::map<std::string, bool> getMap(std::string label){
+std::map<std::string, bool>& getMap(std::string label){
     if(label.rfind("Talon", 0) == 0){
         return talon_values;
     }
@@ -1836,7 +1836,7 @@ std::vector<std::string> getKeys(const std::string& label) {
 
 
 void handleGenericElements(std::string label, InfoFrame* frame, const std::vector<Element>& elements) {
-    std::map<std::string, bool> values = getMap(label);
+    std::map<std::string, bool>& values = getMap(label);
     for (const auto& element : elements) {
         auto it = values.find(element.label);
         if(it == values.end() || !it->second)
@@ -1916,7 +1916,7 @@ void addElementToInfoFrame(InfoFrame* frame, const Element& element) {
 
 
 void addElementToInfoFrame(std::string label, InfoFrame* frame, const Element& element) {
-    std::map<std::string, bool> values = getMap(label);
+    std::map<std::string, bool>& values = getMap(label);
     auto it = values.find(element.label);
     bool end = it == values.end();
     if(it == values.end() || !it->second){
@@ -2128,11 +2128,13 @@ void populateBinaryMessage(const std::string& name, const std::string& prefix, B
     }
 }
 
+
 void createMessage(std::string name, std::string prefix){
     BinaryMessage message(name);
     populateBinaryMessage(name, prefix, message);
     updateGUI(message);
 }
+
 
 void initGUI() {
     if(initVals){
@@ -2168,7 +2170,7 @@ void updateGUI(){
     for (InfoFrame* frame : infoFrameList) {
         std::string label = frame->get_label();
         frame->removeAllItems();
-        std::map<std::string, bool> values = getMap(label);
+        std::map<std::string, bool>& values = getMap(label);
         std::vector<std::string> keys = getKeys(label);
         for (const std::string& key : keys) {
             auto it = values.find(key);
@@ -2235,6 +2237,7 @@ void setConnectedState(){
     ipAddressEntry->set_editable(false);
     connected=true;
 }
+
 
 void setVideoDisconnectedState(){
     videoConnectButton->set_label("Connect");
@@ -2778,13 +2781,14 @@ std::map<std::string, std::vector<std::string>*> local_key_vectors = {
 };
 
 // TODO:
-// Fix formatting of the config window
-// Allow drag and drop reordering of the items in the lists
-// Allow movement of the locations of each item in the GUI?
+// Issue when the config file is opened
+// The order isn't preserved when the program is restarted
+// After restart, the values are being saved, but the items are being displayed when 
+// they shouldn't be
 void create_config_editor_window(const std::string& config_file) {
     configWindow = new Gtk::Window();
     configWindow->set_title("Configuration Editor");
-    configWindow->set_default_size(600, 600);
+    configWindow->set_default_size(1000, 600);
     auto scrolledWindow = Gtk::make_managed<Gtk::ScrolledWindow>();
     scrolledWindow->set_policy(Gtk::POLICY_AUTOMATIC, Gtk::POLICY_AUTOMATIC);
 
@@ -2857,9 +2861,10 @@ void create_config_editor_window(const std::string& config_file) {
         }
     };
 
+    // Lambda to get the bool values of the map given by the prefix, then adds the element to the InfoFrame
     auto addConditionalElements = [&](const std::string& prefix, BinaryMessage& msg, InfoFrame* frame) {
         std::string label = getNameFromPrefix(prefix);
-        std::map<std::string, bool> values = getMap(label);
+        std::map<std::string, bool>& values = getMap(label);
         for (const Element& el : msg.getObject().elementList) {
             std::string key = "SHOW_" + prefix + "_" + el.label;
             auto it = values.find(el.label);
@@ -2872,7 +2877,7 @@ void create_config_editor_window(const std::string& config_file) {
     };
 
     // Single generic frame creation function
-    // Given a name, prefix
+    // Given a name, prefix creates frame, then adds the elements to the 
     auto createFrame = [&](const std::string& name, const std::string& prefix, InfoFrame*& frameRef, Gtk::Box* box) {
         BinaryMessage message(name);
         populateBinaryMessage(prefix, message);
@@ -2882,22 +2887,6 @@ void create_config_editor_window(const std::string& config_file) {
 
         box->add(*frameRef);
         frameRef->show_all();
-    };
-
-    auto update_info_frame_element = [&](Gtk::CheckButton* check_button, const std::string& name, const std::string& prefix, InfoFrame*& frameRef) {
-        if (check_button->get_active()) {
-            frameRef->removeAllItems();
-            std::string messageName = getNameFromPrefix(prefix);
-            BinaryMessage message(messageName);    
-            populateBinaryMessage(prefix, message);
-            addConditionalElements(prefix, message, frameRef);
-            frameRef->show_all();
-        }
-        else {
-            frameRef->removeItem(name);
-            frameRef->show_all();
-        }
-        
     };
 
     // Define frames and boxes
@@ -3048,7 +3037,8 @@ void create_config_editor_window(const std::string& config_file) {
                 for (const auto& k : *(it->second)) {
                     std::cout << "  " << k << std::endl;
                 }
-            } else {
+            }
+            else {
                 std::cerr << "Warning: prefix '" << prefix << "' not found in local_key_vectors." << std::endl;
             }
             InfoFrame* frameRef = get_info_frame_for_prefix(prefix);
@@ -3175,11 +3165,12 @@ void create_config_editor_window(const std::string& config_file) {
     auto update_value = [&](const std::string& prefix, const std::string& key, bool active) {
         std::string full_key = "SHOW_" + prefix + "_" + key;
         std::string label = getNameFromPrefix(prefix);
-        std::map<std::string, bool> values = getMap(label);
+        std::map<std::string, bool>& values = getMap(label);
         auto it = values.find(key);
         if(it != values.end()){
             it->second = active;
         }
+
         std::string col_key = prefix + "_" + key;
         auto it_store = list_stores.find(prefix);
         if (it_store != list_stores.end()) {
@@ -3190,6 +3181,9 @@ void create_config_editor_window(const std::string& config_file) {
                     break;
                 }
             }
+        }
+        for(auto x : values){
+            std::cout << x.first << " " << x.second << std::endl;
         }
         InfoFrame* frameRef = get_info_frame_for_prefix(prefix);
         if (active) {
@@ -3327,7 +3321,7 @@ void create_config_editor_window(const std::string& config_file) {
     };
 
     auto write_values = [](std::ofstream& outfile, const std::string& label, const std::string& prefix){
-        std::map<std::string, bool> values = getMap(label);
+        std::map<std::string, bool>& values = getMap(label);
         std::vector<std::string> keys = getKeys(label);
         for (const std::string& key : keys) {
             auto it = values.find(key);
@@ -3422,7 +3416,16 @@ void create_config_editor_window(const std::string& config_file) {
     outer_box->add(*speed_box);
     outer_box->add(*sensorsBox);
     main_box->add(*outer_box);
-    main_box->pack_start(*save_button, Gtk::PACK_SHRINK);
+    auto save_box = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_VERTICAL);
+    save_box->set_halign(Gtk::ALIGN_CENTER); 
+    save_box->set_valign(Gtk::ALIGN_CENTER);
+
+    save_button->set_size_request(250, 50);
+    save_button->set_hexpand(false); 
+    save_button->set_halign(Gtk::ALIGN_START); 
+
+    save_box->pack_start(*save_button, Gtk::PACK_SHRINK);
+    main_box->add(*save_box);
     scrolledWindow->add(*main_box);
     configWindow->add(*scrolledWindow);
     configWindow->show_all_children();

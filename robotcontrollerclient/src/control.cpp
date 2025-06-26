@@ -2393,6 +2393,91 @@ void videoRowActivated(Gtk::ListBoxRow* listBoxRow){
 }
 
 
+
+Gtk::ScrolledWindow* create_gear_dial(const std::vector<std::string>& gears,
+                                      std::map<std::string, Gtk::Label*>& gear_labels,
+                                      Gtk::Box*& label_container)
+{
+    auto* scroll = new Gtk::ScrolledWindow();
+    scroll->set_policy(Gtk::POLICY_NEVER, Gtk::POLICY_AUTOMATIC);
+    scroll->set_propagate_natural_height(true);
+    scroll->set_size_request(80, 120); // Dial size
+
+    label_container = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 0));
+    scroll->add(*label_container);
+
+    for (const auto& gear : gears) {
+        auto* label = Gtk::manage(new Gtk::Label(gear));
+        label->set_margin_top(8);
+        label->set_margin_bottom(8);
+        label->set_alignment(0.5, 0.5);
+        label->set_markup("<span size='8000' foreground='gray'>" + gear + "</span>");
+
+        gear_labels[gear] = label;
+        label_container->pack_start(*label, Gtk::PACK_SHRINK);
+    }
+
+    return scroll;
+}
+
+
+void highlight_gear_and_scroll(const std::string& current_gear,
+                               const std::vector<std::string>& gears,
+                               const std::map<std::string, Gtk::Label*>& gear_labels,
+                               Gtk::ScrolledWindow* scroll,
+                               Gtk::Box* label_container)
+{
+    int gear_index = 0;
+    for (size_t i = 0; i < gears.size(); ++i) {
+        const auto& gear = gears[i];
+        auto* label = gear_labels.at(gear);
+
+        if (gear == current_gear) {
+            label->set_markup("<span size='12000' weight='bold' background='red' foreground='white'>" + gear + "</span>");
+            gear_index = i;
+        } else {
+            label->set_markup("<span size='8000' foreground='gray'>" + gear + "</span>");
+        }
+    }
+
+    // Scroll so current gear is in the middle
+    auto adj = scroll->get_vadjustment();
+    double row_height = 30.0; // Approximate
+    double new_value = std::max(0.0, gear_index * row_height - scroll->get_height() / 2);
+    adj->set_value(new_value);
+}
+
+std::vector<std::string> gears = {"M", "5", "4", "3", "2", "1"};
+std::map<std::string, Gtk::Label*> gear_labels;
+Gtk::Box* gear_label_box = nullptr;
+Gtk::ScrolledWindow* gear_dial = nullptr;
+std::string currentGear = "3";
+
+void increaseGear(){
+    auto it = std::find(gears.begin(), gears.end(), currentGear);
+    if (it != gears.begin()) {
+        std::string nextGear = *std::prev(it);  // Increase gear
+        std::cout << "New gear: " << nextGear << std::endl;
+        currentGear = nextGear;
+        highlight_gear_and_scroll(currentGear, gears, gear_labels, gear_dial, gear_label_box);
+    } else {
+        std::cout << "Already at highest gear." << std::endl;
+    }
+}
+
+void decreaseGear(){
+    auto it = std::find(gears.begin(), gears.end(), currentGear);
+    if (it != gears.end() && std::next(it) != gears.end()) {
+        std::string nextGear = *std::next(it);  // Decrease gear
+        std::cout << "New gear: " << nextGear << std::endl;
+        currentGear = nextGear;
+        highlight_gear_and_scroll(currentGear, gears, gear_labels, gear_dial, gear_label_box);
+    } else {
+        std::cout << "Already at lowest gear." << std::endl;
+    }
+}
+
+
 // Server address
 struct sockaddr_in serv_addr; 
 socklen_t addr_len = sizeof(serv_addr);
@@ -2620,7 +2705,15 @@ bool on_key_press_event(GdkEventKey* key_event){
             std::cout << "Switched to IP 2: " << current_ip << std::endl;
             return false;
             break;
+        case GDK_KEY_minus:
+            decreaseGear();
+            break;
+        case GDK_KEY_plus:
+            if(key_event->state & GDK_SHIFT_MASK)
+                increaseGear();
+            break;
     }
+
     int messageSize=5;
     uint8_t command=2;// keyboard
     uint8_t message[messageSize];
@@ -2780,11 +2873,7 @@ std::map<std::string, std::vector<std::string>*> local_key_vectors = {
     {"Zed", &local_zed_keys}
 };
 
-// TODO:
-// Issue when the config file is opened
-// The order isn't preserved when the program is restarted
-// After restart, the values are being saved, but the items are being displayed when 
-// they shouldn't be
+
 void create_config_editor_window(const std::string& config_file) {
     configWindow = new Gtk::Window();
     configWindow->set_title("Configuration Editor");
@@ -2797,6 +2886,7 @@ void create_config_editor_window(const std::string& config_file) {
     auto main_box = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_VERTICAL);
     auto grid = Gtk::make_managed<Gtk::Grid>();
     auto save_button = Gtk::make_managed<Gtk::Button>("Save");
+    save_button->set_name("dark_text");
     auto light_color_button = Gtk::make_managed<Gtk::ColorButton>();
     auto dark_color_button = Gtk::make_managed<Gtk::ColorButton>();
     auto file_entry = Gtk::make_managed<Gtk::Entry>();
@@ -3178,20 +3268,36 @@ void create_config_editor_window(const std::string& config_file) {
             for (auto iter = store->children().begin(); iter != store->children().end(); ++iter) {
                 if ((*iter)[columns.col_key] == col_key) {
                     (*iter)[columns.col_active] = active;
+                    auto row = *iter;
+                    Glib::ustring text = row[columns.col_text];
+                    bool active_val = row[columns.col_active];
+                    Glib::ustring key_val = row[columns.col_key];
+                    store->erase(iter);
+                    auto new_iter = store->append();
+                    (*new_iter)[columns.col_text] = text;
+                    (*new_iter)[columns.col_active] = active_val;
+                    (*new_iter)[columns.col_key] = key_val;
                     break;
                 }
             }
         }
-        for(auto x : values){
-            std::cout << x.first << " " << x.second << std::endl;
+        std::string name = getNameFromPrefix(prefix);
+        auto it_vec = local_key_vectors.find(name);
+        if (it_vec != local_key_vectors.end() && it_vec->second) {
+            auto& vec = *(it_vec->second);
+            auto pos = std::find(vec.begin(), vec.end(), key);
+            if (pos != vec.end()) {
+                vec.erase(pos);       // Remove from old position
+            }
+            vec.push_back(key);       // Add to end
         }
         InfoFrame* frameRef = get_info_frame_for_prefix(prefix);
-        if (active) {
-        }
-        else {
-            frameRef->removeItem(key);
-            frameRef->show_all();
-        }
+        frameRef->removeAllItems();
+        std::string messageName = getNameFromPrefix(prefix);
+        BinaryMessage message(messageName);    
+        populateBinaryMessage(prefix, message);
+        addConditionalElements(prefix, message, frameRef);
+        frameRef->show_all();
     };
 
     // Lambda that finds the prefix and then creates a checkbox witht that prefix and
@@ -3342,6 +3448,15 @@ void create_config_editor_window(const std::string& config_file) {
             save_values(key, active);
         }
 
+        talon_keys = local_talon_keys;
+        falcon_keys = local_falcon_keys;
+        linear_keys = local_linear_keys;
+        autonomy_keys = local_autonomy_keys;
+        power_keys = local_power_keys;
+        power2_keys = local_power2_keys;
+        zed_keys = local_zed_keys;
+        communication_keys = local_communication_keys;
+
         write_values(outfile, "Talon", "TALON");
         write_values(outfile, "Falcon", "FALCON");
         write_values(outfile, "Linear", "LINEAR");
@@ -3396,14 +3511,6 @@ void create_config_editor_window(const std::string& config_file) {
                 speedometer->queue_draw();
             }
         }
-        talon_keys = local_talon_keys;
-        falcon_keys = local_falcon_keys;
-        linear_keys = local_linear_keys;
-        autonomy_keys = local_autonomy_keys;
-        power_keys = local_power_keys;
-        power2_keys = local_power2_keys;
-        zed_keys = local_zed_keys;
-        communication_keys = local_communication_keys;
         updateGUI();
     });
     
@@ -3523,6 +3630,7 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
         create_config_editor_window(configFile);
     });
     settingsButton->set_size_request(50, 50);
+    settingsButton->set_name("dark_text");
 
     // Apply CSS
     auto css_provider = Gtk::CssProvider::create();
@@ -3647,9 +3755,19 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
         }, initArmPos, true);
 
         auto cameraBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
-        cameraBox->set_size_request(1600, 1000);
+        if(smallLaptop){
+            cameraBox->set_size_request(800, 500);
+        }
+        else{
+            cameraBox->set_size_request(1600, 1000);
+        }
         videoArea = Gtk::manage(new VideoWidget());
-        videoArea->set_size_request(1600, 1000);
+        if(smallLaptop){
+            videoArea->set_size_request(800, 500);
+        }
+        else{
+            videoArea->set_size_request(1600, 1000);
+        }
         //videoArea->set_hexpand(true);
         //videoArea->set_vexpand(true);
         cameraBox->add(*videoArea);
@@ -3683,6 +3801,10 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
         leftSpeedometer->set_numbers_inside(numbersInside);
         leftSpeedometer->set_numbers_on_ticks(numberTicks);        
         bottomLowerBox->add(*leftSpeedometer);
+
+        gear_dial = create_gear_dial(gears, gear_labels, gear_label_box);
+        bottomLowerBox->add(*gear_dial);
+        highlight_gear_and_scroll("3", gears, gear_labels, gear_dial, gear_label_box);
 
         rightSpeedometer = Gtk::manage(new Speedometer("Right Speedometer"));
         rightSpeedometer->set_size_request(200, 75);
@@ -4454,6 +4576,10 @@ void processArguments(int argc, char** argv){
                 std::cout << "--set_colors: Specifies values to use as background colors. Should have light color, then dark color in" 
                 "format \"#FFFFFF\" \"#000000\""<< std::endl;
                 std::cout << "NOTE: All strings must be enclosed in \" to have them work properly" << std::endl;
+                std::cout << "--set_map: Sets the background map used in the arena" << std::endl;
+                std::cout << "--wsl: Sets the video size to a smaller size" << std::endl;
+                std::cout << "--config_file: Specifies the config file to be used to load the settings" << std::endl;
+                exit(0);
             }
             else if(!strcmp("--init", argv[i])){
                 initVals = true;
@@ -4479,6 +4605,9 @@ void processArguments(int argc, char** argv){
             }
             else if(!strcmp("--set_map", argv[i])){
                 mapUsed = argv[i+1];
+            }
+            else if(!strcmp("--wsl", argv[i])){
+                smallLaptop = true;
             }
             else if(!strcmp("--config_file", argv[i])){
                 parseConfigFile(argv[i+1]);
@@ -4510,6 +4639,7 @@ int main(int argc, char** argv) {
     //Setup GUI
     Glib::RefPtr<Gtk::Application> application = Gtk::Application::create(argc, argv, "edu.uark.razorbotz");
     processArguments(argc, argv);
+    checkSize();
     setupGUI(application);
     if(!noArena)
         initArenaWindow();
@@ -4528,31 +4658,53 @@ int main(int argc, char** argv) {
         SDL_Log("Unable to initialize SDL: %s", SDL_GetError());
         return 1;
     }
+
+    if(SDL_Init(SDL_INIT_GAMECONTROLLER) != 0){
+        SDL_Log("Unable to initialize SDL: %s", SDL_GetError());
+        return 1;
+    }
     //-------------------------------------------------------------------------Initializing joystick(s)--------------------------------------------------------------------------
     int joystickCount=SDL_NumJoysticks();
     std::cout << "number of joysticks " << joystickCount << std::endl;
     SDL_Joystick* joystickList[joystickCount];
+    std::vector<SDL_GameController*> controllers;
 
     if(joystickCount>0){
         axisEventList = new std::vector<std::vector<AxisEvent*>*>(joystickCount);
         for(int joystickIndex=0;joystickIndex<joystickCount;joystickIndex++) {
 
-            joystickList[joystickIndex]=SDL_JoystickOpen(joystickIndex);
-
-            if (joystickList[joystickIndex]) {
-                axisEventList->at(joystickIndex) = new std::vector<AxisEvent*>(SDL_JoystickNumAxes(joystickList[joystickIndex]));
-                for(int axisIndex=0; axisIndex < SDL_JoystickNumAxes(joystickList[joystickIndex]); axisIndex++){
-                    axisEventList->at(joystickIndex)->at(axisIndex) = new AxisEvent();
+            if (SDL_IsGameController(joystickIndex)) {
+                SDL_GameController* controller = SDL_GameControllerOpen(joystickIndex);
+                if (controller) {
+                    controllers.push_back(controller);
+                    std::cout << "Opened controller: " << SDL_GameControllerName(controller) << std::endl;
+                } else {
+                    std::cerr << "Failed to open controller " << joystickIndex << std::endl;
                 }
-                std::cout << "Opened Joystick " << joystickIndex << std::endl;
-                std::cout << "   Name: " << SDL_JoystickName(joystickList[joystickIndex]) << std::endl;
-                std::cout << "   Number of Axes: " << SDL_JoystickNumAxes(joystickList[joystickIndex]) << std::endl;
-                std::cout << "   Number of Buttons: " << SDL_JoystickNumButtons(joystickList[joystickIndex]) << std::endl;
-                std::cout << "   Number of Balls: " << SDL_JoystickNumBalls(joystickList[joystickIndex]) << std::endl;
-            }
-            else {
-                (*axisEventList)[joystickIndex] = new std::vector<AxisEvent*>(0);
-                std::cout << "Couldn't open Joystick " << joystickIndex << std::endl;
+            } else {
+                joystickList[joystickIndex] = SDL_JoystickOpen(joystickIndex);
+
+                if (joystickList[joystickIndex]) {
+                    int numAxes = SDL_JoystickNumAxes(joystickList[joystickIndex]);
+
+                    // Allocate inner vector for this joystick
+                    (*axisEventList)[joystickIndex] = new std::vector<AxisEvent*>(numAxes);
+
+                    for (int axisIndex = 0; axisIndex < numAxes; ++axisIndex) {
+                        (*axisEventList)[joystickIndex]->at(axisIndex) = new AxisEvent();
+                    }
+
+                    std::cout << "Opened Joystick " << joystickIndex << std::endl;
+                    std::cout << "   Name: " << SDL_JoystickName(joystickList[joystickIndex]) << std::endl;
+                    std::cout << "   Number of Axes: " << numAxes << std::endl;
+                    std::cout << "   Number of Buttons: " << SDL_JoystickNumButtons(joystickList[joystickIndex]) << std::endl;
+                    std::cout << "   Number of Balls: " << SDL_JoystickNumBalls(joystickList[joystickIndex]) << std::endl;
+                }
+                else {
+                    // Open failed: assign empty vector
+                    (*axisEventList)[joystickIndex] = new std::vector<AxisEvent*>(0);
+                    std::cout << "Couldn't open Joystick " << joystickIndex << std::endl;
+                }
             }
         }
     }
@@ -4756,6 +4908,19 @@ int main(int argc, char** argv) {
 
                     break;
                 }
+
+                case SDL_CONTROLLERAXISMOTION:
+                    std::cout << "Controller " << event.caxis.which 
+                          << " axis " << (int)event.caxis.axis 
+                          << " value " << event.caxis.value << std::endl;
+                    break;
+
+                case SDL_CONTROLLERBUTTONDOWN:
+                case SDL_CONTROLLERBUTTONUP:
+                    std::cout << "Controller " << event.cbutton.which 
+                            << " button " << (int)event.cbutton.button 
+                            << (event.type == SDL_CONTROLLERBUTTONDOWN ? " pressed" : " released") << std::endl;
+                    break;
 
                 default:
                     break;

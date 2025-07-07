@@ -45,7 +45,6 @@
 TODO: 
 Fix crash on video start
 Fix random seg faults
-Add ability to switch between Orin and Nano
 Map Issues:
 Cosmic map isn't drawing robot in correct location
 Robot isn't drawing in correct location, need to offset for camera position
@@ -56,7 +55,7 @@ Robot isn't drawing in correct location, need to offset for camera position
 #define VIDEO_PORT 31338
 #define ORIN_IP "192.168.1.6"
 #define NANO_IP "192.168.1.5"
-
+bool useOrin = true;
 
 float parseFloat(const uint8_t* array){
     uint32_t axisYInteger=0;
@@ -1555,6 +1554,25 @@ void setBackgroundColors(Gdk::RGBA color){
         lowerFalcon4Circle->set_background_color(color);
 }
 
+InfoFrame* getInfoFrame(std::string label){
+    for (InfoFrame* frame : infoFrameList) {
+        if (frame->get_label() != label) continue;
+        return frame;
+    }
+    return nullptr;
+}
+
+
+Gtk::Widget* get_flowbox_child_for(Gtk::FlowBox& flowbox, Gtk::Widget* target_widget) {
+    for (auto* child : flowbox.get_children()) {
+        auto* flowbox_child = dynamic_cast<Gtk::FlowBoxChild*>(child);
+        if (!flowbox_child) continue;
+
+        if (flowbox_child->get_child() == target_widget)
+            return flowbox_child;
+    }
+    return nullptr;
+}
 
 std::string darkBackgroundColor = "#0b1a21";
 std::string lightBackgroundColor = "#f0faf2";
@@ -2529,7 +2547,10 @@ void connectToServer(){
 
     serv_addr.sin_family = AF_INET; 
     serv_addr.sin_port = htons(PORT);
-    serv_addr.sin_addr.s_addr = inet_addr(ORIN_IP);
+    if(useOrin)
+        serv_addr.sin_addr.s_addr = inet_addr(ORIN_IP);
+    else
+        serv_addr.sin_addr.s_addr = inet_addr(NANO_IP);
 
     char buffer[2048] = {0}; 
     //Create Socket
@@ -2559,7 +2580,11 @@ void connectToServer(){
     
     bytesRead = recvfrom( sock , buffer, 2048, 0, (struct sockaddr *)&serv_addr, &addr_len);
     std::cout << "Bytes read: " << bytesRead << std::endl;
-    std::string addressString = ORIN_IP;
+    std::string addressString = "";
+    if(useOrin)
+        addressString = ORIN_IP;
+    else
+        addressString = NANO_IP;
     ipAddressEntry->set_text(addressString);
     initialized = true;
 }
@@ -2765,7 +2790,9 @@ bool on_key_press_event(GdkEventKey* key_event){
 }
 
 
-Gtk::Box* create_labeled_box(const Glib::ustring& label_text, CircleDrawingArea*& out_circle, bool right = false) {
+Gtk::EventBox* create_labeled_box(const Glib::ustring& label_text, CircleDrawingArea*& out_circle, bool right = false) {
+    auto event_box = Gtk::manage(new Gtk::EventBox());
+
     auto box = Gtk::manage(new BorderedBox(Gtk::ORIENTATION_HORIZONTAL, 5));
     box->set_size_request(300, 75);
 
@@ -2790,26 +2817,65 @@ Gtk::Box* create_labeled_box(const Glib::ustring& label_text, CircleDrawingArea*
         box->add(*label);
     }   
 
-    return box;
+    event_box->add(*box);
+    event_box->add_events(Gdk::BUTTON_PRESS_MASK);
+    event_box->set_visible_window(false);
+
+    return event_box;
 }
 
 
-Gtk::Box* create_box(CircleDrawingArea*& out_circle, bool right = false) {
-    auto box = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
-    box->set_size_request(75, 75);
+
+Gtk::EventBox* create_box(const Glib::ustring& label_text, CircleDrawingArea*& out_circle, bool right = false) {
+    auto event_box = Gtk::manage(new Gtk::EventBox());
+
+    auto box = Gtk::manage(new BorderedBox(Gtk::ORIENTATION_HORIZONTAL, 5));
+    box->set_size_request(200, 75);
+
+    auto label = Gtk::manage(new Gtk::Label(label_text));
+    label->set_hexpand(true);
+
+    Pango::FontDescription font;
+    font.set_size(20 * Pango::SCALE);
+    label->override_font(font);
 
     out_circle = Gtk::manage(new CircleDrawingArea());
     out_circle->set_size_request(75, 75);
     out_circle->set_hexpand(false);
     out_circle->set_halign(Gtk::ALIGN_CENTER);
 
-    box->add(*out_circle);
+    if(right){
+        box->add(*label);
+        box->add(*out_circle);
+    }
+    else{
+        box->add(*out_circle);
+        box->add(*label);
+    }   
 
-    return box;
+    event_box->add(*box);
+    event_box->add_events(Gdk::BUTTON_PRESS_MASK);
+    event_box->set_visible_window(false);
+
+    return event_box;
 }
 
 
-Gtk::Box* create_motor_column(std::vector<std::pair<Glib::ustring, CircleDrawingArea**>> items, void (*init_hook)(), bool right = false) {
+bool test_fun(GdkEventButton* event, const std::string& id) {
+    if (event->type == GDK_2BUTTON_PRESS) {
+        std::cout << "Double-click detected!" << std::endl;
+        auto target_infoframe = getInfoFrame(id);
+        Gtk::FlowBoxChild* flowbox_child = dynamic_cast<Gtk::FlowBoxChild*>(get_flowbox_child_for(*sensorBox, target_infoframe));
+        if (flowbox_child) {
+            sensorBox->select_child(*flowbox_child);
+        }
+        return true;
+    }
+    return false;
+}
+
+
+Gtk::Box* create_motor_column(std::vector<std::pair<Glib::ustring, CircleDrawingArea**>> items, void (*init_hook)(), std::vector<std::string> labels, bool right = false) {
     auto column = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
     column->set_size_request(300, 300);
     column->set_hexpand(false);
@@ -2817,21 +2883,37 @@ Gtk::Box* create_motor_column(std::vector<std::pair<Glib::ustring, CircleDrawing
 
     for (size_t i = 0; i < items.size(); ++i) {
         if (i == 2 && init_hook) init_hook();
-        column->add(*create_labeled_box(items[i].first, *items[i].second, right));
+        auto box = create_labeled_box(items[i].first, *items[i].second, right);
+        std::string id = labels[i];
+        box->signal_button_press_event().connect(
+            [id](GdkEventButton* event) -> bool {
+                return test_fun(event, id);
+            },
+            false
+        );
+        column->add(*box);
     }
 
     return column;
 }
 
 
-Gtk::Box* create_lower_motor_column(std::vector<std::pair<Glib::ustring, CircleDrawingArea**>> items, bool right = false) {
+Gtk::Box* create_lower_motor_column(std::vector<std::pair<Glib::ustring, CircleDrawingArea**>> items, std::vector<std::string> labels, bool right = false) {
     auto column = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
     column->set_size_request(200, 200);
     column->set_hexpand(false);
     column->set_vexpand(false);
 
     for (size_t i = 0; i < items.size(); ++i) {
-        column->add(*create_box(*items[i].second));
+        auto box = create_labeled_box(items[i].first, *items[i].second, right);
+        std::string id = labels[i];
+        box->signal_button_press_event().connect(
+            [id](GdkEventButton* event) -> bool {
+                return test_fun(event, id);
+            },
+            false
+        );
+        column->add(*box);
     }
 
     return column;
@@ -2925,7 +3007,10 @@ std::map<std::string, std::vector<std::string>*> local_key_vectors = {
 };
 
 
+bool allowConfig = true;
+
 void create_config_editor_window(const std::string& config_file) {
+    allowConfig = false;
     configWindow = new Gtk::Window();
     configWindow->set_title("Configuration Editor");
     configWindow->set_default_size(1000, 600);
@@ -3037,6 +3122,8 @@ void create_config_editor_window(const std::string& config_file) {
         return (it != frame_map.end()) ? it->second : talonFrame;
     };
 
+    // Lambda to reset the order of the items in the frame
+    // TODO: Update draggable items and checkboxes
     auto reset_frame = [&](std::string prefix){
         InfoFrame* frameRef = get_info_frame_for_prefix(prefix);
         frameRef->removeAllItems();
@@ -3545,6 +3632,7 @@ void create_config_editor_window(const std::string& config_file) {
     configWindow->signal_hide().connect([]() {
         std::cout << "Cleared bool_buttons" << std::endl;
         bool_buttons.clear();
+        allowConfig = true;
     });
 
     main_box->pack_start(*grid);
@@ -3572,7 +3660,6 @@ void create_config_editor_window(const std::string& config_file) {
     configWindow->show_all_children();
     configWindow->show_all();
 }
-
 
 void setupGUI(Glib::RefPtr<Gtk::Application> application) {
     initialize_maps();
@@ -3621,7 +3708,10 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
     ipAddressEntry = Gtk::manage(new Gtk::Entry());
     ipAddressEntry->set_can_focus(true);
     ipAddressEntry->set_editable(true);
-    ipAddressEntry->set_text("192.168.1.6");
+    if(useOrin)
+        ipAddressEntry->set_text(ORIN_IP);
+    else
+        ipAddressEntry->set_text(NANO_IP);
     ipAddressEntry->set_name("dark_text");
 
     // Create connection button, single click logic to connectOrDisconnect function
@@ -3661,7 +3751,8 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
     settingsButton->set_image(*image);
     settingsButton->set_tooltip_text("Open Settings");
     settingsButton->signal_clicked().connect([]() {
-        create_config_editor_window(configFile);
+        if(allowConfig)
+            create_config_editor_window(configFile);
     });
     settingsButton->set_size_request(50, 50);
     settingsButton->set_name("dark_text");
@@ -3705,7 +3796,10 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
     videoIPAddressEntry=Gtk::manage(new Gtk::Entry());
     videoIPAddressEntry->set_can_focus(true);
     videoIPAddressEntry->set_editable(true);
-    videoIPAddressEntry->set_text("192.168.1.6");
+    if(useOrin)
+        videoIPAddressEntry->set_text(ORIN_IP);
+    else
+        videoIPAddressEntry->set_text(NANO_IP);
     videoIPAddressEntry->set_name("dark_text");
 
     videoConnectButton=Gtk::manage(new Gtk::Button("Connect"));
@@ -3786,7 +3880,10 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
         innerLeftBox = create_motor_column({
             {"Arm", &talon1Circle},
             {"Bucket", &talon3Circle}
-        }, initArmPos, true);
+            }, initArmPos,
+            {"Talon 1", "Talon 3"},
+            true 
+        );
 
         auto cameraBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
         if(smallLaptop){
@@ -3812,7 +3909,10 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
             {"Falcon 2", &falcon2Circle},
             {"Falcon 3", &falcon3Circle},
             {"Falcon 4", &falcon4Circle}
-        }, initBucketPos);
+            }, initBucketPos,
+            {"Falcon 1", "Falcon 2", "Falcon 3", "Falcon 4"},
+            false
+        );
 
         bottomInnerBox->add(*innerLeftBox);
         bottomInnerBox->add(*innerMiddleBox);
@@ -3825,7 +3925,10 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
         lowerLeftBox  = create_lower_motor_column({
             {"Falcon 1", &lowerFalcon1Circle},
             {"Falcon 2", &lowerFalcon2Circle}
-        }, true);
+            },
+            {"Falcon 1", "Falcon 2"},
+            true
+        );
 
         bottomLowerBox->add(*lowerLeftBox);
 
@@ -3850,7 +3953,8 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
         lowerRightBox  = create_lower_motor_column({
             {"Falcon 3", &lowerFalcon3Circle},
             {"Falcon 4", &lowerFalcon4Circle}
-        });
+            },
+            {"Falcon 3", "Falcon 4"});
 
         bottomLowerBox->add(*lowerRightBox);
 
@@ -4645,8 +4749,12 @@ void processArguments(int argc, char** argv){
             }
             else if(!strcmp("--config_file", argv[i])){
                 parseConfigFile(argv[i+1]);
-                create_config_editor_window(argv[i+1]);
+                if(allowConfig)
+                    create_config_editor_window(argv[i+1]);
                 return;
+            }
+            else if(!strcmp("--nano", argv[i])){
+                useOrin = false;
             }
         }
     }

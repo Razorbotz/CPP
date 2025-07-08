@@ -145,6 +145,7 @@ bool videoConnected=false;
 Gtk::Window* arenaWindow;
 Gtk::Window* sensorsWindow;
 Gtk::Window* configWindow;
+Gtk::Window* motorWindow;
 int monitor_count = 0;
 
 std::string configFile = "config.txt";
@@ -699,6 +700,7 @@ CircleDrawingArea* lowerFalcon4Circle;
 
 // TODO: Modify this to be more descriptive and make the graphs better
 // Not entirely sure what all that will entail
+// TODO: Fix potentiometer not displaying correctly
 class MultiMotorGraph : public Gtk::Box {
     public:
         enum GraphType {
@@ -856,7 +858,7 @@ class MultiMotorGraph : public Gtk::Box {
             if (graphType == OUTPUT_PERCENT || graphType == SPEED) {
                 step = 0.1f; // 25% increments for output and speed
             } else if (graphType == POTENTIOMETER) {
-                step = 1.0f; // 1V increments for potentiometer
+                step = 100.0f; // 1V increments for potentiometer
             } else {
                 step = (range > 1000) ? 100.0f :
                       (range > 20) ? 5.0f : 
@@ -974,7 +976,15 @@ public:
           num_minor_ticks_per_segment_(4), // 4 minor ticks = 5 small intervals
           display_speed_(true),
           numbers_inside_(true),
-          numbers_on_ticks_(true)
+          numbers_on_ticks_(true),
+          angle_for_zero_(135.0),
+          angle_for_sweep_(270.0),
+          low_warning_(false),
+          low_warning_thresh_(0.2),
+          high_warning_(false),
+          high_warning_thresh_(0.2),
+          use_text_label_(false),
+          text_label_("Label")
     {
         // Set a minimum size for the widget
         set_size_request(150, 150);
@@ -1045,12 +1055,44 @@ public:
         numbers_on_ticks_ = numbers_on_ticks;
     }
 
+    void set_angle_for_zero(double angle_for_zero){
+        angle_for_zero_ = angle_for_zero;
+    }
+    
+    void set_angle_for_sweep(double angle_for_sweep){
+        angle_for_sweep_ = angle_for_sweep;
+    }
+
+    void set_low_warning(bool warning){
+        low_warning_ = warning;
+    }
+
+    void set_low_warning_thresh(double thresh){
+        low_warning_thresh_ = thresh;
+    }
+
+    void set_high_warning(bool warning){
+        high_warning_ = warning;
+    }
+
+    void set_high_warning_thresh(double thresh){
+        high_warning_thresh_ = thresh;
+    }
+
+    void set_use_text_label(bool text_label){
+        use_text_label_ = text_label;
+    }
+
+    void set_text_label(std::string label){
+        text_label_ = label;
+    }
+
 
 protected:
     bool on_draw(const Cairo::RefPtr<Cairo::Context>& cr) override {
         Gtk::Allocation alloc = get_allocation();
-        const int w = alloc.get_width();
-        const int h = alloc.get_height();
+        const int w = alloc.get_width() - 15;
+        const int h = alloc.get_height() - 15;
 
         const double smallest_dim = std::min(w, h);
         const double radius = smallest_dim / 2.5; // Main radius for ticks
@@ -1058,10 +1100,8 @@ protected:
         const double cy = h / 2.0; // Center of the gauge
 
         // Define gauge angles (270-degree sweep, clockwise)
-        // 0 speed at 135 degrees (top-left-ish, pointing towards 10 o'clock direction)
-        // Max speed at 135 + 270 = 405 degrees = 45 degrees (top-right-ish, pointing towards 2 o'clock direction)
-        const double angle_for_zero_value_rad = 135.0 * M_PI / 180.0;
-        const double total_sweep_angle_rad = 270.0 * M_PI / 180.0;
+        const double angle_for_zero_value_rad = angle_for_zero_ * M_PI / 180.0;
+        const double total_sweep_angle_rad = angle_for_sweep_ * M_PI / 180.0;
 
         // Colors
         Gdk::RGBA color_dial_bg;
@@ -1080,6 +1120,8 @@ protected:
         color_speed_text_normal.set_rgba(0.8, 0.8, 1.0, 1.0); // Light blueish
         Gdk::RGBA color_speed_text_reverse;
         color_speed_text_reverse.set_rgba(1.0, 0.8, 0.8, 1.0); // Light reddish
+        Gdk::RGBA label_text;
+        label_text.set_rgba(0.1, 0.1, 0.1, 1.0);
 
 
         // 1. Bezel
@@ -1096,11 +1138,35 @@ protected:
         cr->stroke();
 
         // 3. Ticks and Labels
-        cr->set_source_rgba(color_tick_mark.get_red(), color_tick_mark.get_green(), color_tick_mark.get_blue(), color_tick_mark.get_alpha());
         const double major_tick_len = 10.0;
         const double minor_tick_len = 5.0;
         const double text_radius_offset = 20.0; // How far from ticks to place text
 
+        // Draw red arc for warning zone
+        auto draw_warning_arc = [&](double danger_speed_start, double danger_speed_end) {
+            if (danger_speed_start < danger_speed_end && max_speed_ > min_speed_) {
+                double ratio_start = (danger_speed_start - min_speed_) / (max_speed_ - min_speed_);
+                double ratio_end = (danger_speed_end - min_speed_) / (max_speed_ - min_speed_);
+
+                double angle_start = angle_for_zero_value_rad + ratio_start * total_sweep_angle_rad;
+                double angle_end = angle_for_zero_value_rad + ratio_end * total_sweep_angle_rad;
+
+                cr->set_line_width(major_tick_len * 1.5);
+                cr->set_source_rgb(1.0, 0.0, 0.0);
+                cr->arc(cx, cy, radius - major_tick_len / 2.0, angle_start, angle_end);
+                cr->stroke();
+            }
+        };
+
+        if (low_warning_) {
+            draw_warning_arc(min_speed_, min_speed_ + low_warning_thresh_ * (max_speed_ - min_speed_));
+        }
+        if (high_warning_) {
+            draw_warning_arc(max_speed_ - high_warning_thresh_ * (max_speed_ - min_speed_), max_speed_);
+        }
+
+
+        cr->set_source_rgba(color_tick_mark.get_red(), color_tick_mark.get_green(), color_tick_mark.get_blue(), color_tick_mark.get_alpha());
         for (int i = 0; i <= num_major_divisions_; ++i) {
             double tick_ratio = static_cast<double>(i) / num_major_divisions_;
             double angle = angle_for_zero_value_rad + tick_ratio * total_sweep_angle_rad;
@@ -1195,30 +1261,43 @@ protected:
 
 
         // 6. Speed Text Display
-        std::ostringstream speed_stream;
-        speed_stream << std::fixed << std::setprecision(1) << speed_;
-        std::string speed_str = speed_stream.str();
-        if (reverse_) {
-            speed_str += " R";
-            cr->set_source_rgba(color_speed_text_reverse.get_red(), color_speed_text_reverse.get_green(), color_speed_text_reverse.get_blue(), color_speed_text_reverse.get_alpha());
-        } else {
+        if(!use_text_label_){
+            std::ostringstream speed_stream;
+            speed_stream << std::fixed << std::setprecision(1) << speed_;
+            std::string speed_str = speed_stream.str();
+            if (reverse_) {
+                speed_str += " R";
+                cr->set_source_rgba(color_speed_text_reverse.get_red(), color_speed_text_reverse.get_green(), color_speed_text_reverse.get_blue(), color_speed_text_reverse.get_alpha());
+            } else {
+                cr->set_source_rgba(color_speed_text_normal.get_red(), color_speed_text_normal.get_green(), color_speed_text_normal.get_blue(), color_speed_text_normal.get_alpha());
+            }
+
+            cr->select_font_face("Sans", Cairo::FONT_SLANT_NORMAL, Cairo::FONT_WEIGHT_BOLD);
+            cr->set_font_size(std::max(14.0, smallest_dim / 12.0));
+
+            Cairo::TextExtents speed_extents;
+            cr->get_text_extents(speed_str, speed_extents);
+            cr->move_to(cx - (speed_extents.width / 2.0 + speed_extents.x_bearing), cy + radius * 0.5); // Position below center
+            if(display_speed_)
+                cr->show_text(speed_str);
+        }
+        else{
             cr->set_source_rgba(color_speed_text_normal.get_red(), color_speed_text_normal.get_green(), color_speed_text_normal.get_blue(), color_speed_text_normal.get_alpha());
+
+            cr->select_font_face("Sans", Cairo::FONT_SLANT_NORMAL, Cairo::FONT_WEIGHT_BOLD);
+            cr->set_font_size(std::max(14.0, smallest_dim / 12.0));
+
+            Cairo::TextExtents speed_extents;
+            cr->get_text_extents(text_label_, speed_extents);
+            cr->move_to(cx - (speed_extents.width / 2.0 + speed_extents.x_bearing), cy + radius * 0.5); // Position below center
+            if(display_speed_)
+                cr->show_text(text_label_);
         }
 
-        cr->select_font_face("Sans", Cairo::FONT_SLANT_NORMAL, Cairo::FONT_WEIGHT_BOLD);
-        cr->set_font_size(std::max(14.0, smallest_dim / 12.0));
-
-        Cairo::TextExtents speed_extents;
-        cr->get_text_extents(speed_str, speed_extents);
-        cr->move_to(cx - (speed_extents.width / 2.0 + speed_extents.x_bearing), cy + radius * 0.5); // Position below center
-        if(display_speed_)
-            cr->show_text(speed_str);
-
-
         // 7. Main Label (e.g., "Left Speed")
-        cr->set_source_rgba(color_text.get_red(), color_text.get_green(), color_text.get_blue(), color_text.get_alpha());
+        cr->set_source_rgba(label_text.get_red(), label_text.get_green(), label_text.get_blue(), label_text.get_alpha());
         cr->select_font_face("Sans", Cairo::FONT_SLANT_NORMAL, Cairo::FONT_WEIGHT_NORMAL);
-        cr->set_font_size(std::max(12.0, smallest_dim / 15.0));
+        cr->set_font_size(std::max(16.0, smallest_dim / 15.0));
         Cairo::TextExtents label_extents;
         cr->get_text_extents(label_, label_extents);
         cr->move_to(cx - (label_extents.width / 2.0 + label_extents.x_bearing), cy + radius + 15 + label_extents.height); // Position below gauge
@@ -1238,6 +1317,14 @@ private:
     bool display_speed_;
     bool numbers_inside_;
     bool numbers_on_ticks_;
+    double angle_for_zero_;
+    double angle_for_sweep_;
+    bool low_warning_;
+    double low_warning_thresh_;
+    bool high_warning_;
+    double high_warning_thresh_;
+    bool use_text_label_;
+    std::string text_label_;
 };    
 
 Speedometer* leftSpeedometer;
@@ -1245,6 +1332,15 @@ Speedometer* rightSpeedometer;
 bool displaySpeed = true;
 bool numbersInside = true;
 bool numberTicks = true;
+
+std::string motorDisplayed = "Talon 1";
+Speedometer* voltageDial;
+Speedometer* temperatureDial;
+DrawingArea* positionDial;
+Speedometer* percentDial;
+Speedometer* velocityDial;
+Speedometer* currentDial;
+bool displayMotor = false;
 
 
 extern "C" void destroy_pixbuf_data(const guint8* data) {
@@ -1890,6 +1986,39 @@ std::vector<std::string> getKeys(const std::string& label) {
 }
 
 
+void updateMotor(std::string label, const std::vector<Element>& elements) {
+    if(label != motorDisplayed)
+        return;
+    
+    for (const auto& element : elements) {
+        if (element.label == "Bus Voltage") {
+            float voltage = element.data.front().uint16 / 100.0f;
+            voltageDial->set_speed((double)voltage);
+        }
+        else if(element.label == "Output Current"){
+            float current = element.data.front().uint16 / 100.0f;
+            currentDial->set_speed((double)current);
+        }
+        else if(element.label == "Output Percent"){
+            float percent = element.data.front().float32;
+            percentDial->set_speed((double)percent);
+        }
+        else if(element.label == "Temperature"){
+            int temperature = element.data.front().uint16;
+            temperatureDial->set_speed((double)temperature);
+        }
+        else if(element.label == "Sensor Position"){
+            int pos = element.data.front().uint16;
+            positionDial->set_height_ratio((920 - pos) / 920.0);
+        }
+        else if(element.label == "Sensor Velocity"){
+            int pos = element.data.front().uint16;
+            velocityDial->set_speed((double)pos);
+        }
+    }
+}
+
+
 void handleGenericElements(std::string label, InfoFrame* frame, const std::vector<Element>& elements) {
     std::map<std::string, bool>& values = getMap(label);
     for (const auto& element : elements) {
@@ -1981,6 +2110,113 @@ void addElementToInfoFrame(std::string label, InfoFrame* frame, const Element& e
     addElementToInfoFrame(frame, element);
 }
 
+bool allowMotorsDoubleClick = true;
+
+
+Speedometer* createDial(std::string label, double min_speed, double max_speed, 
+                        int major_divisions, int minor_ticks, double zero_angle, double sweep){
+    auto speedometer = Gtk::manage(new Speedometer(label));
+    speedometer->set_size_request(300, 300);
+    speedometer->set_display_speed(displaySpeed);
+    speedometer->set_numbers_inside(numbersInside);
+    speedometer->set_numbers_on_ticks(numberTicks);
+    speedometer->set_min_speed(min_speed);
+    speedometer->set_max_speed(max_speed);
+    speedometer->set_num_major_divisions(major_divisions);
+    speedometer->set_num_minor_ticks_per_segment(minor_ticks);
+    speedometer->set_angle_for_zero(zero_angle);
+    speedometer->set_angle_for_sweep(sweep);
+    speedometer->set_hexpand(false);
+    return speedometer;
+}
+
+// TODO: Figure out what information should be displayed here and 
+// how it should be displayed
+void create_motor_detail_window(const std::string& label){
+    motorDisplayed = label;
+    motorWindow = new Gtk::Window();
+    std::string title = label + " Details";
+    motorWindow->set_title(title);
+    motorWindow->set_default_size(900, 900);
+    auto outerBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
+    auto upperBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
+    auto lowerBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
+
+    voltageDial = createDial("Voltage", 14.0, 17.0, 3, 4, 210.0, 120.0);
+    voltageDial->set_speed(16.0);
+    voltageDial->set_low_warning(true);
+    voltageDial->set_low_warning_thresh(0.333);
+    voltageDial->set_use_text_label(true);
+    voltageDial->set_text_label("Volts DC");
+    upperBox->add(*voltageDial);
+
+    temperatureDial = createDial("Temperature", 20.0, 100.0, 8, 4, 180.0, 180.0);
+    temperatureDial->set_speed(45.0);
+    temperatureDial->set_high_warning(true);
+    temperatureDial->set_high_warning_thresh(0.25);
+    temperatureDial->set_use_text_label(true);
+    temperatureDial->set_text_label("* C");
+    upperBox->add(*temperatureDial);
+
+    if(label == "Talon 1" || label == "Talon 3"){
+        auto positionBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
+        positionDial = Gtk::manage(new DrawingArea());
+        positionDial->set_size_request(40, 250);
+        positionDial->set_hexpand(true);
+        positionDial->set_halign(Gtk::ALIGN_CENTER);
+        positionDial->show();
+        positionDial->set_height_ratio(0.5);
+        positionBox->add(*positionDial);
+        auto positionLabel = Gtk::manage(new Gtk::Label("Position"));
+        positionBox->add(*positionLabel);
+        upperBox->add(*positionBox);
+    }
+    
+
+    percentDial = createDial("Output Percent", 0.0, 100.0, 10, 4, 135.0, 270.0);
+    percentDial->set_speed(45.0);
+    percentDial->set_high_warning(true);
+    percentDial->set_high_warning_thresh(0.1);
+    percentDial->set_use_text_label(true);
+    percentDial->set_text_label("% Power");
+    lowerBox->add(*percentDial);
+
+    velocityDial = createDial("Velocity", 0.0, 10.0, 10, 4, 135.0, 270.0);
+    velocityDial->set_speed(5.0);
+    lowerBox->add(*velocityDial);
+
+    currentDial = createDial("Output Current", 0.0, 100.0, 10, 4, 135.0, 270.0);
+    currentDial->set_speed(45.0);
+    currentDial->set_high_warning(true);
+    currentDial->set_high_warning_thresh(0.25);
+    currentDial->set_use_text_label(true);
+    currentDial->set_text_label("Amps");
+    lowerBox->add(*currentDial);
+
+    outerBox->add(*upperBox);
+    outerBox->add(*lowerBox);
+
+    motorWindow->add(*outerBox);
+
+    motorWindow->signal_hide().connect([]() {
+        allowMotorsDoubleClick = true;
+    });
+
+    motorWindow->show_all_children();
+    motorWindow->show_all();
+}
+
+bool onMotorClick(GdkEventButton* event, const std::string& label){
+    if(!allowMotorsDoubleClick)
+        return false;
+    if (event->type == GDK_2BUTTON_PRESS) {
+        std::cout << "Double-click detected on " << label << std::endl;
+        allowMotorsDoubleClick = false;
+        create_motor_detail_window(label);
+        return true;
+    }
+    return false;
+}
 
 void updateGUI(BinaryMessage& message) {
     std::string label = message.getLabel();
@@ -2027,7 +2263,20 @@ void updateGUI(BinaryMessage& message) {
         addElementToInfoFrame(infoFrame, element);
     }
 
-    sensorBox->add(*infoFrame);
+    Gtk::EventBox* frameBox = Gtk::manage(new Gtk::EventBox());
+    frameBox->add(*infoFrame);
+    frameBox->show_all();
+    if(label == "Talon 1" || label == "Talon 3" ||
+       label == "Falcon 1" || label == "Falcon 2" || label == "Falcon 3" || label == "Falcon 4"){
+        frameBox->signal_button_press_event().connect(
+            [label](GdkEventButton* event) -> bool {
+                return onMotorClick(event, label);
+            },
+            false
+        );
+    }
+
+    sensorBox->add(*frameBox);
     infoFrame->show_all();
 }
 
@@ -2861,7 +3110,7 @@ Gtk::EventBox* create_box(const Glib::ustring& label_text, CircleDrawingArea*& o
 }
 
 
-bool test_fun(GdkEventButton* event, const std::string& id) {
+bool onClickEvent(GdkEventButton* event, const std::string& id) {
     if (event->type == GDK_2BUTTON_PRESS) {
         std::cout << "Double-click detected!" << std::endl;
         auto target_infoframe = getInfoFrame(id);
@@ -2887,7 +3136,7 @@ Gtk::Box* create_motor_column(std::vector<std::pair<Glib::ustring, CircleDrawing
         std::string id = labels[i];
         box->signal_button_press_event().connect(
             [id](GdkEventButton* event) -> bool {
-                return test_fun(event, id);
+                return onClickEvent(event, id);
             },
             false
         );
@@ -2909,7 +3158,7 @@ Gtk::Box* create_lower_motor_column(std::vector<std::pair<Glib::ustring, CircleD
         std::string id = labels[i];
         box->signal_button_press_event().connect(
             [id](GdkEventButton* event) -> bool {
-                return test_fun(event, id);
+                return onClickEvent(event, id);
             },
             false
         );
@@ -4057,6 +4306,7 @@ void initSensorsWindow() {
     linearTab->add(*linearPotentiometerGraph);
     tabs->append_page(*linearTab, "Linear Actuators");
 
+    // Tab 4: Sensors Box
     Gtk::Box* sensorsTab = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
     sensorsTab->property_margin().set_value(5);
     sensorBox = Gtk::manage(new Gtk::FlowBox());
@@ -4064,6 +4314,13 @@ void initSensorsWindow() {
     sensorsTab->add(*sensorBox);
 
     tabs->append_page(*sensorsTab, "Sensors");
+
+    // Tab 5: Diagnostics Window
+    // TODO: Figure out what information should be displayed here and add it
+    Gtk::Box* diagnosticsTab = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
+    diagnosticsTab->property_margin().set_value(5);
+
+    tabs->append_page(*diagnosticsTab, "Diagnostics");
 
     // Add everything to main window
     mainBox->add(*tabs);
@@ -4625,7 +4882,8 @@ void videoMain(){
 }
 
 
-/* Function to check whether the old laptop is running the control program */
+/* Function to check whether the old laptop is running the control program.
+Because the old laptop has a smaller screen, the size of the window should be smaller.*/
 void checkSize(){
     auto display = Gdk::Display::get_default();
     auto primary_monitor = display->get_monitor(0);
@@ -4644,6 +4902,10 @@ void checkSize(){
 }
 
 
+/*
+Function to set the various config values. Given a variable name and a 
+value, this function gets the correct variable and then sets the value.
+*/
 void setConfigValues(std::string variableName, std::string value){
     std::cout << "Variable: " << variableName << ", Value: " << value << std::endl;
     if("LIGHT_BACKGROUND" == variableName){
@@ -4679,6 +4941,12 @@ void setConfigValues(std::string variableName, std::string value){
 }
 
 
+/*
+Function to parse the config file given by the file name. If the file
+doesn't exist, the file check fails and the program uses the default 
+values for the config. It splits each line by the = to get the variable
+name and value, then sets the values using the setConfigValues function.
+*/
 void parseConfigFile(std::string filename){
     std::ifstream file("../resources/" + filename);
 

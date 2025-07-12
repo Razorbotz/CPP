@@ -5063,62 +5063,52 @@ int main(int argc, char** argv) {
     std::thread broadcastListenThread(videoMain);
     broadcastListenThread.detach();
 
-    //Initialize the controller and handle failure
-    if (SDL_Init(SDL_INIT_GAMECONTROLLER) != 0) {
+    if (SDL_Init(SDL_INIT_GAMECONTROLLER | SDL_INIT_JOYSTICK | SDL_INIT_EVENTS) != 0) {
         SDL_Log("Unable to initialize SDL: %s", SDL_GetError());
         return 1;
     }
+    SDL_JoystickEventState(SDL_ENABLE);
 
-    if(SDL_Init(SDL_INIT_GAMECONTROLLER) != 0){
-        SDL_Log("Unable to initialize SDL: %s", SDL_GetError());
-        return 1;
-    }
     //-------------------------------------------------------------------------Initializing joystick(s)--------------------------------------------------------------------------
     int joystickCount=SDL_NumJoysticks();
     std::cout << "number of joysticks " << joystickCount << std::endl;
     SDL_Joystick* joystickList[joystickCount];
-    std::vector<SDL_GameController*> controllers;
+    SDL_GameController* controller = nullptr;
+    bool isController = false;
+    bool hasSentController = false;
 
     if(joystickCount>0){
         axisEventList = new std::vector<std::vector<AxisEvent*>*>(joystickCount);
         for(int joystickIndex=0;joystickIndex<joystickCount;joystickIndex++) {
 
-            if (SDL_IsGameController(joystickIndex)) {
-                SDL_GameController* controller = SDL_GameControllerOpen(joystickIndex);
-                if (controller) {
-                    controllers.push_back(controller);
+            if(SDL_IsGameController(joystickIndex)){
+                isController = true;
+                controller = SDL_GameControllerOpen(joystickIndex);
+                if(controller){
                     std::cout << "Opened controller: " << SDL_GameControllerName(controller) << std::endl;
-                } else {
-                    std::cerr << "Failed to open controller " << joystickIndex << std::endl;
+                    joystickList[joystickIndex]=SDL_GameControllerGetJoystick(controller);
                 }
-            } else {
-                joystickList[joystickIndex] = SDL_JoystickOpen(joystickIndex);
-
-                if (joystickList[joystickIndex]) {
-                    int numAxes = SDL_JoystickNumAxes(joystickList[joystickIndex]);
-
-                    // Allocate inner vector for this joystick
-                    (*axisEventList)[joystickIndex] = new std::vector<AxisEvent*>(numAxes);
-
-                    for (int axisIndex = 0; axisIndex < numAxes; ++axisIndex) {
-                        (*axisEventList)[joystickIndex]->at(axisIndex) = new AxisEvent();
-                    }
-
-                    std::cout << "Opened Joystick " << joystickIndex << std::endl;
-                    std::cout << "   Name: " << SDL_JoystickName(joystickList[joystickIndex]) << std::endl;
-                    std::cout << "   Number of Axes: " << numAxes << std::endl;
-                    std::cout << "   Number of Buttons: " << SDL_JoystickNumButtons(joystickList[joystickIndex]) << std::endl;
-                    std::cout << "   Number of Balls: " << SDL_JoystickNumBalls(joystickList[joystickIndex]) << std::endl;
+            }
+            else{
+                joystickList[joystickIndex]=SDL_JoystickOpen(joystickIndex);
+            }
+            if (joystickList[joystickIndex]) {
+                axisEventList->at(joystickIndex) = new std::vector<AxisEvent*>(SDL_JoystickNumAxes(joystickList[joystickIndex]));
+                for(int axisIndex=0; axisIndex < SDL_JoystickNumAxes(joystickList[joystickIndex]); axisIndex++){
+                    axisEventList->at(joystickIndex)->at(axisIndex) = new AxisEvent();
                 }
-                else {
-                    // Open failed: assign empty vector
-                    (*axisEventList)[joystickIndex] = new std::vector<AxisEvent*>(0);
-                    std::cout << "Couldn't open Joystick " << joystickIndex << std::endl;
-                }
+                std::cout << "Opened Joystick " << joystickIndex << std::endl;
+                std::cout << "   Name: " << SDL_JoystickName(joystickList[joystickIndex]) << std::endl;
+                std::cout << "   Number of Axes: " << SDL_JoystickNumAxes(joystickList[joystickIndex]) << std::endl;
+                std::cout << "   Number of Buttons: " << SDL_JoystickNumButtons(joystickList[joystickIndex]) << std::endl;
+                std::cout << "   Number of Balls: " << SDL_JoystickNumBalls(joystickList[joystickIndex]) << std::endl;
+            }
+            else {
+                (*axisEventList)[joystickIndex] = new std::vector<AxisEvent*>(0);
+                std::cout << "Couldn't open Joystick " << joystickIndex << std::endl;
             }
         }
     }
-    //-------------------------------------------------------------------------Initializing joystick(s)--------------------------------------------------------------------------
 
     SDL_Event event;
     char buffer[16384] = {0}; 
@@ -5148,8 +5138,8 @@ int main(int argc, char** argv) {
             newFrameAvailable = false;
         }
 
-        if(!initialized)
-            continue;
+        //if(!initialized)
+        //    continue;
 
         //std::cout << "Before Read" << std::endl;
 
@@ -5170,12 +5160,14 @@ int main(int argc, char** argv) {
             continue;
         }
 
-        if(!connected){
-            if(messageBytesList.size() > 0){
-                messageBytesList.clear();
-            }
-            continue;
-        }
+        //if(!connected){
+        //    if(messageBytesList.size() > 0){
+        //        messageBytesList.clear();
+        //    }
+        //    if(hasSentController)
+        //      hasSentController = false;
+        //    continue;
+        //}
         // if(bytesRead==0){
         //     //std::cout << "Lost Connection" << std::endl;
         //     setDisconnectedState();
@@ -5194,6 +5186,20 @@ int main(int argc, char** argv) {
                 messageBytesList.push_back(buffer[index]);
             }
             lastReceiveTime = std::chrono::high_resolution_clock::now();
+        }
+
+        if(!hasSentController){
+            int messageSize=5;
+            uint8_t command=2;// keyboard
+            uint8_t message[messageSize];
+            message[0]=messageSize;
+            message[1]=command;
+            message[2]=(uint8_t)(((2)>>8)& 0xff);
+            message[3]=(uint8_t)(((2)>>0)& 0xff);
+            message[4]=1;
+            // send(sock, message, messageSize, 0);
+            sendto(sock , message , messageSize , 0 ,(struct sockaddr *)&serv_addr, addr_len);
+            hasSentController = true;
         }
 
         if(silentRunning){
@@ -5310,27 +5316,21 @@ int main(int argc, char** argv) {
                         axisEventList->at(event.jaxis.which)->at(event.jaxis.axis)->axis  = event.jaxis.axis;
 
                         int value = event.jaxis.value;
-                        if(value < -deadZone)   value+=deadZone;
-                        if(deadZone < value) value-=deadZone;
+                        if(value < -deadZone)   value-=deadZone;
+                        if(deadZone < value) value+=deadZone;
 
                         axisEventList->at(event.jaxis.which)->at(event.jaxis.axis)->value = value;
                     }
+                    else{
+                        axisEventList->at(event.jaxis.which)->at(event.jaxis.axis)->isSet = true;
+                        axisEventList->at(event.jaxis.which)->at(event.jaxis.axis)->which = event.jaxis.which;
+                        axisEventList->at(event.jaxis.which)->at(event.jaxis.axis)->axis  = event.jaxis.axis;
 
+                        int value = 0;
+                        axisEventList->at(event.jaxis.which)->at(event.jaxis.axis)->value = value;
+                    }
                     break;
                 }
-
-                case SDL_CONTROLLERAXISMOTION:
-                    std::cout << "Controller " << event.caxis.which 
-                          << " axis " << (int)event.caxis.axis 
-                          << " value " << event.caxis.value << std::endl;
-                    break;
-
-                case SDL_CONTROLLERBUTTONDOWN:
-                case SDL_CONTROLLERBUTTONUP:
-                    std::cout << "Controller " << event.cbutton.which 
-                            << " button " << (int)event.cbutton.button 
-                            << (event.type == SDL_CONTROLLERBUTTONDOWN ? " pressed" : " released") << std::endl;
-                    break;
 
                 default:
                     break;

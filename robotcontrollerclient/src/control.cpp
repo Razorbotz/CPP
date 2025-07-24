@@ -138,6 +138,7 @@ bool smallLaptop = false;
 bool noVideo = false;
 bool noArena = false;
 std::string mapUsed = "NASA";
+bool testInput = false;
 
 int videoSock = 0; 
 bool videoConnected=false;
@@ -5024,6 +5025,9 @@ void processArguments(int argc, char** argv){
             else if(!strcmp("--nano", argv[i])){
                 useOrin = false;
             }
+            else if(!strcmp("--test_input", argv[i])){
+                testInput = true;
+            }
         }
     }
 }
@@ -5138,8 +5142,10 @@ int main(int argc, char** argv) {
             newFrameAvailable = false;
         }
 
-        //if(!initialized)
-        //    continue;
+        if(!testInput){
+            if(!initialized)
+            continue;
+        }
 
         //std::cout << "Before Read" << std::endl;
 
@@ -5160,22 +5166,24 @@ int main(int argc, char** argv) {
             continue;
         }
 
-        //if(!connected){
-        //    if(messageBytesList.size() > 0){
-        //        messageBytesList.clear();
-        //    }
-        //    if(hasSentController)
-        //      hasSentController = false;
-        //    continue;
-        //}
-        // if(bytesRead==0){
-        //     //std::cout << "Lost Connection" << std::endl;
-        //     setDisconnectedState();
-        //     if(messageBytesList.size() > 0){
-        //         messageBytesList.clear();
-        //     }
-        //     continue;
-        // }
+        if(!testInput){
+            if(!connected){
+                if(messageBytesList.size() > 0){
+                    messageBytesList.clear();
+                }
+                if(hasSentController)
+                hasSentController = false;
+                continue;
+            }
+            if(bytesRead==0){
+                //std::cout << "Lost Connection" << std::endl;
+                setDisconnectedState();
+                if(messageBytesList.size() > 0){
+                    messageBytesList.clear();
+                }
+                continue;
+            }
+        }
 
         //std::cout << "After Read" << std::endl;
         

@@ -5220,18 +5220,20 @@ int main(int argc, char** argv) {
             lastReceiveTime = std::chrono::high_resolution_clock::now();
         }
 
-        if(!hasSentController){
-            int messageSize=5;
-            uint8_t command=2;// keyboard
-            uint8_t message[messageSize];
-            message[0]=messageSize;
-            message[1]=command;
-            message[2]=(uint8_t)(((2)>>8)& 0xff);
-            message[3]=(uint8_t)(((2)>>0)& 0xff);
-            message[4]=1;
-            // send(sock, message, messageSize, 0);
-            sendto(sock , message , messageSize , 0 ,(struct sockaddr *)&serv_addr, addr_len);
-            hasSentController = true;
+        if(isController){
+            if(!hasSentController){
+                int messageSize=5;
+                uint8_t command=2;// keyboard
+                uint8_t message[messageSize];
+                message[0]=messageSize;
+                message[1]=command;
+                message[2]=(uint8_t)(((2)>>8)& 0xff);
+                message[3]=(uint8_t)(((2)>>0)& 0xff);
+                message[4]=1;
+                // send(sock, message, messageSize, 0);
+                sendto(sock , message , messageSize , 0 ,(struct sockaddr *)&serv_addr, addr_len);
+                hasSentController = true;
+            }
         }
 
         if(silentRunning){

@@ -160,6 +160,11 @@ struct ElementInfo {
     std::string name;
 };
 
+std::string darkBackgroundColor = "#0b1a21";
+std::string lightBackgroundColor = "#f0faf2";
+bool isLightMode = true;
+
+
 // To add a new key, add it to the vector that the key belongs to and 
 // add it to the element_definitions below with the type of the element
 
@@ -541,6 +546,18 @@ class ImageOverlay : public Gtk::DrawingArea {
 
 ImageOverlay* overlay_area;
 
+bool set_source_hex_color(const Cairo::RefPtr<Cairo::Context>& cr, const std::string& hex) {
+    if (hex.length() != 7 || hex[0] != '#') return false;
+
+    int r = std::stoi(hex.substr(1, 2), nullptr, 16);
+    int g = std::stoi(hex.substr(3, 2), nullptr, 16);
+    int b = std::stoi(hex.substr(5, 2), nullptr, 16);
+
+    cr->set_source_rgb(r / 255.0, g / 255.0, b / 255.0);
+
+    return true;
+}
+
 Glib::RefPtr<Gdk::Pixbuf> rotate_image(Glib::RefPtr<Gdk::Pixbuf> pixbuf, double angle_deg, int target_width, int target_height) {
     double angle_rad = angle_deg * M_PI / 180.0;
 
@@ -557,7 +574,15 @@ Glib::RefPtr<Gdk::Pixbuf> rotate_image(Glib::RefPtr<Gdk::Pixbuf> pixbuf, double 
     if (angle_deg > 30 || angle_deg < -30) {
         cr->set_source_rgb(1.0, 0.0, 0.0); // Red
     } else {
-        cr->set_source_rgb(1.0, 1.0, 1.0); // White
+        if(isLightMode){
+            if(!set_source_hex_color(cr, lightBackgroundColor))
+                cr->set_source_rgb(1.0, 1.0, 1.0); // White
+        }
+        else{
+            if(!set_source_hex_color(cr, darkBackgroundColor))
+                cr->set_source_rgb(1.0, 1.0, 1.0); // White
+        }
+            
     }
     cr->paint();
 
@@ -968,27 +993,28 @@ MultiMotorGraph* linearPotentiometerGraph;
 class Speedometer : public Gtk::DrawingArea {
 public:
     Speedometer(const std::string& label)
-        : label_(label),
-          speed_(0.0),
-          reverse_(false),
+        : label_(label), // Label for the Widget, will be displayed below
+          speed_(0.0), 
+          reverse_(false), // Should the value bedisplayed in red
           min_speed_(0.0),
           max_speed_(100.0),
           num_major_divisions_(10), // e.g., 0, 10, 20 ... 100 (11 ticks)
           num_minor_ticks_per_segment_(4), // 4 minor ticks = 5 small intervals
-          display_speed_(true),
-          numbers_inside_(true),
-          numbers_on_ticks_(true),
-          angle_for_zero_(135.0),
-          angle_for_sweep_(270.0),
-          low_warning_(false),
-          low_warning_thresh_(0.2),
-          high_warning_(false),
-          high_warning_thresh_(0.2),
-          use_text_label_(false),
-          text_label_("Label")
+          display_speed_(true),  // Display speed value at bottom of speedo
+          numbers_inside_(true), // Display numbers inside outer circle on speedo
+          numbers_on_ticks_(true), // Numbers displayed by ticks
+          angle_for_zero_(135.0), // Where should the zero value be 
+          angle_for_sweep_(270.0), // Number of degrees the speedo should travel
+          low_warning_(false), // Should there be a red warning band on the low side
+          low_warning_thresh_(0.2), // Where should the low warning band start
+          high_warning_(false), // Should there be a red warning band on the high side
+          high_warning_thresh_(0.2), // Where should the high warning bnd start
+          use_text_label_(false), // Should the speed label be text instead
+          text_label_("Label") // Text value for the label
     {
+        // To change Speedometer sizes, need to change this value
         // Set a minimum size for the widget
-        set_size_request(150, 150);
+        set_size_request(250, 250);
     }
 
     void set_speed(double speed) {
@@ -1671,9 +1697,6 @@ Gtk::Widget* get_flowbox_child_for(Gtk::FlowBox& flowbox, Gtk::Widget* target_wi
     return nullptr;
 }
 
-std::string darkBackgroundColor = "#0b1a21";
-std::string lightBackgroundColor = "#f0faf2";
-
 // Dark mode
 std::string darkMode =
     "* { font-family: 'Proxima Nova'; font-weight: bold; }\n"
@@ -1708,7 +1731,6 @@ std::string generateLightModeString(const std::string& color) {
 }
 
 
-bool isLightMode = true;
 void toggleMode() {
     auto css_provider = Gtk::CssProvider::create();
     Gdk::RGBA background;
@@ -3148,9 +3170,10 @@ Gtk::Box* create_motor_column(std::vector<std::pair<Glib::ustring, CircleDrawing
 }
 
 
+// To change Speedometer sizes, need to change this value
 Gtk::Box* create_lower_motor_column(std::vector<std::pair<Glib::ustring, CircleDrawingArea**>> items, std::vector<std::string> labels, bool right = false) {
     auto column = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
-    column->set_size_request(200, 200);
+    column->set_size_request(200, 300);
     column->set_hexpand(false);
     column->set_vexpand(false);
 
@@ -4182,8 +4205,9 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
 
         bottomLowerBox->add(*lowerLeftBox);
 
+        // To change Speedometer sizes, need to change this value
         leftSpeedometer = Gtk::manage(new Speedometer("Left Speedometer"));
-        leftSpeedometer->set_size_request(200, 75);
+        leftSpeedometer->set_size_request(300, 175);
         leftSpeedometer->set_display_speed(displaySpeed);
         leftSpeedometer->set_numbers_inside(numbersInside);
         leftSpeedometer->set_numbers_on_ticks(numberTicks);        
@@ -4194,7 +4218,7 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
         highlight_gear_and_scroll("3", gears, gear_labels, gear_dial, gear_label_box);
 
         rightSpeedometer = Gtk::manage(new Speedometer("Right Speedometer"));
-        rightSpeedometer->set_size_request(200, 75);
+        rightSpeedometer->set_size_request(300, 175);
         rightSpeedometer->set_display_speed(displaySpeed);
         rightSpeedometer->set_numbers_inside(numbersInside);
         rightSpeedometer->set_numbers_on_ticks(numberTicks); 
@@ -5218,7 +5242,7 @@ int main(int argc, char** argv) {
             time_span = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastReceiveTime);
             deltaTime = time_span.count();
             if(deltaTime > 5.0 && connected){
-                setDisconnectedState();
+                // setDisconnectedState();
             }
         }
         

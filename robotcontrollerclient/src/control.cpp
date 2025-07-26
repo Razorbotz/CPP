@@ -37,6 +37,7 @@
 #include <sstream>
 #include <curl/curl.h>
 #include <variant>
+#include <regex>
 
 #include "InfoFrame.hpp"
 #include "BinaryMessage.hpp"
@@ -48,6 +49,8 @@ Fix random seg faults
 Map Issues:
 Cosmic map isn't drawing robot in correct location
 Robot isn't drawing in correct location, need to offset for camera position
+Random segfaults when connected to the robot
+Random segfaults when robot starts ROS2
 
 */
 
@@ -546,15 +549,53 @@ class ImageOverlay : public Gtk::DrawingArea {
 
 ImageOverlay* overlay_area;
 
-bool set_source_hex_color(const Cairo::RefPtr<Cairo::Context>& cr, const std::string& hex) {
-    if (hex.length() != 7 || hex[0] != '#') return false;
+bool set_source_hex_color(const Cairo::RefPtr<Cairo::Context>& cr, const std::string& color_string) {
+    if (color_string.empty()) return false;
+    std::cout << "in set_source_hex_color" << std::endl;
 
-    int r = std::stoi(hex.substr(1, 2), nullptr, 16);
-    int g = std::stoi(hex.substr(3, 2), nullptr, 16);
-    int b = std::stoi(hex.substr(5, 2), nullptr, 16);
+    if (color_string[0] == '#' && color_string.length() == 7) {
+        try {
+            int r = std::stoi(color_string.substr(1, 2), nullptr, 16);
+            int g = std::stoi(color_string.substr(3, 2), nullptr, 16);
+            int b = std::stoi(color_string.substr(5, 2), nullptr, 16);
+            float R = r / 255.0;
+            float G = g / 255.0;
+            float B = b / 255.0;
+            std::cout << "Hex string" << std::endl;
+            std::cout << "r: " << r << " b: " << g << " b: " << b << std::endl;
+            std::cout << "R: " << R << " G: " << G << " B: " << B << std::endl;
+            cr->set_source_rgb(R, G, B);
+            return true;
+        }
+        catch (const std::exception& e) {
+            std::cerr << "Invalid hex color: " << color_string << std::endl;
+            return false;
+        }
+    }
 
-    cr->set_source_rgb(r / 255.0, g / 255.0, b / 255.0);
+    std::regex rgb_regex(R"(rgb\((\d+),\s*(\d+),\s*(\d+)\))");
+    std::smatch match;
+    if (std::regex_match(color_string, match, rgb_regex)) {
+        try {
+            int r = std::stoi(match[1]);
+            int g = std::stoi(match[2]);
+            int b = std::stoi(match[3]);
+            float R = r / 255.0;
+            float G = g / 255.0;
+            float B = b / 255.0;
+            std::cout << "Not hex string" << std::endl;
+            std::cout << "r: " << r << " b: " << g << " b: " << b << std::endl;
+            std::cout << "R: " << R << " G: " << G << " B: " << B << std::endl;
+            cr->set_source_rgb(B, G, R);
+            return true;
+        }
+        catch (const std::exception& e) {
+            std::cerr << "Invalid rgb() values: " << color_string << std::endl;
+            return false;
+        }
+    }
 
+    std::cerr << "Unsupported color format: " << color_string << std::endl;
     return true;
 }
 
@@ -575,12 +616,20 @@ Glib::RefPtr<Gdk::Pixbuf> rotate_image(Glib::RefPtr<Gdk::Pixbuf> pixbuf, double 
         cr->set_source_rgb(1.0, 0.0, 0.0); // Red
     } else {
         if(isLightMode){
-            if(!set_source_hex_color(cr, lightBackgroundColor))
+            std::cout << "islightMode, attempting to set background color" << std::endl;
+            if(!set_source_hex_color(cr, lightBackgroundColor)){
+                std::cout << "lightBackgroundColor: " << lightBackgroundColor << std::endl;
                 cr->set_source_rgb(1.0, 1.0, 1.0); // White
+                std::cout << "Failed to set background correctly. Defaulting to white" << std::endl;
+            }
         }
         else{
-            if(!set_source_hex_color(cr, darkBackgroundColor))
+            std::cout << "not islightMode, attempting to set background color" << std::endl;
+            if(!set_source_hex_color(cr, darkBackgroundColor)){
+                std::cout << "darkBackgroundColor: " << darkBackgroundColor << std::endl;
                 cr->set_source_rgb(1.0, 1.0, 1.0); // White
+                std::cout << "Failed to set background correctly. Defaulting to white" << std::endl;
+            }
         }
             
     }
@@ -3858,6 +3907,8 @@ void create_config_editor_window(const std::string& config_file) {
         outfile << "DISPLAY_SPEED=" << (displaySpeed ? "true" : "false") << "\n";
         outfile << "NUMBERS_INSIDE=" << (numbersInside ? "true" : "false") << "\n";
         outfile << "NUMBER_TICKS=" << (numberTicks ? "true" : "false") << "\n";
+        std::cout << "lightColorStr: " << lightColorStr << std::endl;
+        std::cout << "darkColorStr: " << darkColorStr << std::endl;
 
         if (!lightBackground.empty() && !darkBackground.empty()) {
             std::cout << lightBackground << "\n" << darkBackground << std::endl;
@@ -5213,7 +5264,7 @@ int main(int argc, char** argv) {
         
         //Fill the messageBytesList with the bytes read from the socket
         if(bytesRead != -1){
-        	std::cout << bytesRead << std::endl;
+        	//std::cout << bytesRead << std::endl;
             for(int index=0;index<bytesRead;index++){
                 messageBytesList.push_back(buffer[index]);
             }

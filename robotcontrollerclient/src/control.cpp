@@ -246,11 +246,11 @@ std::vector<std::string> reset_zed_keys = {
 };
 
 std::vector<std::string> communication_keys = {
-    "RSSI", "Wi-Fi", "CAN Bus", "Interface", "RX packets", "TX packets"
+    "RSSI", "Wi-Fi", "CAN Bus", "Using CAN1", "RX packets", "TX packets", "CAN Bus2", "RX2 packets", "TX2 packets", "Status"
 };
 std::map<std::string, bool> communication_values;
 std::vector<std::string> reset_communication_keys = {
-    "RSSI", "Wi-Fi", "CAN Bus", "Interface", "RX packets", "TX packets"
+    "RSSI", "Wi-Fi", "CAN Bus", "Using CAN1", "RX packets", "TX packets", "CAN Bus2", "RX2 packets", "TX2 packets", "Status"
 };
 
 void initialize_bool_map(std::map<std::string, bool>& map, const std::vector<std::string>& keys) {
@@ -561,9 +561,6 @@ bool set_source_hex_color(const Cairo::RefPtr<Cairo::Context>& cr, const std::st
             float R = r / 255.0;
             float G = g / 255.0;
             float B = b / 255.0;
-            std::cout << "Hex string" << std::endl;
-            std::cout << "r: " << r << " b: " << g << " b: " << b << std::endl;
-            std::cout << "R: " << R << " G: " << G << " B: " << B << std::endl;
             cr->set_source_rgb(R, G, B);
             return true;
         }
@@ -583,9 +580,7 @@ bool set_source_hex_color(const Cairo::RefPtr<Cairo::Context>& cr, const std::st
             float R = r / 255.0;
             float G = g / 255.0;
             float B = b / 255.0;
-            std::cout << "Not hex string" << std::endl;
-            std::cout << "r: " << r << " b: " << g << " b: " << b << std::endl;
-            std::cout << "R: " << R << " G: " << G << " B: " << B << std::endl;
+            // Not entirely sure why it needs to be BGR instead of RGB, but it does
             cr->set_source_rgb(B, G, R);
             return true;
         }
@@ -2413,9 +2408,14 @@ std::map<std::string, std::vector<ElementInfo>> element_definitions = {
     {"COMMUNICATION", {
         {ElementType::Int32, "RSSI"},
         {ElementType::String, "Wi-Fi"},
-        {ElementType::String, "Interface"},
+        {ElementType::String, "CAN Bus"},
+        {ElementType::Boolean, "Using CAN1"},
         {ElementType::Int32, "RX packets"},
-        {ElementType::Int32, "TX packets"}
+        {ElementType::Int32, "TX packets"},
+        {ElementType::String, "CAN Bus2"},
+        {ElementType::Int32, "RX2 packets"},
+        {ElementType::Int32, "TX2 packets"},
+        {ElementType::String, "Status"}
     }},
     {"POWER", {
         {ElementType::Float32, "Voltage"},

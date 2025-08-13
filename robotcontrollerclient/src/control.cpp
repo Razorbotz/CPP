@@ -551,7 +551,6 @@ ImageOverlay* overlay_area;
 
 bool set_source_hex_color(const Cairo::RefPtr<Cairo::Context>& cr, const std::string& color_string) {
     if (color_string.empty()) return false;
-    std::cout << "in set_source_hex_color" << std::endl;
 
     if (color_string[0] == '#' && color_string.length() == 7) {
         try {
@@ -609,25 +608,22 @@ Glib::RefPtr<Gdk::Pixbuf> rotate_image(Glib::RefPtr<Gdk::Pixbuf> pixbuf, double 
     // Fill background
     if (angle_deg > 30 || angle_deg < -30) {
         cr->set_source_rgb(1.0, 0.0, 0.0); // Red
-    } else {
+    } 
+    /*
+    else {
         if(isLightMode){
-            std::cout << "islightMode, attempting to set background color" << std::endl;
             if(!set_source_hex_color(cr, lightBackgroundColor)){
-                std::cout << "lightBackgroundColor: " << lightBackgroundColor << std::endl;
                 cr->set_source_rgb(1.0, 1.0, 1.0); // White
-                std::cout << "Failed to set background correctly. Defaulting to white" << std::endl;
             }
         }
         else{
-            std::cout << "not islightMode, attempting to set background color" << std::endl;
             if(!set_source_hex_color(cr, darkBackgroundColor)){
-                std::cout << "darkBackgroundColor: " << darkBackgroundColor << std::endl;
                 cr->set_source_rgb(1.0, 1.0, 1.0); // White
-                std::cout << "Failed to set background correctly. Defaulting to white" << std::endl;
             }
         }
             
     }
+    */
     cr->paint();
 
     // Move to center and rotate
@@ -1039,7 +1035,7 @@ public:
     Speedometer(const std::string& label)
         : label_(label), // Label for the Widget, will be displayed below
           speed_(0.0), 
-          reverse_(false), // Should the value bedisplayed in red
+          reverse_(false), // Should the value be displayed in red
           min_speed_(0.0),
           max_speed_(100.0),
           num_major_divisions_(10), // e.g., 0, 10, 20 ... 100 (11 ticks)
@@ -1170,7 +1166,6 @@ protected:
         const double cx = w / 2.0;
         const double cy = h / 2.0; // Center of the gauge
 
-        // Define gauge angles (270-degree sweep, clockwise)
         const double angle_for_zero_value_rad = angle_for_zero_ * M_PI / 180.0;
         const double total_sweep_angle_rad = angle_for_sweep_ * M_PI / 180.0;
 
@@ -2052,6 +2047,7 @@ std::vector<std::string> getKeys(const std::string& label) {
     return talon_keys;
 }
 
+bool updateMotorDetails = false;
 
 void updateMotor(std::string label, const std::vector<Element>& elements) {
     if(label != motorDisplayed)
@@ -2267,6 +2263,7 @@ void create_motor_detail_window(const std::string& label){
 
     motorWindow->signal_hide().connect([]() {
         allowMotorsDoubleClick = true;
+        updateMotorDetails = false;
     });
 
     motorWindow->show_all_children();
@@ -2277,7 +2274,6 @@ bool onMotorClick(GdkEventButton* event, const std::string& label){
     if(!allowMotorsDoubleClick)
         return false;
     if (event->type == GDK_2BUTTON_PRESS) {
-        std::cout << "Double-click detected on " << label << std::endl;
         allowMotorsDoubleClick = false;
         create_motor_detail_window(label);
         return true;
@@ -2307,6 +2303,9 @@ void updateGUI(BinaryMessage& message) {
         }
         else if(label == "Autonomy"){
             handleAutonomyElements(label, elements);
+        }
+        if(updateMotorDetails){
+            updateMotor(label, elements);
         }
 
         handleGenericElements(label, frame, elements);
@@ -3184,7 +3183,6 @@ Gtk::EventBox* create_box(const Glib::ustring& label_text, CircleDrawingArea*& o
 
 bool onClickEvent(GdkEventButton* event, const std::string& id) {
     if (event->type == GDK_2BUTTON_PRESS) {
-        std::cout << "Double-click detected!" << std::endl;
         auto target_infoframe = getInfoFrame(id);
         Gtk::FlowBoxChild* flowbox_child = dynamic_cast<Gtk::FlowBoxChild*>(get_flowbox_child_for(*sensorBox, target_infoframe));
         if (flowbox_child) {
@@ -3907,8 +3905,6 @@ void create_config_editor_window(const std::string& config_file) {
         outfile << "DISPLAY_SPEED=" << (displaySpeed ? "true" : "false") << "\n";
         outfile << "NUMBERS_INSIDE=" << (numbersInside ? "true" : "false") << "\n";
         outfile << "NUMBER_TICKS=" << (numberTicks ? "true" : "false") << "\n";
-        std::cout << "lightColorStr: " << lightColorStr << std::endl;
-        std::cout << "darkColorStr: " << darkColorStr << std::endl;
 
         if (!lightBackground.empty() && !darkBackground.empty()) {
             std::cout << lightBackground << "\n" << darkBackground << std::endl;
@@ -5230,12 +5226,9 @@ int main(int argc, char** argv) {
         bytesRead = recvfrom(sock, buffer, 16384, 0, (struct sockaddr *)&serv_addr, &addr_len);
 
         if(bytesRead == 17){
-            std::cout << bytesRead << std::endl;
             for(int index=0;index<bytesRead;index++){
-                std::cout << buffer[index];
                 buffer[index] = 0;
             }
-            std::cout << std::endl;
             setConnectedState();
             lastReceiveTime = std::chrono::high_resolution_clock::now();
             continue;
@@ -5295,7 +5288,7 @@ int main(int argc, char** argv) {
             time_span = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastReceiveTime);
             deltaTime = time_span.count();
             if(deltaTime > 5.0 && connected){
-                // setDisconnectedState();
+                setDisconnectedState();
             }
         }
         
@@ -5430,7 +5423,7 @@ int main(int argc, char** argv) {
             for(int joystickIndex=0; joystickIndex < axisEventList->size(); joystickIndex++){
                 for(int axisIndex=0; axisIndex < axisEventList->at(joystickIndex)->size(); axisIndex++){
                     if(axisEventList->at(joystickIndex)->at(axisIndex)->isSet){
-                        std::cout << joystickIndex << " " << axisIndex << " " << axisEventList->at(joystickIndex)->at(axisIndex)->value << std::endl;
+                        //std::cout << joystickIndex << " " << axisIndex << " " << axisEventList->at(joystickIndex)->at(axisIndex)->value << std::endl;
                         axisEventList->at(joystickIndex)->at(axisIndex)->isSet = false;
 
                         uint8_t command = 1;

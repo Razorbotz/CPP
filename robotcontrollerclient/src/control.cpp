@@ -52,6 +52,9 @@ Robot isn't drawing in correct location, need to offset for camera position
 Random segfaults when connected to the robot
 Random segfaults when robot starts ROS2
 
+Possible TODO:
+Look into using the broadcast receive thread
+
 */
 
 #define PORT 31337 
@@ -142,6 +145,7 @@ bool noVideo = false;
 bool noArena = false;
 std::string mapUsed = "NASA";
 bool testInput = false;
+bool useAltLayout = false;
 
 int videoSock = 0; 
 bool videoConnected=false;
@@ -609,7 +613,6 @@ Glib::RefPtr<Gdk::Pixbuf> rotate_image(Glib::RefPtr<Gdk::Pixbuf> pixbuf, double 
     if (angle_deg > 30 || angle_deg < -30) {
         cr->set_source_rgb(1.0, 0.0, 0.0); // Red
     } 
-    /*
     else {
         if(isLightMode){
             if(!set_source_hex_color(cr, lightBackgroundColor)){
@@ -623,7 +626,6 @@ Glib::RefPtr<Gdk::Pixbuf> rotate_image(Glib::RefPtr<Gdk::Pixbuf> pixbuf, double 
         }
             
     }
-    */
     cr->paint();
 
     // Move to center and rotate
@@ -5099,6 +5101,9 @@ void processArguments(int argc, char** argv){
             else if(!strcmp("--test_input", argv[i])){
                 testInput = true;
             }
+            else if(!strcmp("--alt_layout", argv[i])){
+                useAltLayout = true;
+            }
         }
     }
 }
@@ -5151,6 +5156,7 @@ int main(int argc, char** argv) {
     SDL_GameController* controller = nullptr;
     bool isController = false;
     bool hasSentController = false;
+    bool hasSentAltLayout = false;
 
     if(joystickCount>0){
         axisEventList = new std::vector<std::vector<AxisEvent*>*>(joystickCount);
@@ -5264,6 +5270,7 @@ int main(int argc, char** argv) {
             lastReceiveTime = std::chrono::high_resolution_clock::now();
         }
 
+        // TODO: Look into reducing redundant code for these
         if(isController){
             if(!hasSentController){
                 int messageSize=5;
@@ -5277,6 +5284,22 @@ int main(int argc, char** argv) {
                 // send(sock, message, messageSize, 0);
                 sendto(sock , message , messageSize , 0 ,(struct sockaddr *)&serv_addr, addr_len);
                 hasSentController = true;
+            }
+        }
+
+        if(useAltLayout){
+            if(!hasSentAltLayout){
+                int messageSize=5;
+                uint8_t command=2;// keyboard
+                uint8_t message[messageSize];
+                message[0]=messageSize;
+                message[1]=command;
+                message[2]=(uint8_t)(((3)>>8)& 0xff);
+                message[3]=(uint8_t)(((3)>>0)& 0xff);
+                message[4]=1;
+                // send(sock, message, messageSize, 0);
+                sendto(sock , message , messageSize , 0 ,(struct sockaddr *)&serv_addr, addr_len);
+                hasSentAltLayout = true;
             }
         }
 

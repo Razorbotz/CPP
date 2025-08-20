@@ -2277,6 +2277,7 @@ bool onMotorClick(GdkEventButton* event, const std::string& label){
         return false;
     if (event->type == GDK_2BUTTON_PRESS) {
         allowMotorsDoubleClick = false;
+        updateMotorDetails = true;
         create_motor_detail_window(label);
         return true;
     }
@@ -5059,6 +5060,9 @@ void processArguments(int argc, char** argv){
                 std::cout << "--set_map: Sets the background map used in the arena" << std::endl;
                 std::cout << "--wsl: Sets the video size to a smaller size" << std::endl;
                 std::cout << "--config_file: Specifies the config file to be used to load the settings" << std::endl;
+                std::cout << "--nano: Switches IP address used to connect to the Jetson Nano" << std::endl;
+                std::cout << "--test_input: Allows for testing inputs without being connected to robot" << std::endl;
+                std::cout << "--alt_layout: Uses alternate joystick control mapping for robot" << std::endl;
                 exit(0);
             }
             else if(!strcmp("--init", argv[i])){

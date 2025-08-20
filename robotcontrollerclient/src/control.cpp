@@ -2066,7 +2066,7 @@ void updateMotor(std::string label, const std::vector<Element>& elements) {
         }
         else if(element.label == "Output Percent"){
             float percent = element.data.front().float32;
-            percentDial->set_speed((double)percent);
+            percentDial->set_speed((double)percent * 100);
         }
         else if(element.label == "Temperature"){
             int temperature = element.data.front().uint16;
@@ -2074,7 +2074,8 @@ void updateMotor(std::string label, const std::vector<Element>& elements) {
         }
         else if(element.label == "Sensor Position"){
             int pos = element.data.front().uint16;
-            positionDial->set_height_ratio((920 - pos) / 920.0);
+            if(label == "Talon 1" || label == "Talon 3")
+                positionDial->set_height_ratio((920 - pos) / 920.0);
         }
         else if(element.label == "Sensor Velocity"){
             int pos = element.data.front().uint16;

@@ -146,6 +146,8 @@ bool noArena = false;
 std::string mapUsed = "NASA";
 bool testInput = false;
 bool useAltLayout = false;
+bool isController = false;
+bool twoJoysticks = false;
 
 int videoSock = 0; 
 bool videoConnected=false;
@@ -5129,6 +5131,60 @@ void moveWindows(){
 }
 
 
+void remapJoystickInputs(uint8_t* which, uint8_t* axis){
+    // Expected values are as follows:
+    // Joystick 0:
+    // Axis 0 - Roll
+    // Axis 1 - Pitch
+    // Joystick 1:
+    // Axis 0 - Bucket
+    // Axis 1 - Arm
+    if(isController){
+        // If a controller is used, axes 0 and 1 should be mapped to joystick 0
+        // Axes 2 and 3 should be mapped to joystick 1
+        if(*axis == 2){
+            *which = 1;
+            *axis = 0;
+        }
+        if(*axis == 3){
+            *which = 1;
+            *axis = 1;
+        }
+    }
+    if(useAltLayout){
+        // Alt layout is as follows:
+        // Joystick 0:
+        // Axis 0 - Left Speed
+        // Axis 1 - Arm
+        // Joystick 1:
+        // Axis 0 - Right Speed
+        // Axis 1 - Bucket
+        // Note: This probably isn't going to respond as expected. The speed calculations aren't meant
+        // to have individual speed components like this
+        if(*which == 0){
+            if(*axis == 1){
+                *which = 1;
+                *axis = 1;
+            }
+        }
+        if(*which == 1){
+            if(*axis == 0){
+                *which = 0;
+                *axis = 0;
+            }
+        }
+    }
+    if(!twoJoysticks){
+        // If a single joystick is used, control the bucket speed with twist of axis 2
+        // Buttons 
+        if(*axis == 2){
+            *which = 1;
+            *axis = 0;
+        }
+    }
+}
+
+
 //UDP Version
 int main(int argc, char** argv) { 
     //Setup GUI
@@ -5157,11 +5213,11 @@ int main(int argc, char** argv) {
     //-------------------------------------------------------------------------Initializing joystick(s)--------------------------------------------------------------------------
     int joystickCount=SDL_NumJoysticks();
     std::cout << "number of joysticks " << joystickCount << std::endl;
+    if(joystickCount == 2){
+        twoJoysticks = true;
+    }
     SDL_Joystick* joystickList[joystickCount];
     SDL_GameController* controller = nullptr;
-    bool isController = false;
-    bool hasSentController = false;
-    bool hasSentAltLayout = false;
 
     if(joystickCount>0){
         axisEventList = new std::vector<std::vector<AxisEvent*>*>(joystickCount);
@@ -5250,8 +5306,6 @@ int main(int argc, char** argv) {
                 if(messageBytesList.size() > 0){
                     messageBytesList.clear();
                 }
-                if(hasSentController)
-                hasSentController = false;
                 continue;
             }
             if(bytesRead==0){
@@ -5273,39 +5327,6 @@ int main(int argc, char** argv) {
                 messageBytesList.push_back(buffer[index]);
             }
             lastReceiveTime = std::chrono::high_resolution_clock::now();
-        }
-
-        // TODO: Look into reducing redundant code for these
-        if(isController){
-            if(!hasSentController){
-                int messageSize=5;
-                uint8_t command=2;// keyboard
-                uint8_t message[messageSize];
-                message[0]=messageSize;
-                message[1]=command;
-                message[2]=(uint8_t)(((2)>>8)& 0xff);
-                message[3]=(uint8_t)(((2)>>0)& 0xff);
-                message[4]=1;
-                // send(sock, message, messageSize, 0);
-                sendto(sock , message , messageSize , 0 ,(struct sockaddr *)&serv_addr, addr_len);
-                hasSentController = true;
-            }
-        }
-
-        if(useAltLayout){
-            if(!hasSentAltLayout){
-                int messageSize=5;
-                uint8_t command=2;// keyboard
-                uint8_t message[messageSize];
-                message[0]=messageSize;
-                message[1]=command;
-                message[2]=(uint8_t)(((3)>>8)& 0xff);
-                message[3]=(uint8_t)(((3)>>0)& 0xff);
-                message[4]=1;
-                // send(sock, message, messageSize, 0);
-                sendto(sock , message , messageSize , 0 ,(struct sockaddr *)&serv_addr, addr_len);
-                hasSentAltLayout = true;
-            }
         }
 
         if(silentRunning){
@@ -5385,6 +5406,14 @@ int main(int argc, char** argv) {
                 }
                 case SDL_JOYBUTTONDOWN:{
                     std::cout << "Joystick button down" << std::endl;
+                    if(!twoJoysticks){
+                        if(event.jbutton.button == 2 && event.jbutton.state == 1){
+                            axisEventList->at(1)->at(1)->value = 32768.0;
+                        }
+                        if(event.jbutton.button == 2 && event.jbutton.state == 1){
+                            axisEventList->at(1)->at(1)->value = -32768.0;
+                        }
+                    }
                     uint8_t command=5;
                     int length=5;
                     uint8_t message[length];
@@ -5458,10 +5487,13 @@ int main(int argc, char** argv) {
                         int length = 8;
                         float value = ((float)axisEventList->at(joystickIndex)->at(axisIndex)->value) / -32768.0;
                         uint8_t message[length];
+                        uint8_t which = axisEventList->at(joystickIndex)->at(axisIndex)->which;
+                        uint8_t axis = axisEventList->at(joystickIndex)->at(axisIndex)->axis;//0-roll 1-pitch 2-throttle 3-yaw
+                        remapJoystickInputs(&which, &axis);
                         message[0] = length;
                         message[1] = command;
-                        message[2] = axisEventList->at(joystickIndex)->at(axisIndex)->which;
-                        message[3] = axisEventList->at(joystickIndex)->at(axisIndex)->axis;//0-roll 1-pitch 2-throttle 3-yaw
+                        message[2] = which;
+                        message[3] = axis;
                         insert(value, &message[4]);
 
                         // send(sock, message, length, 0);

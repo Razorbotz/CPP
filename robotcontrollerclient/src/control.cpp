@@ -5259,6 +5259,7 @@ int main(int argc, char** argv) {
     std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
     std::chrono::high_resolution_clock::time_point lastTransmitTime = std::chrono::high_resolution_clock::now();
     std::chrono::high_resolution_clock::time_point lastReceiveTime = std::chrono::high_resolution_clock::now();
+    std::chrono::high_resolution_clock::time_point lastHeartbeatTime = std::chrono::high_resolution_clock::now();
     now = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> time_span = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastTransmitTime);
     double deltaTime = time_span.count();
@@ -5363,6 +5364,23 @@ int main(int argc, char** argv) {
             }
 
         }
+
+        now = std::chrono::high_resolution_clock::now();
+        time_span = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastHeartbeatTime);
+        deltaTime = time_span.count();
+        if(deltaTime > 5.0 && connected){
+            lastHeartbeatTime = std::chrono::high_resolution_clock::now();
+            uint8_t command=0;
+            int length=2;
+            uint8_t message[length];
+            message[0]=length;
+            message[1]=command;
+
+            // send(sock, message, length, 0);
+            sendto(sock , message , length , 0 ,(struct sockaddr *)&serv_addr, addr_len);
+            break;
+        }
+
         /******************************Handle control events******************************/
         while(SDL_PollEvent(&event)){
             const Uint8 *state = SDL_GetKeyboardState(NULL);

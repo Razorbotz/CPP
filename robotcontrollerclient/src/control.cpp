@@ -38,6 +38,7 @@
 #include <curl/curl.h>
 #include <variant>
 #include <regex>
+#include <mutex>
 
 #include "InfoFrame.hpp"
 #include "BinaryMessage.hpp"
@@ -4411,7 +4412,10 @@ struct RemoteRobot{
     time_t lastSeenTime;
 };
 std::vector<RemoteRobot> robotList;
+std::mutex robotListMutex;
+
 std::vector<RemoteRobot> videoRobotList;
+std::mutex videoRobotListMutex;
 
 
 bool contains(std::vector<std::string>& list, std::string& value){
@@ -4501,13 +4505,23 @@ void broadcastListen(){
         ssize_t bytesRead = read(sd, databuf, datalen);
         if (bytesRead > 0) {
             std::string message(databuf, bytesRead); 
-            if(!contains(robotList,message)) {
-                RemoteRobot remoteRobot;
-                remoteRobot.tag=message; 
-                time(&remoteRobot.lastSeenTime);
-                robotList.push_back(remoteRobot);
+            std::lock_guard<std::mutex> lock(robotListMutex);
+            bool robotExists = false;
+
+            for (auto& robot : robotList) {
+                if (robot.tag == message) {
+                    time(&robot.lastSeenTime);
+                    robotExists = true;
+                    break; 
+                }
             }
-            update(robotList,message);
+
+            if (!robotExists) {
+                RemoteRobot newRobot;
+                newRobot.tag = message;
+                time(&newRobot.lastSeenTime);
+                robotList.push_back(newRobot);
+            }
         }
     }
 }
@@ -4562,13 +4576,23 @@ void videoBroadcastListen(){
             ssize_t bytesRead = read(sd, databuf, datalen);
             if (bytesRead > 0) {
                 std::string message(databuf, bytesRead);
-                if(!contains(videoRobotList,message)) {
-                    RemoteRobot remoteRobot;
-                    remoteRobot.tag=message; 
-                    time(&remoteRobot.lastSeenTime);
-                    videoRobotList.push_back(remoteRobot);
+                std::lock_guard<std::mutex> lock(videoRobotListMutex);
+
+                bool robotExists = false;
+                for (auto& robot : videoRobotList) {
+                    if (robot.tag == message) {
+                        time(&robot.lastSeenTime);
+                        robotExists = true;
+                        break;
+                    }
                 }
-                update(videoRobotList,message);
+
+                if (!robotExists) {
+                    RemoteRobot newRobot;
+                    newRobot.tag = message;
+                    time(&newRobot.lastSeenTime);
+                    videoRobotList.push_back(newRobot);
+    }
             }
         }
         catch(std::exception e){
@@ -4579,6 +4603,8 @@ void videoBroadcastListen(){
 
 
 void adjustRobotList(){
+    std::lock_guard<std::mutex> lock(robotListMutex);
+
     for(int index=0;index < robotList.size() ; ++index){
         time_t now;
         time(&now);
@@ -4627,6 +4653,8 @@ void adjustRobotList(){
 }
 
 void adjustVideoRobotList(){
+    std::lock_guard<std::mutex> lock(videoRobotListMutex);
+    
     for(int index=0;index < videoRobotList.size() ; ++index){
         time_t now;
         time(&now);
@@ -5371,7 +5399,7 @@ int main(int argc, char** argv) {
         now = std::chrono::high_resolution_clock::now();
         time_span = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastHeartbeatTime);
         deltaTime = time_span.count();
-        if(deltaTime > 5.0 && connected){
+        if(deltaTime > 1.0 && connected){
             lastHeartbeatTime = std::chrono::high_resolution_clock::now();
             uint8_t command=0;
             int length=2;

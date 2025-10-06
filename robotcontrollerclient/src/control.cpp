@@ -4453,63 +4453,64 @@ std::vector<std::string> getAddressList(){
 }
 
 
-// void broadcastListen(){
-//     int sd = socket(AF_INET, SOCK_DGRAM, 0);
-//     if(sd < 0) {
-//         perror("Opening datagram socket error");
-//         return; 
-//     }
+void broadcastListen(){
+    int sd = socket(AF_INET, SOCK_DGRAM, 0);
+    if(sd < 0) {
+        perror("Opening datagram socket error");
+        return; 
+    }
 //
-//     int reuse = 1;
-//     if(setsockopt(sd, SOL_SOCKET, SO_REUSEADDR, (char *)&reuse, sizeof(reuse)) < 0) {
-//         perror("Setting SO_REUSEADDR error");
-//         close(sd);
-//         return;
-//     }
+    int reuse = 1;
+    if(setsockopt(sd, SOL_SOCKET, SO_REUSEADDR, (char *)&reuse, sizeof(reuse)) < 0) {
+        perror("Setting SO_REUSEADDR error");
+        close(sd);
+        return;
+    }
 //
-//     /* Bind to the proper port number with the IP address */
-//     /* specified as INADDR_ANY. */
-//     struct sockaddr_in localSock;
-//     localSock.sin_family = AF_INET;
-//     localSock.sin_port = htons(4321);
-//     localSock.sin_addr.s_addr = INADDR_ANY;
-//     if(bind(sd, (struct sockaddr*)&localSock, sizeof(localSock))) {
-//         perror("Binding datagram socket error");
-//         close(sd);
-//         return;
-//     }
+    /* Bind to the proper port number with the IP address */
+    /* specified as INADDR_ANY. */
+    struct sockaddr_in localSock;
+    localSock.sin_family = AF_INET;
+    localSock.sin_port = htons(4321);
+    localSock.sin_addr.s_addr = INADDR_ANY;
+    if(bind(sd, (struct sockaddr*)&localSock, sizeof(localSock))) {
+        perror("Binding datagram socket error");
+        close(sd);
+        return;
+    }
 //
-//     /* Join the multicast group 226.1.1.1 on the local 203.106.93.94 */
-//     /* interface. Note that this IP_ADD_MEMBERSHIP option must be */
-//     /* called for each local interface over which the multicast */
-//     /* datagrams are to be received. */
+    /* Join the multicast group 226.1.1.1 on the local 203.106.93.94 */
+    /* interface. Note that this IP_ADD_MEMBERSHIP option must be */
+    /* called for each local interface over which the multicast */
+    /* datagrams are to be received. */
 //
-//     std::vector<std::string> addressList=getAddressList(); 
-//     for(std::string addressString:addressList){
-//         std::cout << "got " << addressString << std::endl;
-//         struct ip_mreq group;
-//         group.imr_multiaddr.s_addr = inet_addr("226.1.1.1");
-//         group.imr_interface.s_addr = inet_addr(addressString.c_str());
-//         if(setsockopt(sd, IPPROTO_IP, IP_ADD_MEMBERSHIP, (char *)&group, sizeof(group)) < 0) {
-//             perror("Adding multicast group error");
-//         } 
-//     }
+    std::vector<std::string> addressList=getAddressList(); 
+    for(std::string addressString:addressList){
+        std::cout << "got " << addressString << std::endl;
+        struct ip_mreq group;
+        group.imr_multiaddr.s_addr = inet_addr("226.1.1.1");
+        group.imr_interface.s_addr = inet_addr(addressString.c_str());
+        if(setsockopt(sd, IPPROTO_IP, IP_ADD_MEMBERSHIP, (char *)&group, sizeof(group)) < 0) {
+            perror("Adding multicast group error");
+        } 
+    }
 //
-//     char databuf[2048];
-//     int datalen = sizeof(databuf);
-//     while(true){
-//         if(read(sd, databuf, datalen) >= 0) {
-//             std::string message(databuf);
-//             if(!contains(robotList,message)) {
-//                 RemoteRobot remoteRobot;
-//                 remoteRobot.tag=message; 
-//                 time(&remoteRobot.lastSeenTime);
-//                 robotList.push_back(remoteRobot);
-//             }
-//             update(robotList,message);
-//         }
-//     }
-// }
+    char databuf[2048];
+    int datalen = sizeof(databuf);
+    while(true){
+        ssize_t bytesRead = read(sd, databuf, datalen);
+        if (bytesRead > 0) {
+            std::string message(databuf, bytesRead); 
+            if(!contains(robotList,message)) {
+                RemoteRobot remoteRobot;
+                remoteRobot.tag=message; 
+                time(&remoteRobot.lastSeenTime);
+                robotList.push_back(remoteRobot);
+            }
+            update(robotList,message);
+        }
+    }
+}
 
 
 void videoBroadcastListen(){
@@ -4558,8 +4559,9 @@ void videoBroadcastListen(){
     int datalen = sizeof(databuf);
     while(true){
         try{
-            if(read(sd, databuf, datalen) >= 0) {
-                std::string message(databuf);
+            ssize_t bytesRead = read(sd, databuf, datalen);
+            if (bytesRead > 0) {
+                std::string message(databuf, bytesRead);
                 if(!contains(videoRobotList,message)) {
                     RemoteRobot remoteRobot;
                     remoteRobot.tag=message; 
@@ -5200,9 +5202,10 @@ int main(int argc, char** argv) {
     initGUI();
     
     //Start a thread to listen to updates from the robot
-    // std::thread broadcastListenThread(broadcastListen);
-    std::thread broadcastListenThread(videoMain);
+    std::thread broadcastListenThread(broadcastListen);
     broadcastListenThread.detach();
+    std::thread broadcastVideoListenThread(videoMain);
+    broadcastVideoListenThread.detach();
 
     if (SDL_Init(SDL_INIT_GAMECONTROLLER | SDL_INIT_JOYSTICK | SDL_INIT_EVENTS) != 0) {
         SDL_Log("Unable to initialize SDL: %s", SDL_GetError());
@@ -5378,7 +5381,6 @@ int main(int argc, char** argv) {
 
             // send(sock, message, length, 0);
             sendto(sock , message , length , 0 ,(struct sockaddr *)&serv_addr, addr_len);
-            break;
         }
 
         /******************************Handle control events******************************/

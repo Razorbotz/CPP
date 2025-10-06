@@ -2864,56 +2864,60 @@ socklen_t addr_len = sizeof(serv_addr);
 
 //UDP Version
 void connectToServer(){
-    if(connected==true)return;
-    struct sockaddr_in address; 
-    int bytesRead; 
-    struct sockaddr_in serv_addr; 
+    if(connected==true) return;
+
     std::string hello("Hello Robot"); 
 
     memset(&serv_addr, '0', sizeof(serv_addr)); 
 
     serv_addr.sin_family = AF_INET; 
     serv_addr.sin_port = htons(PORT);
-    if(useOrin)
-        serv_addr.sin_addr.s_addr = inet_addr(ORIN_IP);
-    else
-        serv_addr.sin_addr.s_addr = inet_addr(NANO_IP);
 
-    char buffer[2048] = {0}; 
-    //Create Socket
+    if(useOrin) {
+        if(inet_pton(AF_INET, ORIN_IP, &serv_addr.sin_addr) <= 0) {
+            std::cerr << "Invalid ORIN_IP" << std::endl; return;
+        }
+    } else {
+        if(inet_pton(AF_INET, NANO_IP, &serv_addr.sin_addr) <= 0) {
+            std::cerr << "Invalid NANO_IP" << std::endl; return;
+        }
+    }
+
     if ((sock = socket(AF_INET, SOCK_DGRAM, 0)) < 0) { 
-
-        printf("\n Socket creation error \n");
-
+        perror("Socket creation error");
         setDisconnectedState();
         return; 
-    } 
-    fcntl(sock,F_SETFL, O_NONBLOCK);
-    //Set IP
-    // if(inet_pton(AF_INET, ipAddressEntry->get_text().c_str(), &serv_addr.sin_addr)<=0)  { 
+    }
+    fcntl(sock, F_SETFL, O_NONBLOCK);
 
-    //     printf("\nInvalid address/ Address not supported \n");
+    sendto(sock, hello.c_str(), hello.length(), 0, (struct sockaddr *)&serv_addr, addr_len);
+    std::cout << "Hello sent to server." << std::endl;
 
-    //     Gtk::MessageDialog dialog(*window,"Invalid Address",false,Gtk::MESSAGE_QUESTION,Gtk::BUTTONS_OK);
-    //     int result=dialog.run();
+    auto startTime = std::chrono::steady_clock::now();
+    bool replyReceived = false;
+    char buffer[2048] = {0};
+    int bytesRead = 0;
 
-    //     setDisconnectedState();
-    //     return;
-    // } 
-    //Send Hello
-
-    sendto(sock , hello.c_str() , strlen(hello.c_str()) , 0 ,(struct sockaddr *)&serv_addr, addr_len);
-    std::cout << "Hello sent" << std::endl;
+    while (std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - startTime).count() < 2) {
+        bytesRead = recvfrom(sock, buffer, 2048, 0, (struct sockaddr *)&serv_addr, &addr_len);
+        if (bytesRead > 0) {
+            replyReceived = true;
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
     
-    bytesRead = recvfrom( sock , buffer, 2048, 0, (struct sockaddr *)&serv_addr, &addr_len);
-    std::cout << "Bytes read: " << bytesRead << std::endl;
-    std::string addressString = "";
-    if(useOrin)
-        addressString = ORIN_IP;
-    else
-        addressString = NANO_IP;
-    ipAddressEntry->set_text(addressString);
-    initialized = true;
+    if (replyReceived) {
+        std::cout << "Received reply from server. Connection established." << std::endl;
+        setConnectedState();
+        ipAddressEntry->set_text(inet_ntoa(serv_addr.sin_addr));
+        initialized = true;
+    } else {
+        std::cout << "Did not receive reply from server (timeout). Connection failed." << std::endl;
+        setDisconnectedState();
+        close(sock);
+        sock = 0;
+    }
 }
 
 
@@ -4654,7 +4658,7 @@ void adjustRobotList(){
 
 void adjustVideoRobotList(){
     std::lock_guard<std::mutex> lock(videoRobotListMutex);
-    
+
     for(int index=0;index < videoRobotList.size() ; ++index){
         time_t now;
         time(&now);

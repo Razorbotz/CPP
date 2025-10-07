@@ -4615,7 +4615,7 @@ void videoBroadcastListen(){
 void adjustRobotList(){
     std::lock_guard<std::mutex> lock(robotListMutex);
     if (!addressListBox) {
-        std::cerr << "[ERROR] videoAddressListBox is null in adjustVideoRobotList()" << std::endl;
+        std::cerr << "[ERROR] addressListBox is null in adjustRobotList()" << std::endl;
         return;
     }
 
@@ -4892,9 +4892,7 @@ void videoMain(){
     int bytesRead=0, total = 0;
 
     bool running=true;
-    while(running){
-        adjustVideoRobotList();
-    
+    while(running){    
         if(!videoConnected || !isStreamingActive) {
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
             continue;
@@ -5337,6 +5335,7 @@ int main(int argc, char** argv) {
     bool running=true;
     while(running){
         adjustRobotList();
+        adjustVideoRobotList();
 
         while(Gtk::Main::events_pending()){
             Gtk::Main::iteration();

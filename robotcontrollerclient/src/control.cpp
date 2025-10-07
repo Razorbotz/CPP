@@ -4614,6 +4614,10 @@ void videoBroadcastListen(){
 
 void adjustRobotList(){
     std::lock_guard<std::mutex> lock(robotListMutex);
+    if (!addressListBox) {
+        std::cerr << "[ERROR] videoAddressListBox is null in adjustVideoRobotList()" << std::endl;
+        return;
+    }
 
     for(int index=0;index < robotList.size() ; ++index){
         time_t now;
@@ -4667,6 +4671,10 @@ void adjustRobotList(){
 
 void adjustVideoRobotList(){
     std::lock_guard<std::mutex> lock(videoRobotListMutex);
+    if (!videoAddressListBox) {
+        std::cerr << "[ERROR] videoAddressListBox is null in adjustVideoRobotList()" << std::endl;
+        return;
+    }
 
     for(int index=0;index < videoRobotList.size() ; ++index){
         time_t now;

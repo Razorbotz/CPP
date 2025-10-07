@@ -136,7 +136,7 @@ Gtk::Box* bottomLowerBox;
 Gtk::Window* window;
 int sock = 0; 
 bool connected=false;
-bool silentRunning=false;
+bool silentRunning=true;
 bool initialized = false;
 
 bool initVals = false;
@@ -4643,6 +4643,7 @@ void adjustRobotList(){
     }
 
     //remove old element
+    std::vector<Gtk::ListBoxRow*> rows_to_remove;
     int index=0;
     for(Gtk::ListBoxRow* listBoxRow=addressListBox->get_row_at_index(index); listBoxRow ; listBoxRow=addressListBox->get_row_at_index(++index)){
         Gtk::Label* label=static_cast<Gtk::Label*>(listBoxRow->get_child());
@@ -4655,10 +4656,12 @@ void adjustRobotList(){
                 break;
             }
         }
-        if(!match){
-            addressListBox->remove(*listBoxRow);
-            --index;
+        if (!match) {
+            rows_to_remove.push_back(listBoxRow);
         }
+    }
+    for (auto* row : rows_to_remove) {
+        addressListBox->remove(*row);
     }
 }
 
@@ -4693,6 +4696,7 @@ void adjustVideoRobotList(){
     }
 
     //remove old element
+    std::vector<Gtk::ListBoxRow*> rows_to_remove;
     int index=0;
     for(Gtk::ListBoxRow* listBoxRow=videoAddressListBox->get_row_at_index(index); listBoxRow ; listBoxRow=videoAddressListBox->get_row_at_index(++index)){
         Gtk::Label* label=static_cast<Gtk::Label*>(listBoxRow->get_child());
@@ -4706,9 +4710,11 @@ void adjustVideoRobotList(){
             }
         }
         if(!match){
-            videoAddressListBox->remove(*listBoxRow);
-            --index;
+            rows_to_remove.push_back(listBoxRow);
         }
+    }
+    for (auto* row : rows_to_remove) {
+        addressListBox->remove(*row);
     }
 }
 
@@ -5402,7 +5408,7 @@ int main(int argc, char** argv) {
             /****************CHECKSUM: Branch to process each message in messageBytesList in the case that the checksum is to be verified****************/
             //std::cout << "Before message create" << std::endl;
             int checksum = checksum_decode(messageBytesList); 
-            if (checksum = 0){
+            if (checksum == 0){
                 break; 
             }
             else{

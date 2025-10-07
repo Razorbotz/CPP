@@ -39,6 +39,7 @@
 #include <variant>
 #include <regex>
 #include <mutex>
+#include <atomic>
 
 #include "InfoFrame.hpp"
 #include "BinaryMessage.hpp"
@@ -52,9 +53,6 @@ Cosmic map isn't drawing robot in correct location
 Robot isn't drawing in correct location, need to offset for camera position
 Random segfaults when connected to the robot
 Random segfaults when robot starts ROS2
-
-Possible TODO:
-Look into using the broadcast receive thread
 
 */
 
@@ -127,6 +125,8 @@ bool isGray = true;
 std::mutex frameMutex;
 cv::Mat latestFrame;
 bool newFrameAvailable;
+Glib::Dispatcher videoDisconnectDispatcher;
+std::atomic<bool> shouldVideoDisconnect = false;
   
 Gtk::FlowBox* sensorBox;
 Gtk::Box* innerLeftBox;
@@ -4897,7 +4897,8 @@ void videoMain(){
                 totalHeaderRead += bytesRead;
             }
             else if (bytesRead == 0) {
-                setVideoDisconnectedState();
+                shouldVideoDisconnect = true;
+                videoDisconnectDispatcher.emit();
                 isStreamingActive = false;
                 break;
             }
@@ -4908,7 +4909,8 @@ void videoMain(){
                 }
                 else {
                     perror("recv header error");
-                    setVideoDisconnectedState();
+                    shouldVideoDisconnect = true;
+                    videoDisconnectDispatcher.emit();
                     isStreamingActive = false;
                     break;
                 }
@@ -4924,7 +4926,8 @@ void videoMain(){
     
         if (frameSize == 0) {
             std::cerr << "Invalid frame size received: " << frameSize << std::endl;
-            setVideoDisconnectedState();
+            shouldVideoDisconnect = true;
+            videoDisconnectDispatcher.emit();
             isStreamingActive = false;
             continue;
         }
@@ -4938,7 +4941,8 @@ void videoMain(){
                 totalFrameRead += bytesRead;
             }
             else if (bytesRead == 0) {
-                setVideoDisconnectedState();
+                shouldVideoDisconnect = true;
+                videoDisconnectDispatcher.emit();
                 isStreamingActive = false;
                 break;
             }
@@ -4949,7 +4953,8 @@ void videoMain(){
                  }
                  else {
                     perror("recv frame error");
-                    setVideoDisconnectedState();
+                    shouldVideoDisconnect = true;
+                    videoDisconnectDispatcher.emit();
                     isStreamingActive = false;
                     break;
                 }
@@ -5238,6 +5243,14 @@ int main(int argc, char** argv) {
         initSensorsWindow();
     moveWindows();
     initGUI();
+
+    videoDisconnectDispatcher.connect([]() {
+        if (shouldVideoDisconnect) {
+            setVideoDisconnectedState();
+            shouldVideoDisconnect = false;
+        }
+
+    });
     
     //Start a thread to listen to updates from the robot
     std::thread broadcastListenThread(broadcastListen);

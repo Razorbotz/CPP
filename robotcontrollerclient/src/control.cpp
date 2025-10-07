@@ -2861,6 +2861,7 @@ void decreaseGear(){
 // Server address
 struct sockaddr_in serv_addr; 
 socklen_t addr_len = sizeof(serv_addr);
+std::chrono::high_resolution_clock::time_point lastHeartbeatTime;
 
 //UDP Version
 void connectToServer(){
@@ -2875,11 +2876,14 @@ void connectToServer(){
 
     if(useOrin) {
         if(inet_pton(AF_INET, ORIN_IP, &serv_addr.sin_addr) <= 0) {
-            std::cerr << "Invalid ORIN_IP" << std::endl; return;
+            std::cerr << "Invalid ORIN_IP" << std::endl;
+            return;
         }
-    } else {
+    }
+    else {
         if(inet_pton(AF_INET, NANO_IP, &serv_addr.sin_addr) <= 0) {
-            std::cerr << "Invalid NANO_IP" << std::endl; return;
+            std::cerr << "Invalid NANO_IP" << std::endl;
+            return;
         }
     }
 
@@ -2912,7 +2916,9 @@ void connectToServer(){
         setConnectedState();
         ipAddressEntry->set_text(inet_ntoa(serv_addr.sin_addr));
         initialized = true;
-    } else {
+        lastHeartbeatTime = std::chrono::high_resolution_clock::now();
+    }
+    else {
         std::cout << "Did not receive reply from server (timeout). Connection failed." << std::endl;
         setDisconnectedState();
         close(sock);
@@ -5294,7 +5300,7 @@ int main(int argc, char** argv) {
     std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
     std::chrono::high_resolution_clock::time_point lastTransmitTime = std::chrono::high_resolution_clock::now();
     std::chrono::high_resolution_clock::time_point lastReceiveTime = std::chrono::high_resolution_clock::now();
-    std::chrono::high_resolution_clock::time_point lastHeartbeatTime = std::chrono::high_resolution_clock::now();
+    lastHeartbeatTime = std::chrono::high_resolution_clock::now();
     now = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> time_span = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastTransmitTime);
     double deltaTime = time_span.count();

@@ -4886,9 +4886,6 @@ void initArenaWindow(){
 void videoMain(){
     std::thread broadcastListenThread2(videoBroadcastListen);
 
-    cv::Mat img = cv::Mat::zeros(720, 1280, CV_8UC1);
-    int imgSize = img.total() * img.elemSize();
-    uchar sockData[imgSize];
     int bytesRead=0, total = 0;
 
     bool running=true;

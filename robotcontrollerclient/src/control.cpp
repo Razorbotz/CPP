@@ -620,85 +620,70 @@ Glib::RefPtr<Gdk::Pixbuf> rotate_image(Glib::RefPtr<Gdk::Pixbuf> pixbuf, double 
     auto cr = Cairo::Context::create(surface);
 
     // Fill background
+    cr->set_source_rgb(1.0, 1.0, 1.0); // Default to white
+    if (isLightMode) {
+        if (!set_source_hex_color(cr, lightBackgroundColor)) cr->set_source_rgb(1.0, 1.0, 1.0);
+    } else {
+        if (!set_source_hex_color(cr, darkBackgroundColor)) cr->set_source_rgb(0.0, 0.0, 0.0);
+    }
     if (angle_deg > 30 || angle_deg < -30) {
-        cr->set_source_rgb(1.0, 0.0, 0.0); // Red
-    } 
-    else {
-        if(isLightMode){
-            if(!set_source_hex_color(cr, lightBackgroundColor)){
-                cr->set_source_rgb(1.0, 1.0, 1.0); // White
-            }
-        }
-        else{
-            if(!set_source_hex_color(cr, darkBackgroundColor)){
-                cr->set_source_rgb(1.0, 1.0, 1.0); // White
-            }
-        }
-            
+        cr->set_source_rgb(1.0, 0.0, 0.0); // Red for high angle warning
     }
     cr->paint();
 
-    // Move to center and rotate
     cr->translate(new_width / 2.0, new_height / 2.0);
     cr->rotate(angle_rad);
     cr->translate(-width / 2.0, -height / 2.0);
 
-    // Draw original pixbuf
     Gdk::Cairo::set_source_pixbuf(cr, pixbuf, 0, 0);
     cr->paint();
 
-    // Copy Cairo surface into a new Pixbuf
-    Glib::RefPtr<Gdk::Pixbuf> rotated_pixbuf = Gdk::Pixbuf::create(
-        Gdk::COLORSPACE_RGB, true, 8, new_width, new_height
-    );
+    Glib::RefPtr<Gdk::Pixbuf> rotated_pixbuf = Gdk::Pixbuf::create(Gdk::COLORSPACE_RGB, true, 8, new_width, new_height);
 
-    unsigned char* dest_pixels = rotated_pixbuf->get_pixels();
-    int dest_stride = rotated_pixbuf->get_rowstride();
     const unsigned char* src_pixels = surface->get_data();
     int src_stride = surface->get_stride();
+    unsigned char* dest_pixels = rotated_pixbuf->get_pixels();
+    int dest_stride = rotated_pixbuf->get_rowstride();
 
+    // Manually copy pixels, converting ARGB (Cairo) to RGBA (GdkPixbuf)
     for (int y = 0; y < new_height; ++y) {
-        memcpy(dest_pixels + y * dest_stride, src_pixels + y * src_stride, new_width * 4);
+        for (int x = 0; x < new_width; ++x) {
+            const guint32* src_pixel = reinterpret_cast<const guint32*>(src_pixels + y * src_stride) + x;
+            guint8* dest_pixel = dest_pixels + y * dest_stride + x * 4;
+
+            // Cairo is ARGB (BGRA in little-endian memory) -> 0xAARRGGBB
+            // GdkPixbuf wants RGBA
+            dest_pixel[0] = (*src_pixel >> 16) & 0xFF; // Red
+            dest_pixel[1] = (*src_pixel >> 8) & 0xFF;  // Green
+            dest_pixel[2] = (*src_pixel >> 0) & 0xFF;  // Blue
+            dest_pixel[3] = (*src_pixel >> 24) & 0xFF; // Alpha
+        }
     }
 
-    // Crop to target size
     int crop_x = std::max(0, (new_width - target_width) / 2);
     int crop_y = std::max(0, (new_height - target_height) / 2);
+    Glib::RefPtr<Gdk::Pixbuf> cropped_pixbuf = rotated_pixbuf->create_subpixbuf(rotated_pixbuf, crop_x, crop_y, target_width, target_height);
 
-    Glib::RefPtr<Gdk::Pixbuf> resized_pixbuf = rotated_pixbuf->create_subpixbuf(rotated_pixbuf,
-        crop_x, crop_y, target_width, target_height
-    );
-
-    // Draw black markers
-    unsigned char* new_pixels = resized_pixbuf->get_pixels();
-    int new_rowstride = resized_pixbuf->get_rowstride();
-    int new_channels = resized_pixbuf->get_n_channels();
+    // Draw black markers (unchanged)
+    unsigned char* new_pixels = cropped_pixbuf->get_pixels();
+    int new_rowstride = cropped_pixbuf->get_rowstride();
+    int new_channels = cropped_pixbuf->get_n_channels();
 
     for (int y = 98; y <= 101; ++y) {
         unsigned char* row_start = new_pixels + y * new_rowstride;
-        
         for (int x = 0; x <= 15; ++x) {
             unsigned char* new_pixel = row_start + x * new_channels;
-            new_pixel[0] = 0;
-            new_pixel[1] = 0;
-            new_pixel[2] = 0;
-            if (new_channels == 4) {
-                new_pixel[3] = 255;
-            }
+            new_pixel[0] = 0; new_pixel[1] = 0; new_pixel[2] = 0;
+            if (new_channels == 4) new_pixel[3] = 255;
         }
-    
         for (int x = 185; x <= 199; ++x) {
             unsigned char* new_pixel = row_start + x * new_channels;
-            new_pixel[0] = 0;
-            new_pixel[1] = 0;
-            new_pixel[2] = 0;
-            if (new_channels == 4) {
-                new_pixel[3] = 255;
-            }
+            new_pixel[0] = 0; new_pixel[1] = 0; new_pixel[2] = 0;
+            if (new_channels == 4) new_pixel[3] = 255;
         }
     }
 
-    return resized_pixbuf;
+    return cropped_pixbuf;
 }
 
 class BorderedBox : public Gtk::Box {
@@ -1437,14 +1422,9 @@ public:
         } else {
             latestFrame = frame.clone();
 
-            // Convert to RGB if needed
             cv::Mat frameToDisplay_CV = latestFrame;
             if (frameToDisplay_CV.channels() == 1) {
                 cv::cvtColor(frameToDisplay_CV, frameToDisplay_CV, cv::COLOR_GRAY2RGB);
-            } else if (frameToDisplay_CV.channels() == 4) {
-                cv::cvtColor(frameToDisplay_CV, frameToDisplay_CV, cv::COLOR_BGRA2RGB);
-            } else if (frameToDisplay_CV.channels() == 3) {
-                cv::cvtColor(frameToDisplay_CV, frameToDisplay_CV, cv::COLOR_BGR2RGB);
             }
 
             int width = frameToDisplay_CV.cols;
@@ -1453,7 +1433,6 @@ public:
             int pixbuf_rowstride = width * cv_channels;
             size_t data_size = static_cast<size_t>(height) * pixbuf_rowstride;
 
-            // Allocate buffer for Gdk::Pixbuf data.
             guchar* copiedData = new guchar[data_size];
             if (frameToDisplay_CV.isContinuous()) {
                 std::memcpy(copiedData, frameToDisplay_CV.data, data_size);
@@ -1465,7 +1444,6 @@ public:
                 }
             }
 
-            // Create pixbuf and let it manage the buffer
             currentPixbuf = Gdk::Pixbuf::create_from_data(
                 static_cast<const guint8*>(copiedData),
                 Gdk::COLORSPACE_RGB,

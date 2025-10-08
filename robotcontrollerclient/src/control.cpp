@@ -5049,13 +5049,32 @@ void videoMain() {
         size_t totalHeaderRead = 0;
         while (totalHeaderRead < sizeof(network_frame_size)) {
             bytesRead = recv(videoSock, reinterpret_cast<char*>(&network_frame_size) + totalHeaderRead, sizeof(network_frame_size) - totalHeaderRead, 0);
-            if (bytesRead <= 0) break;
-            totalHeaderRead += bytesRead;
+            
+            // ** START FIX **
+            if (bytesRead > 0) {
+                totalHeaderRead += bytesRead;
+            } else if (bytesRead == 0) { // Peer has performed an orderly shutdown
+                break;
+            } else { // bytesRead == -1
+                if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                    // This is not an error, just no data available yet.
+                    // Sleep briefly to avoid busy-waiting and hogging the CPU.
+                    std::this_thread::sleep_for(std::chrono::milliseconds(5)); 
+                    continue; 
+                }
+                // An actual error occurred
+                break; 
+            }
+            // ** END FIX **
         }
 
         if (bytesRead <= 0) {
             if (videoConnected) { // Only show error if we expected to be connected
-                perror("Socket recv error or connection closed");
+                if (bytesRead == 0) {
+                    std::cout << "Video connection closed by peer." << std::endl;
+                } else {
+                    perror("Socket recv error");
+                }
                 shouldVideoDisconnect = true;
                 videoDisconnectDispatcher.emit();
             }
@@ -5068,17 +5087,33 @@ void videoMain() {
             continue;
         }
 
-        // 2. Read the full H.265 frame data
+        // 2. Read the full H.265 frame data (Apply the same fix here)
         std::vector<uint8_t> frameDataBuffer(frameSize);
         size_t totalFrameRead = 0;
         while (totalFrameRead < frameSize) {
             bytesRead = recv(videoSock, frameDataBuffer.data() + totalFrameRead, frameSize - totalFrameRead, 0);
-            if (bytesRead <= 0) break;
-            totalFrameRead += bytesRead;
+
+            if (bytesRead > 0) {
+                totalFrameRead += bytesRead;
+            }
+            else if (bytesRead == 0) {
+                break;
+            }
+            else {
+                if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+                    continue;
+                }
+                break;
+            }
         }
         if (bytesRead <= 0) {
              if (videoConnected) {
-                perror("Socket recv error while reading frame data");
+                if (bytesRead == 0) {
+                    std::cout << "Video connection closed by peer while reading frame." << std::endl;
+                } else {
+                    perror("Socket recv error while reading frame data");
+                }
                 shouldVideoDisconnect = true;
                 videoDisconnectDispatcher.emit();
             }

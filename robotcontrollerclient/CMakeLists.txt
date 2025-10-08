@@ -13,7 +13,12 @@ find_package(CURL REQUIRED)
 pkg_check_modules(GTKMM REQUIRED gtkmm-3.0)
 pkg_check_modules(CAIRO REQUIRED cairo)
 pkg_check_modules(WEBKITGTK REQUIRED webkit2gtk-4.0)
-
+pkg_check_modules(FFMPEG REQUIRED IMPORTED_TARGET
+    libavcodec
+    libavformat
+    libavutil
+    libswscale
+)
 
 include_directories(
   include
@@ -73,6 +78,7 @@ include_directories(
   ${CAIRO_INCLUDE_DIRS}
   ${WEBKITGTK_INCLUDE_DIRS}
   ${OpenCV_INCLUDE_DIRS}
+  ${FFMPEG_INCLUDE_DIRS}
 )
 
 link_directories(
@@ -114,5 +120,6 @@ target_link_libraries(control
   ${OpenCV_LIBS}
   pthread
   CURL::libcurl
+  PkgConfig::FFMPEG
 )
 

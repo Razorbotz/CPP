@@ -41,6 +41,13 @@
 #include <mutex>
 #include <atomic>
 
+extern "C" {
+#include <libavcodec/avcodec.h>
+#include <libavformat/avformat.h>
+#include <libswscale/swscale.h>
+#include <libavutil/imgutils.h>
+}
+
 #include "InfoFrame.hpp"
 #include "BinaryMessage.hpp"
 
@@ -4882,7 +4889,8 @@ void initArenaWindow(){
 }
 
 
-/* Main function to receive the video stream and display it*/
+/*
+// ORIGINAL JPEG-BASED videoMain function for reference
 void videoMain(){
     std::thread broadcastListenThread2(videoBroadcastListen);
 
@@ -5011,6 +5019,159 @@ void videoMain(){
     }
     return; 
 
+}
+*/
+
+
+/* Main function to receive and display the H.265 video stream */
+void videoMain() {
+    std::thread broadcastListenThread2(videoBroadcastListen);
+
+    // --- FFmpeg Decoder Initialization ---
+    const AVCodec* codec = avcodec_find_decoder(AV_CODEC_ID_HEVC);
+    if (!codec) {
+        std::cerr << "H.265 (HEVC) decoder not found" << std::endl;
+        return;
+    }
+
+    AVCodecParserContext* parser = av_parser_init(codec->id);
+    if (!parser) {
+        std::cerr << "Failed to initialize H.265 parser" << std::endl;
+        return;
+    }
+
+    AVCodecContext* codec_ctx = avcodec_alloc_context3(codec);
+    if (!codec_ctx) {
+        std::cerr << "Failed to allocate codec context" << std::endl;
+        av_parser_close(parser);
+        return;
+    }
+
+    if (avcodec_open2(codec_ctx, codec, NULL) < 0) {
+        std::cerr << "Failed to open codec" << std::endl;
+        avcodec_free_context(&codec_ctx);
+        av_parser_close(parser);
+        return;
+    }
+
+    AVPacket* pkt = av_packet_alloc();
+    AVFrame* frame = av_frame_alloc();
+    AVFrame* bgr_frame = av_frame_alloc();
+    SwsContext* sws_ctx = nullptr;
+    uint8_t* bgr_buffer = nullptr;
+
+    bool running = true;
+    while (running) {
+        if (!videoConnected || !isStreamingActive) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            continue;
+        }
+
+        // 1. Read the size of the next H.265 frame from the socket
+        uint32_t network_frame_size = 0;
+        ssize_t bytesRead = 0;
+        size_t totalHeaderRead = 0;
+        while (totalHeaderRead < sizeof(network_frame_size)) {
+            bytesRead = recv(videoSock, reinterpret_cast<char*>(&network_frame_size) + totalHeaderRead, sizeof(network_frame_size) - totalHeaderRead, 0);
+            if (bytesRead <= 0) break;
+            totalHeaderRead += bytesRead;
+        }
+
+        if (bytesRead <= 0) {
+            if (videoConnected) { // Only show error if we expected to be connected
+                perror("Socket recv error or connection closed");
+                shouldVideoDisconnect = true;
+                videoDisconnectDispatcher.emit();
+            }
+            continue;
+        }
+        
+        uint32_t frameSize = ntohl(network_frame_size);
+        if (frameSize == 0 || frameSize > 1000000) { // Basic sanity check
+            std::cerr << "Invalid frame size received: " << frameSize << std::endl;
+            continue;
+        }
+
+        // 2. Read the full H.265 frame data
+        std::vector<uint8_t> frameDataBuffer(frameSize);
+        size_t totalFrameRead = 0;
+        while (totalFrameRead < frameSize) {
+            bytesRead = recv(videoSock, frameDataBuffer.data() + totalFrameRead, frameSize - totalFrameRead, 0);
+            if (bytesRead <= 0) break;
+            totalFrameRead += bytesRead;
+        }
+        if (bytesRead <= 0) {
+             if (videoConnected) {
+                perror("Socket recv error while reading frame data");
+                shouldVideoDisconnect = true;
+                videoDisconnectDispatcher.emit();
+            }
+            continue;
+        }
+
+        // 3. Parse and Decode the H.265 frame
+        uint8_t* data_ptr = frameDataBuffer.data();
+        size_t data_size = frameDataBuffer.size();
+
+        while (data_size > 0) {
+            int ret = av_parser_parse2(parser, codec_ctx, &pkt->data, &pkt->size,
+                                       data_ptr, data_size,
+                                       AV_NOPTS_VALUE, AV_NOPTS_VALUE, 0);
+            if (ret < 0) {
+                std::cerr << "Error while parsing frame" << std::endl;
+                break;
+            }
+            data_ptr += ret;
+            data_size -= ret;
+
+            if (pkt->size) {
+                // Send packet to the decoder
+                if (avcodec_send_packet(codec_ctx, pkt) >= 0) {
+                    // Receive decoded frames
+                    while (avcodec_receive_frame(codec_ctx, frame) == 0) {
+                        // Got a decoded frame, now convert it to BGR for OpenCV
+                        
+                        // Initialize SWS context for color conversion on first frame
+                        if (!sws_ctx) {
+                            sws_ctx = sws_getContext(codec_ctx->width, codec_ctx->height, codec_ctx->pix_fmt,
+                                                     codec_ctx->width, codec_ctx->height, AV_PIX_FMT_BGR24,
+                                                     SWS_BILINEAR, NULL, NULL, NULL);
+                            int num_bytes = av_image_get_buffer_size(AV_PIX_FMT_BGR24, codec_ctx->width, codec_ctx->height, 32);
+                            bgr_buffer = (uint8_t*)av_malloc(num_bytes * sizeof(uint8_t));
+                            av_image_fill_arrays(bgr_frame->data, bgr_frame->linesize, bgr_buffer, AV_PIX_FMT_BGR24, codec_ctx->width, codec_ctx->height, 32);
+                        }
+
+                        // Perform color conversion (e.g., YUV to BGR)
+                        sws_scale(sws_ctx, (uint8_t const * const *)frame->data, frame->linesize, 0, codec_ctx->height,
+                                  bgr_frame->data, bgr_frame->linesize);
+
+                        // Create an OpenCV Mat from the BGR data
+                        cv::Mat decoded_mat(codec_ctx->height, codec_ctx->width, CV_8UC3, bgr_frame->data[0], bgr_frame->linesize[0]);
+
+                        // Resize and update the GUI
+                        cv::Mat display_img;
+                        cv::resize(decoded_mat, display_img, cv::Size(1600, 1000), 0, 0, cv::INTER_LINEAR);
+                        
+                        {
+                            std::lock_guard<std::mutex> lock(frameMutex);
+                            latestFrame = display_img.clone(); // Clone is crucial for thread safety
+                            newFrameAvailable = true;
+                        }
+                    }
+                }
+            }
+        }
+        av_packet_unref(pkt);
+    }
+
+    // --- Cleanup ---
+    if (sws_ctx) sws_freeContext(sws_ctx);
+    if (bgr_buffer) av_freep(&bgr_buffer);
+    av_frame_free(&bgr_frame);
+    av_frame_free(&frame);
+    av_packet_free(&pkt);
+    avcodec_free_context(&codec_ctx);
+    av_parser_close(parser);
 }
 
 

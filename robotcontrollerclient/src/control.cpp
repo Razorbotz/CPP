@@ -4619,117 +4619,115 @@ void videoBroadcastListen(){
 }
 
 
-void adjustRobotList(){
+void adjustRobotList() {
     std::lock_guard<std::mutex> lock(robotListMutex);
-    if (!addressListBox) {
-        std::cerr << "[ERROR] addressListBox is null in adjustRobotList()" << std::endl;
-        return;
-    }
+    time_t now;
+    time(&now);
 
-    for(int index=0;index < robotList.size() ; ++index){
-        time_t now;
-        time(&now);
-        if(now-robotList[index].lastSeenTime>12){
-            robotList.erase(robotList.begin()+index--);
-        }
-    }
-    //add new elements
-    for(RemoteRobot remoteRobot:robotList){
-        std::string robotID=remoteRobot.tag;
-        bool match=false;
-        int index=0;
-        for(Gtk::ListBoxRow* listBoxRow=addressListBox->get_row_at_index(index); listBoxRow ; listBoxRow=addressListBox->get_row_at_index(++index)){
-            Gtk::Label* label=static_cast<Gtk::Label*>(listBoxRow->get_child());
-            Glib::ustring addressString=label->get_text();
-            if(robotID==addressString.c_str()){
-                match=true;
+    // --- UNIFIED LOGIC ---
+    std::vector<Gtk::ListBoxRow*> rows_to_remove;
+    std::vector<std::string> robots_in_gui;
+
+    // 1. Check existing GUI rows against the data list
+    int index = 0;
+    for (Gtk::ListBoxRow* row = addressListBox->get_row_at_index(index); row; row = addressListBox->get_row_at_index(++index)) {
+        Gtk::Label* label = static_cast<Gtk::Label*>(row->get_child());
+        std::string row_text = label->get_text();
+        robots_in_gui.push_back(row_text);
+
+        bool found_in_data = false;
+        for (const auto& robot : robotList) {
+            if (robot.tag == row_text) {
+                found_in_data = true;
+                if (now - robot.lastSeenTime > 12) {
+                    rows_to_remove.push_back(row);
+                }
                 break;
             }
         }
-        if(match==false){
-            Gtk::Label* label=Gtk::manage(new Gtk::Label(robotID));
+        if (!found_in_data) {
+            rows_to_remove.push_back(row);
+        }
+    }
+
+    for (auto* row : rows_to_remove) {
+        Gtk::Label* label = static_cast<Gtk::Label*>(row->get_child());
+        std::string row_text = label->get_text();
+        
+        // Remove from data vector
+        robotList.erase(std::remove_if(robotList.begin(), robotList.end(),
+            [&](const RemoteRobot& robot) {
+                return robot.tag == row_text;
+            }),
+            robotList.end());
+
+        // Remove from GUI
+        addressListBox->remove(*row);
+    }
+
+    for (const auto& robot : robotList) {
+        if (std::find(robots_in_gui.begin(), robots_in_gui.end(), robot.tag) == robots_in_gui.end()) {
+            Gtk::Label* label = Gtk::manage(new Gtk::Label(robot.tag));
             label->set_visible(true);
             addressListBox->append(*label);
         }
     }
-
-    //remove old element
-    std::vector<Gtk::ListBoxRow*> rows_to_remove;
-    int index=0;
-    for(Gtk::ListBoxRow* listBoxRow=addressListBox->get_row_at_index(index); listBoxRow ; listBoxRow=addressListBox->get_row_at_index(++index)){
-        Gtk::Label* label=static_cast<Gtk::Label*>(listBoxRow->get_child());
-        Glib::ustring addressString=label->get_text();
-        bool match=false;
-        for(RemoteRobot remoteRobot:robotList){
-            std::string robotID=remoteRobot.tag;
-            if(robotID==addressString.c_str()){
-                match=true;
-                break;
-            }
-        }
-        if (!match) {
-            rows_to_remove.push_back(listBoxRow);
-        }
-    }
-    for (auto* row : rows_to_remove) {
-        addressListBox->remove(*row);
-    }
 }
 
-void adjustVideoRobotList(){
+void adjustVideoRobotList() {
     std::lock_guard<std::mutex> lock(videoRobotListMutex);
     if (!videoAddressListBox) {
         std::cerr << "[ERROR] videoAddressListBox is null in adjustVideoRobotList()" << std::endl;
         return;
     }
 
-    for(int index=0;index < videoRobotList.size() ; ++index){
-        time_t now;
-        time(&now);
-        if(now-videoRobotList[index].lastSeenTime>12){
-            videoRobotList.erase(videoRobotList.begin()+index--);
-        }
-    }
-    //add new elements
-    for(RemoteRobot remoteRobot:videoRobotList){
-        std::string robotID=remoteRobot.tag;
-        bool match=false;
-        int index=0;
-        for(Gtk::ListBoxRow* listBoxRow=videoAddressListBox->get_row_at_index(index); listBoxRow ; listBoxRow=videoAddressListBox->get_row_at_index(++index)){
-            Gtk::Label* label=static_cast<Gtk::Label*>(listBoxRow->get_child());
-            Glib::ustring addressString=label->get_text();
-            if(robotID==addressString.c_str()){
-                match=true;
+    time_t now;
+    time(&now);
+
+    std::vector<Gtk::ListBoxRow*> rows_to_remove;
+    std::vector<std::string> robots_in_gui;
+
+    int index = 0;
+    for (Gtk::ListBoxRow* row = videoAddressListBox->get_row_at_index(index); row; row = videoAddressListBox->get_row_at_index(++index)) {
+        Gtk::Label* label = static_cast<Gtk::Label*>(row->get_child());
+        std::string row_text = label->get_text();
+        robots_in_gui.push_back(row_text);
+
+        bool found_in_data = false;
+        for (const auto& robot : videoRobotList) {
+            if (robot.tag == row_text) {
+                found_in_data = true;
+                if (now - robot.lastSeenTime > 12) {
+                    rows_to_remove.push_back(row);
+                }
                 break;
             }
         }
-        if(match==false){
-            Gtk::Label* label=Gtk::manage(new Gtk::Label(robotID));
-            label->set_visible(true);
-            videoAddressListBox->append(*label);
+        if (!found_in_data) {
+            rows_to_remove.push_back(row);
         }
     }
 
-    //remove old element
-    std::vector<Gtk::ListBoxRow*> rows_to_remove;
-    int index=0;
-    for(Gtk::ListBoxRow* listBoxRow=videoAddressListBox->get_row_at_index(index); listBoxRow ; listBoxRow=videoAddressListBox->get_row_at_index(++index)){
-        Gtk::Label* label=static_cast<Gtk::Label*>(listBoxRow->get_child());
-        Glib::ustring addressString=label->get_text();
-        bool match=false;
-        for(RemoteRobot remoteRobot:videoRobotList){
-            std::string robotID=remoteRobot.tag;
-            if(robotID==addressString.c_str()){
-                match=true;
-                break;
-            }
-        }
-        if(!match){
-            rows_to_remove.push_back(listBoxRow);
-        }
-    }
     for (auto* row : rows_to_remove) {
-        addressListBox->remove(*row);
+        Gtk::Label* label = static_cast<Gtk::Label*>(row->get_child());
+        std::string row_text = label->get_text();
+        
+        videoRobotList.erase(std::remove_if(videoRobotList.begin(), videoRobotList.end(),
+            [&](const RemoteRobot& robot) {
+                return robot.tag == row_text;
+            }),
+            videoRobotList.end());
+
+        // Remove from the GUI ListBox
+        videoAddressListBox->remove(*row);
+    }
+
+    for (const auto& robot : videoRobotList) {
+        if (std::find(robots_in_gui.begin(), robots_in_gui.end(), robot.tag) == robots_in_gui.end()) {
+            Gtk::Label* label = Gtk::manage(new Gtk::Label(robot.tag));
+            label->set_visible(true);
+            videoAddressListBox->append(*label);
+        }
     }
 }
 

@@ -267,6 +267,14 @@ std::vector<std::string> reset_communication_keys = {
     "RSSI", "Wi-Fi", "CAN Bus", "Using CAN1", "RX packets", "TX packets", "CAN Bus2", "RX2 packets", "TX2 packets", "Status"
 };
 
+
+std::vector<std::string> drivetrain_keys = {
+    "F1 Vel", "F1 RPM", "F1 Speed", "F2 Vel", "F2 RPM", "F2 Speed", "F3 Vel", "F3 RPM", "F3 Speed", "F4 Vel", "F4 RPM", "F4 Speed"
+};
+std::map<std::string, bool> drivetrain_values;
+std::vector<std::string> reset_drivetrain_keys = {
+    "F1 Vel", "F1 RPM", "F1 Speed", "F2 Vel", "F2 RPM", "F2 Speed", "F3 Vel", "F3 RPM", "F3 Speed", "F4 Vel", "F4 RPM", "F4 Speed"
+};
 void initialize_bool_map(std::map<std::string, bool>& map, const std::vector<std::string>& keys) {
     for (const auto& key : keys) {
         map[key] = true;
@@ -282,6 +290,7 @@ void initialize_maps(){
     initialize_bool_map(autonomy_values, autonomy_keys);
     initialize_bool_map(zed_values, zed_keys);
     initialize_bool_map(communication_values, communication_keys);
+    initialize_bool_map(drivetrain_values, drivetrain_keys);
 }
 
 double roll_rotation_angle = 0.0;
@@ -1881,6 +1890,10 @@ void handleZedElements(const std::vector<Element>& elements) {
     }
 }
 
+void handleDrivetrainElements(const std::vector<Element>& elements) {
+    
+}
+
 void handleTalonElements(const std::string& label, const std::vector<Element>& elements) {
     for (const auto& element : elements) {
         if (element.label == "Sensor Position") {
@@ -2011,6 +2024,9 @@ std::map<std::string, bool>& getMap(std::string label){
     if(label.rfind("Zed", 0) == 0){
         return zed_values;
     }
+    if(label.rfind("Drivetrain", 0) == 0){
+        return drivetrain_values;
+    }
     return talon_values;
 }
 
@@ -2022,7 +2038,8 @@ std::map<std::string, std::vector<std::string>*> key_vectors = {
     {"Communication", &communication_keys},
     {"Power2", &power2_keys},
     {"Power", &power_keys},
-    {"Zed", &zed_keys}
+    {"Zed", &zed_keys},
+    {"Drivetrain", &drivetrain_keys}
 };
 
 std::vector<std::string> getKeys(const std::string& label) {
@@ -2119,7 +2136,7 @@ const std::unordered_set<std::string> validLabels = {
     "Falcon 1", "Falcon 2", "Falcon 3", "Falcon 4",
     "Talon 1", "Talon 2", "Talon 3", "Talon 4",
     "Linear 1", "Linear 2", "Linear 3", "Linear 4",
-    "Zed", "Autonomy", "Communication", "Power", "Power2"
+    "Zed", "Autonomy", "Communication", "Power", "Power2", "Drivetrain"
 };
 
 void addElementToInfoFrame(InfoFrame* frame, const Element& element) {
@@ -2347,7 +2364,7 @@ std::map<std::string, std::vector<ElementInfo>> element_definitions = {
         {ElementType::UInt16, "Bus Voltage"},
         {ElementType::UInt16, "Output Current"},
         {ElementType::Float32, "Output Percent"},
-        {ElementType::Int8, "Sensor Velocity"},
+        {ElementType::Float32, "Sensor Velocity"},
         {ElementType::UInt8, "Temperature"},
         {ElementType::UInt16, "Sensor Position"},
         {ElementType::Float32, "Max Current"}
@@ -2358,8 +2375,8 @@ std::map<std::string, std::vector<ElementInfo>> element_definitions = {
         {ElementType::UInt16, "Output Current"},
         {ElementType::Float32, "Output Percent"},
         {ElementType::UInt8, "Temperature"},
-        {ElementType::UInt16, "Sensor Position"},
-        {ElementType::Int8, "Sensor Velocity"},
+        {ElementType::Float32, "Sensor Position"},
+        {ElementType::Float32, "Sensor Velocity"},
         {ElementType::Float32, "Max Current"}
     }},
     {"LINEAR", {
@@ -2429,6 +2446,20 @@ std::map<std::string, std::vector<ElementInfo>> element_definitions = {
         {ElementType::Float32, "Current 13"},
         {ElementType::Float32, "Current 14"},
         {ElementType::Float32, "Current 15"}
+    }},
+    {"DRIVETRAIN", {
+        {ElementType::Float32, "F1 Vel"},
+        {ElementType::Float32, "F1 RPM"},
+        {ElementType::Float32, "F1 Speed"},
+        {ElementType::Float32, "F2 Vel"},
+        {ElementType::Float32, "F2 RPM"},
+        {ElementType::Float32, "F2 Speed"},
+        {ElementType::Float32, "F3 Vel"},
+        {ElementType::Float32, "F3 RPM"},
+        {ElementType::Float32, "F3 Speed"},
+        {ElementType::Float32, "F4 Vel"},
+        {ElementType::Float32, "F4 RPM"},
+        {ElementType::Float32, "F4 Speed"}
     }}
 };
 
@@ -2525,6 +2556,7 @@ void initGUI() {
         createMessage("Zed", "ZED");
         createMessage("Power", "POWER");
         createMessage("Power2", "POWER2");
+        createMessage("Drivetrain", "DRIVETRAIN");
     }
     
     // Ensure proper initial display
@@ -3277,7 +3309,7 @@ void save_value(std::map<std::string, bool>& values, const std::string& value, b
 
 InfoFrame *talonFrame = nullptr, *falconFrame = nullptr, *linearFrame = nullptr,
     *autonomyFrame = nullptr, *zedFrame = nullptr, *communicationFrame = nullptr,
-    *powerFrame = nullptr, *power2Frame = nullptr;
+    *powerFrame = nullptr, *power2Frame = nullptr, *drivetrainFrame = nullptr;
 
 std::unordered_map<std::string, InfoFrame*> frame_map;
 void setup_frame_map() {
@@ -3290,6 +3322,7 @@ void setup_frame_map() {
         {"COMMUNICATION", communicationFrame},
         {"POWER",         powerFrame},
         {"POWER2",        power2Frame},
+        {"DRIVETRAIN",    drivetrainFrame},
     };
 }
 
@@ -3467,11 +3500,11 @@ void create_config_editor_window(const std::string& config_file) {
     // Define frames and boxes
     Gtk::Box *talonBox = nullptr, *falconBox = nullptr, *linearBox = nullptr,
             *autonomyBox = nullptr, *zedBox = nullptr, *communicationBox = nullptr,
-            *powerBox = nullptr, *power2Box = nullptr;
+            *powerBox = nullptr, *power2Box = nullptr, *drivetrainBox = nullptr;
 
     InfoFrame *optionsTalonFrame = nullptr, *optionsFalconFrame = nullptr, *optionsLinearFrame = nullptr,
             *optionsAutonomyFrame = nullptr, *optionsZedFrame = nullptr, *optionsCommunicationFrame = nullptr,
-            *optionsPowerFrame = nullptr, *optionsPower2Frame = nullptr;
+            *optionsPowerFrame = nullptr, *optionsPower2Frame = nullptr, *optionsDrivetrainFrame = nullptr;
 
     // Frame entry struct
     struct FrameEntry {
@@ -3491,6 +3524,7 @@ void create_config_editor_window(const std::string& config_file) {
         {"Communication", "COMMUNICATION", &communicationFrame, &communicationBox, &optionsCommunicationFrame},
         {"Power",         "POWER",         &powerFrame,         &powerBox,         &optionsPowerFrame},
         {"Power2",        "POWER2",        &power2Frame,        &power2Box,        &optionsPower2Frame},
+        {"Drivetrain",    "DRIVETRAIN",    &drivetrainFrame,    &drivetrainBox,    &optionsDrivetrainFrame},
     };
 
     // Create all frames & boxes in a loop
@@ -3630,6 +3664,8 @@ void create_config_editor_window(const std::string& config_file) {
     optionsPowerFrame->addWidget(*powerWidget);
     Gtk::Widget* power2Widget = create_reorderable_checkbox_list("POWER2", power2_keys, power2_values, list_stores["POWER2"]);
     optionsPower2Frame->addWidget(*power2Widget);
+    Gtk::Widget* drivetrainWidget = create_reorderable_checkbox_list("DRIVETRAIN", drivetrain_keys, drivetrain_values, list_stores["DRIVETRAIN"]);
+    optionsPower2Frame->addWidget(*drivetrainWidget);
 
     // Lambda to create the color option picker and add it to the grid
     auto add_color_setting = [&](const std::string& label_text, const std::string& color_value, Gtk::ColorButton* color_button) {
@@ -3736,6 +3772,9 @@ void create_config_editor_window(const std::string& config_file) {
         }
         else if (key.rfind("SHOW_POWER2_", 0) == 0) {
             update_value("POWER2", key.substr(12), active);
+        }
+        else if(key.rfind("SHOW_DRIVETRAIN_", 0) == 0){
+            update_value("DRIVETRAIN", key.substr(16), active);
         }
     };
 

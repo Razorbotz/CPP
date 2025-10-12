@@ -1,4 +1,5 @@
 var searchData=
 [
-  ['project_0',['Welcome to the Razorbotz NASA Robotic Mining Competition Project!',['../index.html',1,'']]]
+  ['object_0',['Object',['../structObject.html',1,'']]],
+  ['overview_1',['Overview',['../index.html#autotoc_md1',1,'']]]
 ];

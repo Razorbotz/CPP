@@ -1,7 +1,9 @@
 <map id="Graphical Class Hierarchy" name="Graphical Class Hierarchy">
-<area shape="rect" id="Node000000" title=" " alt="" coords="5,31,128,56"/>
-<area shape="rect" id="Node000001" href="$classDrawingArea.html" title=" " alt="" coords="179,5,274,31"/>
-<area shape="poly" id="edge2_Node000000_Node000001" title=" " alt="" coords="143,29,178,23,179,28,144,34"/>
-<area shape="rect" id="Node000002" href="$classImageOverlay.html" title=" " alt="" coords="176,55,277,80"/>
-<area shape="poly" id="edge3_Node000000_Node000002" title=" " alt="" coords="143,52,176,57,175,63,143,58"/>
+<area shape="rect" id="Node000000" title=" " alt="" coords="5,55,76,80"/>
+<area shape="rect" id="Node000001" href="$classBorderedBox.html" title=" " alt="" coords="135,5,230,31"/>
+<area shape="poly" id="edge1_Node000000_Node000001" title=" " alt="" coords="89,48,142,29,144,34,91,53"/>
+<area shape="rect" id="Node000002" href="$classInfoItem.html" title=" " alt="" coords="148,55,217,80"/>
+<area shape="poly" id="edge2_Node000000_Node000002" title=" " alt="" coords="91,65,147,65,147,70,91,70"/>
+<area shape="rect" id="Node000003" href="$classMultiMotorGraph.html" title=" " alt="" coords="124,104,241,130"/>
+<area shape="poly" id="edge3_Node000000_Node000003" title=" " alt="" coords="91,82,144,101,142,106,89,87"/>
 </map>

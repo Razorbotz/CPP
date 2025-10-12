@@ -1,4 +1,5 @@
 var searchData=
 [
-  ['competition_20project_0',['Welcome to the Razorbotz NASA Robotic Mining Competition Project!',['../index.html',1,'']]]
+  ['circledrawingarea_0',['CircleDrawingArea',['../classCircleDrawingArea.html',1,'']]],
+  ['competition_20project_1',['Welcome to the Razorbotz NASA Robotic Mining Competition Project!',['../index.html',1,'']]]
 ];

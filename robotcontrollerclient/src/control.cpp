@@ -2197,6 +2197,9 @@ std::string getNameFromPrefix(std::string label){
     if(label.rfind("TEST", 0) == 0){
         return "Test";
     }
+    if(label.rfind("DRIVETRAIN", 0 ) == 0){
+        return "Drivetrain";
+    }
     return "Talon";
 }
 
@@ -3607,6 +3610,7 @@ std::vector<std::string> local_communication_keys = communication_keys;
 std::vector<std::string> local_power2_keys = power2_keys;
 std::vector<std::string> local_power_keys = power_keys;
 std::vector<std::string> local_zed_keys = zed_keys;
+std::vector<std::string> local_drivetrain_keys = drivetrain_keys;
 
 std::map<std::string, std::vector<std::string>*> local_key_vectors = {
     {"Talon", &local_talon_keys},
@@ -3616,7 +3620,8 @@ std::map<std::string, std::vector<std::string>*> local_key_vectors = {
     {"Communication", &local_communication_keys},
     {"Power2", &local_power2_keys},
     {"Power", &local_power_keys},
-    {"Zed", &local_zed_keys}
+    {"Zed", &local_zed_keys},
+    {"Drivetrain", &local_drivetrain_keys}
 };
 
 
@@ -3923,7 +3928,7 @@ void create_config_editor_window(const std::string& config_file) {
     Gtk::Widget* power2Widget = create_reorderable_checkbox_list("POWER2", power2_keys, power2_values, list_stores["POWER2"]);
     optionsPower2Frame->addWidget(*power2Widget);
     Gtk::Widget* drivetrainWidget = create_reorderable_checkbox_list("DRIVETRAIN", drivetrain_keys, drivetrain_values, list_stores["DRIVETRAIN"]);
-    optionsPower2Frame->addWidget(*drivetrainWidget);
+    optionsDrivetrainFrame->addWidget(*drivetrainWidget);
 
     // Lambda to create the color option picker and add it to the grid
     auto add_color_setting = [&](const std::string& label_text, const std::string& color_value, Gtk::ColorButton* color_button) {
@@ -4130,6 +4135,9 @@ void create_config_editor_window(const std::string& config_file) {
         else if (key.rfind("SHOW_POWER2_", 0) == 0) {
             save_value(power2_values, key.substr(12), active);
         }
+        else if (key.rfind("SHOW_DRIVETRAIN_", 0) == 0){
+            save_value(drivetrain_values, key.substr(16), active);
+        }
     };
 
     auto write_values = [](std::ofstream& outfile, const std::string& label, const std::string& prefix){
@@ -4169,6 +4177,9 @@ void create_config_editor_window(const std::string& config_file) {
 
         local_communication_keys = reset_communication_keys;
         reset_frame("COMMUNICATION");
+
+        local_drivetrain_keys = reset_drivetrain_keys;
+        reset_frame("DRIVETRAIN");
     });
 
     save_button->signal_clicked().connect([=]() mutable{
@@ -4187,6 +4198,7 @@ void create_config_editor_window(const std::string& config_file) {
         power2_keys = local_power2_keys;
         zed_keys = local_zed_keys;
         communication_keys = local_communication_keys;
+        drivetrain_keys = local_drivetrain_keys;
 
         write_values(outfile, "Talon", "TALON");
         write_values(outfile, "Falcon", "FALCON");
@@ -4196,6 +4208,7 @@ void create_config_editor_window(const std::string& config_file) {
         write_values(outfile, "Power2", "POWER2");
         write_values(outfile, "Power", "POWER");
         write_values(outfile, "Zed", "ZED");
+        write_values(outfile, "Drivetrain", "DRIVETRAIN");
 
         const auto lightColorStr = to_color_string(light_color_button->get_rgba());
         const auto darkColorStr = to_color_string(dark_color_button->get_rgba());

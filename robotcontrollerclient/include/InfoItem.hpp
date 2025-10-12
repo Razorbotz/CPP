@@ -7,6 +7,9 @@ class InfoItem:public Gtk::Box{
 	private:
 	Gtk::Label* nameLabel;
 	Gtk::Label* valueLabel;
+    int order;
+
+    int decimalPlaces = 6;
 
 	public:
 	InfoItem(std::string name);
@@ -14,16 +17,18 @@ class InfoItem:public Gtk::Box{
 	void setName(std::string name);
 	std::string getName();
 
-	void setValue(bool value);
-    void setValue(int value);
-    void setValue(uint8_t value);
-    void setValue(uint16_t value);
+    void setDecimalPlaces(int places);
+
+    
     void setValue(long value);
-    void setValue(uint32_t value);
     void setValue(double value);
-    void setValue(uint64_t value);
     void setValue(float value);
     void setValue(std::string value);
+    template<typename T>
+    void setValue(T value) {
+        std::string valueString = std::to_string(value);
+        setValue(valueString);
+    }
 
 	bool getValueAsBool();
     int getValueAsInt();
@@ -32,5 +37,5 @@ class InfoItem:public Gtk::Box{
     double getValueAsDouble();
     std::string getValue();
     void setBackground(std::string color);
-    void setTextColor(std::string color);
+    void setTextColor(std::string color, bool bold);
 };

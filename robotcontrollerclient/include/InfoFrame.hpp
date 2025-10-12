@@ -18,16 +18,30 @@ public:
 	public:
 	InfoFrame(std::string frameName);
 	void addItem(std::string itemName);
-	void setItem(std::string itemName, std::string itemValue);
-    void setItem(std::string itemName, bool itemValue);
-    void setItem(std::string itemName, int itemValue);
-    void setItem(std::string itemName, long itemValue);
-	void setItem(std::string itemName, float itemValue);
-    void setItem(std::string itemName, double itemValue);
-    void setItem(std::string itemName, uint8_t itemValue);
-    void setItem(std::string itemName, uint16_t itemValue);
-    void setItem(std::string itemName, uint32_t itemValue);
-    void setItem(std::string itemName, uint64_t itemValue);
+    void removeItem(std::string itemName);
+    void removeAllItems();
+    void addWidget(Gtk::Widget& widget);
+    template <typename T>
+    void setItem(std::string itemName, T itemValue) {
+        for (std::shared_ptr<InfoItem> infoItem : itemList) {
+            if (infoItem->getName() == itemName) {
+                infoItem->setValue(itemValue);
+                return;
+            }
+        }
+        addItem(itemName);
+        if (!itemList.empty() && itemList.back()->getName() == itemName) {
+            itemList.back()->setValue(itemValue);
+        } else {
+            for (std::shared_ptr<InfoItem> infoItem : itemList) {
+                if (infoItem->getName() == itemName) {
+                    infoItem->setValue(itemValue);
+                    return;
+                }
+            }
+        }
+    }
+
     void setBackground(std::string itemName, std::string color);
-    void setTextColor(std::string itemName, std::string color);
+    void setTextColor(std::string itemName, std::string color, bool bold);
 };

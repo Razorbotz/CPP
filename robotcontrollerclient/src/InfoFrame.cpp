@@ -16,116 +16,57 @@ void InfoFrame::addItem(std::string itemName){
     std::shared_ptr<InfoItem> infoItem=std::make_shared<InfoItem>(itemName); 
     this->itemList.push_back(infoItem);
     this->contentsBox->add(*(infoItem));
-    this->show_all();
 }
 
-void InfoFrame::setItem(std::string itemName, std::string itemValue){
-    for(std::shared_ptr<InfoItem> infoItem:itemList){
-        if(infoItem->getName()==itemName){
-            infoItem->setValue(itemValue);
-            break;
-        }
-    }    
-}
-
-void InfoFrame::setItem(std::string itemName, bool itemValue){
-    for(std::shared_ptr<InfoItem> infoItem:itemList){
-        if(infoItem->getName()==itemName){
-            infoItem->setValue(itemValue);
+void InfoFrame::removeItem(std::string itemName) {
+    for (auto it = itemList.begin(); it != itemList.end(); ++it) {
+        if ((*it)->getName() == itemName) {
+            this->contentsBox->remove(*(*it));
+            itemList.erase(it);
             break;
         }
     }
 }
 
-void InfoFrame::setItem(std::string itemName, int itemValue){
-    for(std::shared_ptr<InfoItem> infoItem:itemList){
-        if(infoItem->getName()==itemName){
-            infoItem->setValue(itemValue);
-            break;
-        }
-    }
+void InfoFrame::addWidget(Gtk::Widget& widget) {
+    contentsBox->pack_start(widget, Gtk::PACK_SHRINK);
 }
 
-void InfoFrame::setItem(std::string itemName, long itemValue){
-    for(std::shared_ptr<InfoItem> infoItem:itemList){
-        if(infoItem->getName()==itemName){
-            infoItem->setValue(itemValue);
-            break;
-        }
+void InfoFrame::removeAllItems() {
+    for (const auto& item : itemList) {
+        contentsBox->remove(*item);
     }
-}
-
-void InfoFrame::setItem(std::string itemName, float itemValue){
-//    std::cout << "InfoFrame::setItem " <<  itemName << "  " << itemValue << std::endl;		
-    for(std::shared_ptr<InfoItem> infoItem:itemList){
-        if(infoItem->getName()==itemName){
-//            std::cout << "infoItem name " << infoItem->getName() << std::endl;		
-            infoItem->setValue(itemValue);
-            break;
-        }
-    }
-}
-
-void InfoFrame::setItem(std::string itemName, double itemValue){
-    for(std::shared_ptr<InfoItem> infoItem:itemList){
-        if(infoItem->getName()==itemName){
-            infoItem->setValue(itemValue);
-            break;
-        }
-    }
-}
-
-void InfoFrame::setItem(std::string itemName, uint32_t itemValue){
-    for(std::shared_ptr<InfoItem> infoItem:itemList){
-        if(infoItem->getName()==itemName){
-            infoItem->setValue(itemValue);
-            break;
-        }
-    }
-}
-
-
-void InfoFrame::setItem(std::string itemName, uint64_t itemValue){
-    for(std::shared_ptr<InfoItem> infoItem:itemList){
-        if(infoItem->getName()==itemName){
-            infoItem->setValue(itemValue);
-            break;
-        }
-    }
-}
-
-void InfoFrame::setItem(std::string itemName, uint8_t itemValue){
-    for(std::shared_ptr<InfoItem> infoItem:itemList){
-        if(infoItem->getName()==itemName){
-            infoItem->setValue(itemValue);
-            break;
-        }
-    }
-}
-
-void InfoFrame::setItem(std::string itemName, uint16_t itemValue){
-    for(std::shared_ptr<InfoItem> infoItem:itemList){
-        if(infoItem->getName()==itemName){
-            infoItem->setValue(itemValue);
-            break;
-        }
-    }
+    itemList.clear();
 }
 
 void InfoFrame::setBackground(std::string itemName, std::string color){
     for(std::shared_ptr<InfoItem> infoItem:itemList){
         if(infoItem->getName()==itemName){
             infoItem->setBackground(color);
-            break;
+            return;
+        }
+    }
+    addItem(itemName);
+    for(std::shared_ptr<InfoItem> infoItem:itemList){
+        if(infoItem->getName()==itemName){
+            infoItem->setBackground(color);
+            return;
         }
     }
 }
 
-void InfoFrame::setTextColor(std::string itemName, std::string color){
+void InfoFrame::setTextColor(std::string itemName, std::string color, bool bold){
     for(std::shared_ptr<InfoItem> infoItem:itemList){
         if(infoItem->getName()==itemName){
-            infoItem->setTextColor(color);
-            break;
+            infoItem->setTextColor(color, bold);
+            return;
+        }
+    }
+    addItem(itemName);
+    for(std::shared_ptr<InfoItem> infoItem:itemList){
+        if(infoItem->getName()==itemName){
+            infoItem->setTextColor(color, bold);
+            return;
         }
     }
 }

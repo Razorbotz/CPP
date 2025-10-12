@@ -18,58 +18,30 @@ std::string InfoItem::getName(){
     return nameLabel->get_text();
 }
 
-void InfoItem::setValue(std::string value){
+void InfoItem::setDecimalPlaces(int places){
+    decimalPlaces = places;
+}
+
+void InfoItem::setValue(std::string value) {
     valueLabel->set_text(value);
 }
 
-void InfoItem::setValue(bool value){
-    std::string valueString=std::to_string(value);
-    setValue(valueString);
-}
-void InfoItem::setValue(int value){
-    std::string valueString=std::to_string(value);
-    setValue(valueString);
-}
-void InfoItem::setValue(long value){
-    std::string valueString=std::to_string(value);
-    if(valueString.length() > 6){
-        valueString.resize(6);
-    }
-    setValue(valueString);
-}
-void InfoItem::setValue(float value){
-    std::string valueString=std::to_string(value);
-    if(valueString.length() > 6){
-        valueString.resize(6);
-    }
-    setValue(valueString);
-}
-void InfoItem::setValue(double value){
-    std::string valueString=std::to_string(value);
-    if(valueString.length() > 6){
-        valueString.resize(6);
-    }
+// Specializations or overloads for types with string truncation
+void InfoItem::setValue(float value) {
+    std::string valueString = std::to_string(value);
+    if (valueString.length() > decimalPlaces) valueString.resize(decimalPlaces);
     setValue(valueString);
 }
 
-void InfoItem::setValue(uint32_t value){
-    std::string valueString=std::to_string(value);
+void InfoItem::setValue(double value) {
+    std::string valueString = std::to_string(value);
+    if (valueString.length() > decimalPlaces) valueString.resize(decimalPlaces);
     setValue(valueString);
 }
 
-void InfoItem::setValue(uint8_t value){
-    std::string valueString=std::to_string(value);
-    setValue(valueString);
-}
-
-void InfoItem::setValue(uint16_t value){
-    std::string valueString=std::to_string(value);
-    setValue(valueString);
-}
-
-
-void InfoItem::setValue(uint64_t value){
-    std::string valueString=std::to_string(value);
+void InfoItem::setValue(long value) {
+    std::string valueString = std::to_string(value);
+    if (valueString.length() > decimalPlaces) valueString.resize(decimalPlaces);
     setValue(valueString);
 }
 
@@ -103,8 +75,8 @@ void InfoItem::setBackground(std::string color){
     this->valueLabel->override_background_color(Gdk::RGBA(color));
 }
 
-void InfoItem::setTextColor(std::string color){
-    if(color == "white"){
+void InfoItem::setTextColor(std::string color, bool bold){
+    if(bold){
         Pango::FontDescription font;
         font.set_weight(Pango::WEIGHT_BOLD);
         this->valueLabel->override_font(font);

@@ -1,0 +1,2 @@
+-Need to implement a heartbeat function within the while(running) portion of control.cpp's main()
+-Need to send a message every n seconds, tardiness of this message will be seen as a loss of connection from the robot's POV

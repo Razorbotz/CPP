@@ -7,11 +7,18 @@ project(control)
 set(CMAKE_CXX_STANDARD 17)
 
 
+find_package(OpenCV REQUIRED)
 find_package(PkgConfig REQUIRED)
+find_package(CURL REQUIRED)
 pkg_check_modules(GTKMM REQUIRED gtkmm-3.0)
 pkg_check_modules(CAIRO REQUIRED cairo)
 pkg_check_modules(WEBKITGTK REQUIRED webkit2gtk-4.0)
-
+pkg_check_modules(FFMPEG REQUIRED IMPORTED_TARGET
+    libavcodec
+    libavformat
+    libavutil
+    libswscale
+)
 
 include_directories(
   include
@@ -70,8 +77,16 @@ include_directories(
   ${GTKMM_INCLUDE_DIRS}
   ${CAIRO_INCLUDE_DIRS}
   ${WEBKITGTK_INCLUDE_DIRS}
+  ${OpenCV_INCLUDE_DIRS}
+  ${FFMPEG_INCLUDE_DIRS}
 )
 
+link_directories(
+  include/
+  ${GTKMM_LIBRARY_DIRS}
+)
+
+add_definitions(${GTKMM_CFLAGS_OTHER})
 
 add_executable(control 
   src/control.cpp
@@ -102,5 +117,9 @@ target_link_libraries(control
   ${CAIRO_LIBRARIES}
   cairo
   ${WEBKITGTK_LIBRARIES}
+  ${OpenCV_LIBS}
+  pthread
+  CURL::libcurl
+  PkgConfig::FFMPEG
 )
 

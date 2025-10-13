@@ -51,6 +51,7 @@ extern "C" {
 #include "InfoFrame.hpp"
 #include "BinaryMessage.hpp"
 #include "Speedometer.hpp"
+#include "ConfigDefinitions.hpp"
 
 /*
 TODO: 
@@ -163,132 +164,10 @@ Gtk::Window* configWindow;
 Gtk::Window* motorWindow;
 int monitor_count = 0;
 
-std::string configFile = "config.txt";
-
-enum class ElementType {
-    UInt8, UInt16, Int8, Int32, Float32, Boolean, String
-};
-
-struct ElementInfo {
-    ElementType type;
-    std::string name;
-};
-
 std::string darkBackgroundColor = "#0b1a21";
 std::string lightBackgroundColor = "#f0faf2";
 bool isLightMode = true;
 
-
-// To add a new key, add it to the vector that the key belongs to and 
-// add it to the element_definitions below with the type of the element
-
-// To add a new type, create a new vector of strings below. Initialize it
-// in the initialize map function. Add it to the key_vectors. Create a 
-// local keys and copy the values to it.  Create various boxes and add them
-// to frame_entries. Create a new widget and add it to the options frame. 
-// Save the new values to the vector from the local copy.
-std::set<std::string> speedometer_keys = {
-    "DISPLAY_SPEED",
-    "NUMBERS_INSIDE",
-    "NUMBER_TICKS"
-};
-
-std::vector<std::string> talon_keys = {
-"Device ID", "Bus Voltage", "Output Current", "Output Percent",
-"Temperature", "Sensor Position", "Sensor Velocity", "Max Current"
-};
-std::vector<std::string> reset_talon_keys = {
- "Device ID", "Bus Voltage", "Output Current", "Output Percent",
-"Temperature", "Sensor Position", "Sensor Velocity", "Max Current"
-};   
-
-std::map<std::string, bool> talon_values;
-
-std::vector<std::string> falcon_keys = talon_keys;
-std::map<std::string, bool> falcon_values;
-std::vector<std::string> reset_falcon_keys = reset_talon_keys;
-
-std::vector<std::string> linear_keys = {
-    "Motor Number", "Speed", "Potentiometer", "Time Without Change",
-    "Max", "Min", "Error", "At Min", "At Max", "Distance", "Sensorless"
-};
-std::map<std::string, bool> linear_values;
-std::vector<std::string> reset_linear_keys = {
-    "Motor Number", "Speed", "Potentiometer", "Time Without Change",
-    "Max", "Min", "Error", "At Min", "At Max", "Distance", "Sensorless"
-};
-
-std::vector<std::string> power_keys = {
-    "Voltage", "Temp", "Current 0", "Current 1", "Current 2",
-    "Current 3", "Current 4", "Current 5", "Current 6"
-};
-std::map<std::string, bool> power_values;
-std::vector<std::string> reset_power_keys = {
-    "Voltage", "Temp", "Current 0", "Current 1", "Current 2",
-    "Current 3", "Current 4", "Current 5", "Current 6"
-};
-
-std::vector<std::string> power2_keys = {
-    "Current 7", "Current 8", "Current 9", "Current 10", "Current 11",
-    "Current 12", "Current 13", "Current 14", "Current 15"
-};
-std::map<std::string, bool> power2_values;
-std::vector<std::string> reset_power2_keys = {
-    "Current 7", "Current 8", "Current 9", "Current 10", "Current 11",
-    "Current 12", "Current 13", "Current 14", "Current 15"
-};
-
-std::vector<std::string> autonomy_keys = {
-    "Robot State", "Excavation State", "Error State", "Diagnostics State", 
-    "Tilt State", "Dump State", "Level Bucket", "Level Arms", "Dest X", "Dest Z"
-};
-std::map<std::string, bool> autonomy_values;
-std::vector<std::string> reset_autonomy_keys = {
-    "Robot State", "Excavation State", "Error State", "Diagnostics State", 
-    "Tilt State", "Dump State", "Level Bucket", "Level Arms", "Dest X", "Dest Z"
-};
-
-std::vector<std::string> zed_keys = {
-    "X", "Y", "Z", "roll", "pitch", "yaw", "aruco"
-};
-std::map<std::string, bool> zed_values;
-std::vector<std::string> reset_zed_keys = {
-    "X", "Y", "Z", "roll", "pitch", "yaw", "aruco"
-};
-
-std::vector<std::string> communication_keys = {
-    "RSSI", "Wi-Fi", "CAN Bus", "Using CAN1", "RX packets", "TX packets", "CAN Bus2", "RX2 packets", "TX2 packets", "Status"
-};
-std::map<std::string, bool> communication_values;
-std::vector<std::string> reset_communication_keys = {
-    "RSSI", "Wi-Fi", "CAN Bus", "Using CAN1", "RX packets", "TX packets", "CAN Bus2", "RX2 packets", "TX2 packets", "Status"
-};
-
-
-std::vector<std::string> drivetrain_keys = {
-    "F1 Vel", "F1 RPM", "F1 Speed", "F2 Vel", "F2 RPM", "F2 Speed", "F3 Vel", "F3 RPM", "F3 Speed", "F4 Vel", "F4 RPM", "F4 Speed"
-};
-std::map<std::string, bool> drivetrain_values;
-std::vector<std::string> reset_drivetrain_keys = {
-    "F1 Vel", "F1 RPM", "F1 Speed", "F2 Vel", "F2 RPM", "F2 Speed", "F3 Vel", "F3 RPM", "F3 Speed", "F4 Vel", "F4 RPM", "F4 Speed"
-};
-void initialize_bool_map(std::map<std::string, bool>& map, const std::vector<std::string>& keys) {
-    for (const auto& key : keys) {
-        map[key] = true;
-    }
-}
-
-void initialize_maps(){
-    initialize_bool_map(talon_values, talon_keys);
-    initialize_bool_map(falcon_values, falcon_keys);
-    initialize_bool_map(linear_values, linear_keys);
-    initialize_bool_map(power_values, power_keys);
-    initialize_bool_map(power2_values, power2_keys);
-    initialize_bool_map(autonomy_values, autonomy_keys);
-    initialize_bool_map(zed_values, zed_keys);
-    initialize_bool_map(communication_values, communication_keys);
-    initialize_bool_map(drivetrain_values, drivetrain_keys);
-}
 
 double roll_rotation_angle = 0.0;
 Glib::RefPtr<Gdk::Pixbuf> roll_pixbuf;
@@ -1212,30 +1091,6 @@ Gtk::Widget* get_flowbox_child_for(Gtk::FlowBox& flowbox, Gtk::Widget* target_wi
 }
 
 
-std::map<std::string, std::vector<std::string>*> key_vectors = {
-    {"Talon", &talon_keys},
-    {"Falcon", &falcon_keys},
-    {"Linear", &linear_keys},
-    {"Autonomy", &autonomy_keys},
-    {"Communication", &communication_keys},
-    {"Power2", &power2_keys},
-    {"Power", &power_keys},
-    {"Zed", &zed_keys},
-    {"Drivetrain", &drivetrain_keys}
-};
-
-std::vector<std::string> getKeys(const std::string& label) {
-    if(label == "Power2"){
-        return power2_keys;
-    }
-    for (const auto& [prefix, keys_ptr] : key_vectors) {
-        if (label.rfind(prefix, 0) == 0) {
-            return *keys_ptr;
-        }
-    }
-    return talon_keys;
-}
-
 // Dark mode
 std::string darkMode =
     "* { font-family: 'Proxima Nova'; font-weight: bold; }\n"
@@ -1692,181 +1547,6 @@ void initBucketPos(){
     }
 }
 
-
-/*** Various helper functions ***/
-std::map<std::string, bool>& getMap(std::string label){
-    if(label.rfind("Talon", 0) == 0){
-        return talon_values;
-    }
-    if(label.rfind("Falcon", 0) == 0){
-        return falcon_values;
-    }
-    if(label.rfind("Linear", 0) == 0){
-        return linear_values;
-    }
-    if(label.rfind("Autonomy", 0) == 0){
-        return autonomy_values;
-    }
-    if(label.rfind("Communication", 0) == 0){
-        return communication_values;
-    }
-    if(label.rfind("Power2", 0) == 0){
-        return power2_values;
-    }
-    else if(label.rfind("Power", 0) == 0){
-        return power_values;
-    }
-    if(label.rfind("Zed", 0) == 0){
-        return zed_values;
-    }
-    if(label.rfind("Drivetrain", 0) == 0){
-        return drivetrain_values;
-    }
-    return talon_values;
-}
-
-// Define element-adding lambdas keyed by prefix
-// This creates the binary messages associated with the string
-std::map<std::string, std::vector<ElementInfo>> element_definitions = {
-    {"TALON", {
-        {ElementType::UInt8, "Device ID"},
-        {ElementType::UInt16, "Bus Voltage"},
-        {ElementType::UInt16, "Output Current"},
-        {ElementType::Float32, "Output Percent"},
-        {ElementType::Float32, "Sensor Velocity"},
-        {ElementType::UInt8, "Temperature"},
-        {ElementType::UInt16, "Sensor Position"},
-        {ElementType::Float32, "Max Current"}
-    }},
-    {"FALCON", {
-        {ElementType::UInt8, "Device ID"},
-        {ElementType::UInt16, "Bus Voltage"},
-        {ElementType::UInt16, "Output Current"},
-        {ElementType::Float32, "Output Percent"},
-        {ElementType::UInt8, "Temperature"},
-        {ElementType::Float32, "Sensor Position"},
-        {ElementType::Float32, "Sensor Velocity"},
-        {ElementType::Float32, "Max Current"}
-    }},
-    {"LINEAR", {
-        {ElementType::UInt8, "Motor Number"},
-        {ElementType::Float32, "Speed"},
-        {ElementType::UInt16, "Potentiometer"},
-        {ElementType::UInt8, "Time Without Change"},
-        {ElementType::UInt16, "Max"},
-        {ElementType::UInt16, "Min"},
-        {ElementType::String, "Error"},
-        {ElementType::Boolean, "At Min"},
-        {ElementType::Boolean, "At Max"},
-        {ElementType::Float32, "Distance"},
-        {ElementType::Boolean, "Sensorless"}
-    }},
-    {"AUTONOMY", {
-        {ElementType::String, "Robot State"},
-        {ElementType::String, "Excavation State"},
-        {ElementType::String, "Error State"},
-        {ElementType::String, "Diagnostics State"},
-        {ElementType::String, "Tilt State"},
-        {ElementType::String, "Dump State"},
-        {ElementType::String, "Level Bucket"},
-        {ElementType::String, "Level Arms"},
-        {ElementType::Float32, "Dest X"},
-        {ElementType::Float32, "Dest Z"}
-    }},
-    {"ZED", {
-        {ElementType::Float32, "X"},
-        {ElementType::Float32, "Y"},
-        {ElementType::Float32, "Z"},
-        {ElementType::Float32, "roll"},
-        {ElementType::Float32, "pitch"},
-        {ElementType::Float32, "yaw"},
-        {ElementType::Boolean, "aruco"}
-    }},
-    {"COMMUNICATION", {
-        {ElementType::Int32, "RSSI"},
-        {ElementType::String, "Wi-Fi"},
-        {ElementType::String, "CAN Bus"},
-        {ElementType::Boolean, "Using CAN1"},
-        {ElementType::Int32, "RX packets"},
-        {ElementType::Int32, "TX packets"},
-        {ElementType::String, "CAN Bus2"},
-        {ElementType::Int32, "RX2 packets"},
-        {ElementType::Int32, "TX2 packets"},
-        {ElementType::String, "Status"}
-    }},
-    {"POWER", {
-        {ElementType::Float32, "Voltage"},
-        {ElementType::Float32, "Temp"},
-        {ElementType::Float32, "Current 0"},
-        {ElementType::Float32, "Current 1"},
-        {ElementType::Float32, "Current 2"},
-        {ElementType::Float32, "Current 3"},
-        {ElementType::Float32, "Current 4"},
-        {ElementType::Float32, "Current 5"},
-        {ElementType::Float32, "Current 6"}
-    }},
-    {"POWER2", {
-        {ElementType::Float32, "Current 7"},
-        {ElementType::Float32, "Current 8"},
-        {ElementType::Float32, "Current 9"},
-        {ElementType::Float32, "Current 10"},
-        {ElementType::Float32, "Current 11"},
-        {ElementType::Float32, "Current 12"},
-        {ElementType::Float32, "Current 13"},
-        {ElementType::Float32, "Current 14"},
-        {ElementType::Float32, "Current 15"}
-    }},
-    {"DRIVETRAIN", {
-        {ElementType::Float32, "F1 Vel"},
-        {ElementType::Float32, "F1 RPM"},
-        {ElementType::Float32, "F1 Speed"},
-        {ElementType::Float32, "F2 Vel"},
-        {ElementType::Float32, "F2 RPM"},
-        {ElementType::Float32, "F2 Speed"},
-        {ElementType::Float32, "F3 Vel"},
-        {ElementType::Float32, "F3 RPM"},
-        {ElementType::Float32, "F3 Speed"},
-        {ElementType::Float32, "F4 Vel"},
-        {ElementType::Float32, "F4 RPM"},
-        {ElementType::Float32, "F4 Speed"}
-    }}
-};
-
-std::string getNameFromPrefix(std::string label){
-    if(label.rfind("TALON", 0) == 0){
-        return "Talon";
-    }
-    if(label.rfind("FALCON", 0) == 0){
-        return "Falcon";
-    }
-    if(label.rfind("LINEAR", 0) == 0){
-        return "Linear";
-    }
-    if(label.rfind("AUTONOMY", 0) == 0){
-        return "Autonomy";
-    }
-    if(label.rfind("COMMUNICATION", 0) == 0){
-        return "Communication";
-    }
-    if(label.rfind("POWER2", 0) == 0){
-        return "Power2";
-    }
-    if(label.rfind("POWER", 0) == 0){
-        return "Power";
-    }
-    if(label.rfind("ZED", 0) == 0){
-        return "Zed";
-    }
-    if(label.rfind("TEST", 0) == 0){
-        return "Test";
-    }
-    if(label.rfind("DRIVETRAIN", 0 ) == 0){
-        return "Drivetrain";
-    }
-    return "Talon";
-}
-
-
 /*** Functions associated with GUI Updates ***/
 const std::unordered_set<std::string> validLabels = {
     "Falcon 1", "Falcon 2", "Falcon 3", "Falcon 4",
@@ -2170,9 +1850,9 @@ void updateGUI(BinaryMessage& message) {
 // associated with the particular info frame
 void populateBinaryMessage(const std::string& name, const std::string& prefix, BinaryMessage& message) {
     std::string vector_name = getNameFromPrefix(prefix);
-    auto keys_it = key_vectors.find(vector_name);
-    auto defs_it = element_definitions.find(prefix);
-    if (keys_it == key_vectors.end() || defs_it == element_definitions.end()) {
+    auto keys_it = get_key_vectors().find(vector_name);
+    auto defs_it = get_element_definitions().find(prefix);
+    if (keys_it == get_key_vectors().end() || defs_it == get_element_definitions().end()) {
         std::cerr << "Warning: Missing keys or definitions for prefix " << prefix << std::endl;
         return;
     }
@@ -3268,15 +2948,15 @@ public:
 ListColumns columns;
 
 std::map<std::string, Gtk::CheckButton*> bool_buttons;
-std::vector<std::string> local_talon_keys = talon_keys;
-std::vector<std::string> local_falcon_keys = falcon_keys;
-std::vector<std::string> local_linear_keys = linear_keys;
-std::vector<std::string> local_autonomy_keys = autonomy_keys;
-std::vector<std::string> local_communication_keys = communication_keys;
-std::vector<std::string> local_power2_keys = power2_keys;
-std::vector<std::string> local_power_keys = power_keys;
-std::vector<std::string> local_zed_keys = zed_keys;
-std::vector<std::string> local_drivetrain_keys = drivetrain_keys;
+std::vector<std::string> local_talon_keys = get_talon_keys();
+std::vector<std::string> local_falcon_keys = get_falcon_keys();
+std::vector<std::string> local_linear_keys = get_linear_keys();
+std::vector<std::string> local_autonomy_keys = get_autonomy_keys();
+std::vector<std::string> local_communication_keys = get_communication_keys();
+std::vector<std::string> local_power2_keys = get_power2_keys();
+std::vector<std::string> local_power_keys = get_power_keys();
+std::vector<std::string> local_zed_keys = get_zed_keys();
+std::vector<std::string> local_drivetrain_keys = get_drivetrain_keys();
 
 std::map<std::string, std::vector<std::string>*> local_key_vectors = {
     {"Talon", &local_talon_keys},
@@ -3290,11 +2970,10 @@ std::map<std::string, std::vector<std::string>*> local_key_vectors = {
     {"Drivetrain", &local_drivetrain_keys}
 };
 
-
 bool allowConfig = true;
-
 void create_config_editor_window(const std::string& config_file) {
     allowConfig = false;
+    initialize_maps();
     configWindow = new Gtk::Window();
     configWindow->set_title("Configuration Editor");
     configWindow->set_default_size(1000, 600);
@@ -3346,8 +3025,8 @@ void create_config_editor_window(const std::string& config_file) {
     auto populateBinaryMessage = [&](const std::string& prefix, BinaryMessage& message) {
         std::string name = getNameFromPrefix(prefix);
         auto keys_it = local_key_vectors.find(name);
-        auto defs_it = element_definitions.find(prefix);
-        if (keys_it == local_key_vectors.end() || defs_it == element_definitions.end()) {
+        auto defs_it = get_element_definitions().find(prefix);
+        if (keys_it == local_key_vectors.end() || defs_it == get_element_definitions().end()) {
             std::cerr << "Warning: Missing keys or definitions for prefix " << prefix << std::endl;
             return;
         }
@@ -3355,11 +3034,14 @@ void create_config_editor_window(const std::string& config_file) {
         const auto& defs = defs_it->second;
         std::map<std::string, ElementType> type_map;
         for (const auto& def : defs) {
+            std::cout << def.name << std::endl;
             type_map[def.name] = def.type;
         }
         for (const std::string& key : keys) {
+            std::cout << "Key: " << key << std::endl;
             auto type_it = type_map.find(key);
             if (type_it == type_map.end()) continue;
+            std::cout << "Found" << std::endl;
 
             ElementType type = type_it->second;
 
@@ -3469,6 +3151,16 @@ void create_config_editor_window(const std::string& config_file) {
 
     setup_frame_map();
 
+    for (const auto& [prefix, _] : get_element_definitions()) {
+        InfoFrame* frame = frame_map[prefix];
+        if (!frame) continue;
+        frame->removeAllItems();
+        BinaryMessage msg(getNameFromPrefix(prefix));
+        populateBinaryMessage(prefix, msg);
+        addConditionalElements(prefix, msg, frame);
+        frame->show_all();
+    }
+
     auto create_reorderable_checkbox_list = [&](const std::string& prefix, std::vector<std::string> keys, std::map<std::string, bool>& items_map,
                                             Glib::RefPtr<Gtk::ListStore>& list_store_out) -> Gtk::Widget* {
         auto box = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_VERTICAL);
@@ -3577,23 +3269,24 @@ void create_config_editor_window(const std::string& config_file) {
     };
 
 
-    Gtk::Widget* talonWidget = create_reorderable_checkbox_list("TALON", talon_keys, talon_values, list_stores["TALON"]);
+    Gtk::Widget* talonWidget = create_reorderable_checkbox_list("TALON", get_talon_keys(), get_talon_values(), list_stores["TALON"]);
+    Gtk::Widget* falconWidget = create_reorderable_checkbox_list("FALCON", get_falcon_keys(), get_falcon_values(), list_stores["FALCON"]);
+    Gtk::Widget* linearWidget = create_reorderable_checkbox_list("LINEAR", get_linear_keys(), get_linear_values(), list_stores["LINEAR"]);
+    Gtk::Widget* autonomyWidget = create_reorderable_checkbox_list("AUTONOMY", get_autonomy_keys(), get_autonomy_values(), list_stores["AUTONOMY"]);
+    Gtk::Widget* zedWidget = create_reorderable_checkbox_list("ZED", get_zed_keys(), get_zed_values(), list_stores["ZED"]);
+    Gtk::Widget* communicationWidget = create_reorderable_checkbox_list("COMMUNICATION", get_communication_keys(), get_communication_values(), list_stores["COMMUNICATION"]);
+    Gtk::Widget* powerWidget = create_reorderable_checkbox_list("POWER", get_power_keys(), get_power_values(), list_stores["POWER"]);
+    Gtk::Widget* power2Widget = create_reorderable_checkbox_list("POWER2", get_power2_keys(), get_power2_values(), list_stores["POWER2"]);
+    Gtk::Widget* drivetrainWidget = create_reorderable_checkbox_list("DRIVETRAIN", get_drivetrain_keys(), get_drivetrain_values(), list_stores["DRIVETRAIN"]);
+
     optionsTalonFrame->addWidget(*talonWidget);
-    Gtk::Widget* falconWidget = create_reorderable_checkbox_list("FALCON", falcon_keys, falcon_values, list_stores["FALCON"]);
     optionsFalconFrame->addWidget(*falconWidget);
-    Gtk::Widget* linearWidget = create_reorderable_checkbox_list("LINEAR", linear_keys, linear_values, list_stores["LINEAR"]);
     optionsLinearFrame->addWidget(*linearWidget);
-    Gtk::Widget* autonomyWidget = create_reorderable_checkbox_list("AUTONOMY", autonomy_keys, autonomy_values, list_stores["AUTONOMY"]);
     optionsAutonomyFrame->addWidget(*autonomyWidget);
-    Gtk::Widget* zedWidget = create_reorderable_checkbox_list("ZED", zed_keys, zed_values, list_stores["ZED"]);
     optionsZedFrame->addWidget(*zedWidget);
-    Gtk::Widget* communicationWidget = create_reorderable_checkbox_list("COMMUNICATION", communication_keys, communication_values, list_stores["COMMUNICATION"]);
     optionsCommunicationFrame->addWidget(*communicationWidget);
-    Gtk::Widget* powerWidget = create_reorderable_checkbox_list("POWER", power_keys, power_values, list_stores["POWER"]);
     optionsPowerFrame->addWidget(*powerWidget);
-    Gtk::Widget* power2Widget = create_reorderable_checkbox_list("POWER2", power2_keys, power2_values, list_stores["POWER2"]);
     optionsPower2Frame->addWidget(*power2Widget);
-    Gtk::Widget* drivetrainWidget = create_reorderable_checkbox_list("DRIVETRAIN", drivetrain_keys, drivetrain_values, list_stores["DRIVETRAIN"]);
     optionsDrivetrainFrame->addWidget(*drivetrainWidget);
 
     // Lambda to create the color option picker and add it to the grid
@@ -3776,33 +3469,33 @@ void create_config_editor_window(const std::string& config_file) {
         testSpeedometer->set_numbers_on_ticks(numberTicks);
     }
 
-    auto save_values = [](const std::string& key, bool active){
+    auto save_values = [](const std::string& key, bool active) {
         if (key.rfind("SHOW_TALON_", 0) == 0) {
-            save_value(talon_values, key.substr(11), active);
+            save_value(get_talon_values(), key.substr(11), active);
         }
         else if (key.rfind("SHOW_FALCON_", 0) == 0) {
-            save_value(falcon_values, key.substr(12), active);
+            save_value(get_falcon_values(), key.substr(12), active);
         }
         else if (key.rfind("SHOW_LINEAR_", 0) == 0) {
-            save_value(linear_values, key.substr(12), active);
+            save_value(get_linear_values(), key.substr(12), active);
         }
         else if (key.rfind("SHOW_AUTONOMY_", 0) == 0) {
-            save_value(autonomy_values, key.substr(14), active);
+            save_value(get_autonomy_values(), key.substr(14), active);
         }
         else if (key.rfind("SHOW_ZED_", 0) == 0) {
-            save_value(zed_values, key.substr(9), active);
+            save_value(get_zed_values(), key.substr(9), active);
         }
         else if (key.rfind("SHOW_COMMUNICATION_", 0) == 0) {
-            save_value(communication_values, key.substr(19), active);
+            save_value(get_communication_values(), key.substr(19), active);
         }
         else if (key.rfind("SHOW_POWER_", 0) == 0) {
-            save_value(power_values, key.substr(11), active);
-        }
+            save_value(get_power_values(), key.substr(11), active);
+        } 
         else if (key.rfind("SHOW_POWER2_", 0) == 0) {
-            save_value(power2_values, key.substr(12), active);
+            save_value(get_power2_values(), key.substr(12), active);
         }
-        else if (key.rfind("SHOW_DRIVETRAIN_", 0) == 0){
-            save_value(drivetrain_values, key.substr(16), active);
+        else if (key.rfind("SHOW_DRIVETRAIN_", 0) == 0) {
+            save_value(get_drivetrain_values(), key.substr(16), active);
         }
     };
 
@@ -3820,31 +3513,24 @@ void create_config_editor_window(const std::string& config_file) {
     };
 
     reset_button->signal_clicked().connect([=]() mutable{
-        local_talon_keys = reset_talon_keys;
+        local_talon_keys = get_reset_talon_keys();
+        local_falcon_keys = get_reset_falcon_keys();
+        local_linear_keys = get_reset_linear_keys();
+        local_autonomy_keys = get_reset_autonomy_keys();
+        local_power_keys = get_reset_power_keys();
+        local_power2_keys = get_reset_power2_keys();
+        local_zed_keys = get_reset_zed_keys();
+        local_communication_keys = get_reset_communication_keys();
+        local_drivetrain_keys = get_reset_drivetrain_keys();
+        
         reset_frame("TALON");
-
-        local_falcon_keys = reset_falcon_keys;
         reset_frame("FALCON");
-
-        local_linear_keys = reset_linear_keys;
         reset_frame("LINEAR");
-
-        local_autonomy_keys = reset_autonomy_keys;
         reset_frame("AUTONOMY");
-
-        local_power_keys = reset_power_keys;
         reset_frame("POWER");
-
-        local_power2_keys = reset_power2_keys;
         reset_frame("POWER2");
-
-        local_zed_keys = reset_zed_keys;
         reset_frame("ZED");
-
-        local_communication_keys = reset_communication_keys;
         reset_frame("COMMUNICATION");
-
-        local_drivetrain_keys = reset_drivetrain_keys;
         reset_frame("DRIVETRAIN");
     });
 
@@ -3856,15 +3542,15 @@ void create_config_editor_window(const std::string& config_file) {
             save_values(key, active);
         }
 
-        talon_keys = local_talon_keys;
-        falcon_keys = local_falcon_keys;
-        linear_keys = local_linear_keys;
-        autonomy_keys = local_autonomy_keys;
-        power_keys = local_power_keys;
-        power2_keys = local_power2_keys;
-        zed_keys = local_zed_keys;
-        communication_keys = local_communication_keys;
-        drivetrain_keys = local_drivetrain_keys;
+        get_talon_keys() = local_talon_keys;
+        get_falcon_keys() = local_falcon_keys;
+        get_linear_keys() = local_linear_keys;
+        get_autonomy_keys() = local_autonomy_keys;
+        get_power_keys() = local_power_keys;
+        get_power2_keys() = local_power2_keys;
+        get_zed_keys() = local_zed_keys;
+        get_communication_keys() = local_communication_keys;
+        get_drivetrain_keys() = local_drivetrain_keys;
 
         write_values(outfile, "Talon", "TALON");
         write_values(outfile, "Falcon", "FALCON");
@@ -4243,7 +3929,7 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
     settingsButton->set_tooltip_text("Open Settings");
     settingsButton->signal_clicked().connect([]() {
         if(allowConfig)
-            create_config_editor_window(configFile);
+            create_config_editor_window(get_configFile());
     });
     settingsButton->set_size_request(50, 50);
     settingsButton->set_name("dark_text");

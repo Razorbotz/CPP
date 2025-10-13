@@ -94,6 +94,7 @@ add_executable(control
   src/InfoItem.cpp
   src/BinaryMessage.cpp
   src/Speedometer.cpp
+  src/ConfigDefinitions.cpp
 )
 
 

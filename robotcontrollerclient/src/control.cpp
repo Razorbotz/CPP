@@ -630,11 +630,6 @@ Glib::RefPtr<Gdk::Pixbuf> rotate_image(Glib::RefPtr<Gdk::Pixbuf> pixbuf, double 
 
     // Fill background
     cr->set_source_rgb(1.0, 1.0, 1.0); // Default to white
-    if (isLightMode) {
-        if (!set_source_hex_color(cr, lightBackgroundColor)) cr->set_source_rgb(1.0, 1.0, 1.0);
-    } else {
-        if (!set_source_hex_color(cr, darkBackgroundColor)) cr->set_source_rgb(0.0, 0.0, 0.0);
-    }
     if (angle_deg > 30 || angle_deg < -30) {
         cr->set_source_rgb(1.0, 0.0, 0.0); // Red for high angle warning
     }
@@ -913,13 +908,27 @@ class MultiMotorGraph : public Gtk::Box {
             Gtk::Allocation alloc = graphArea->get_allocation();
             const int width = alloc.get_width();
             const int height = alloc.get_height();
+
+            // Define colors for text, grid, and border based on the current mode.
+            Gdk::RGBA text_color, grid_color, border_color;
+            if (isLightMode) {
+                set_source_hex_color(cr, lightBackgroundColor);
+                text_color.set("black");
+                grid_color.set_rgba(0.9, 0.9, 0.9, 1.0);
+                border_color.set_rgba(0.7, 0.7, 0.7, 1.0);
+            }
+            else {
+                set_source_hex_color(cr, darkBackgroundColor);
+                text_color.set("white");
+                grid_color.set_rgba(0.25, 0.25, 0.25, 1.0);
+                border_color.set_rgba(0.4, 0.4, 0.4, 1.0);
+            }
     
             // Clear background
-            cr->set_source_rgb(1, 1, 1);
             cr->paint();
     
             // Draw border
-            cr->set_source_rgb(0.7, 0.7, 0.7);
+            cr->set_source_rgba(border_color.get_red(), border_color.get_green(), border_color.get_blue(), border_color.get_alpha());
             cr->rectangle(0, 0, width, height);
             cr->stroke();
     
@@ -929,9 +938,11 @@ class MultiMotorGraph : public Gtk::Box {
             
             if (graphType == OUTPUT_PERCENT || graphType == SPEED) {
                 step = 0.1f; // 25% increments for output and speed
-            } else if (graphType == POTENTIOMETER) {
+            }
+            else if (graphType == POTENTIOMETER) {
                 step = 100.0f; // 1V increments for potentiometer
-            } else {
+            }
+            else {
                 step = (range > 1000) ? 100.0f :
                       (range > 20) ? 5.0f : 
                       (range > 10) ? 1.0f : 
@@ -939,19 +950,19 @@ class MultiMotorGraph : public Gtk::Box {
             }
     
             // Draw grid and labels
-            cr->set_source_rgb(0.9, 0.9, 0.9);
+            cr->set_source_rgba(grid_color.get_red(), grid_color.get_green(), grid_color.get_blue(), grid_color.get_alpha());
             cr->select_font_face("Sans", Cairo::FONT_SLANT_NORMAL, Cairo::FONT_WEIGHT_NORMAL);
             cr->set_font_size(10);
             
             // Special case for output percentage and speed to show 0 line
             if (graphType == OUTPUT_PERCENT || graphType == SPEED) {
                 float zeroY = height - ((0 - minVal) / range) * (height - 20);
-                cr->set_source_rgb(0.7, 0.7, 0.7);
+                cr->set_source_rgba(border_color.get_red(), border_color.get_green(), border_color.get_blue(), border_color.get_alpha());
                 cr->move_to(0, zeroY);
                 cr->line_to(width, zeroY);
                 cr->stroke();
                 
-                cr->set_source_rgb(0, 0, 0);
+                cr->set_source_rgba(text_color.get_red(), text_color.get_green(), text_color.get_blue(), text_color.get_alpha());
                 cr->move_to(5, zeroY - 5);
                 cr->show_text("0");
             }
@@ -963,22 +974,25 @@ class MultiMotorGraph : public Gtk::Box {
                 }
                 
                 float y = height - ((v - minVal) / range) * (height - 20);
-                cr->set_source_rgb(0.9, 0.9, 0.9);
+                cr->set_source_rgba(grid_color.get_red(), grid_color.get_green(), grid_color.get_blue(), grid_color.get_alpha());
                 cr->move_to(0, y);
                 cr->line_to(width, y);
                 cr->stroke();
                 
-                cr->set_source_rgb(0, 0, 0);
+                cr->set_source_rgba(text_color.get_red(), text_color.get_green(), text_color.get_blue(), text_color.get_alpha());
                 cr->move_to(5, y - 5);
                 
                 // Format label based on value size and type
                 if (graphType == OUTPUT_PERCENT || graphType == SPEED) {
                     cr->show_text(Glib::ustring::format(std::fixed, std::setprecision(0), v * 100) + "%");
-                } else if (graphType == POTENTIOMETER) {
+                }
+                else if (graphType == POTENTIOMETER) {
                     cr->show_text(Glib::ustring::format(std::fixed, std::setprecision(1), v) + "V");
-                } else if (maxVal > 100) {
+                }
+                else if (maxVal > 100) {
                     cr->show_text(Glib::ustring::format(std::fixed, std::setprecision(0), v));
-                } else {
+                }
+                else {
                     cr->show_text(Glib::ustring::format(std::fixed, std::setprecision(1), v));
                 }
             }
@@ -1563,6 +1577,31 @@ Gtk::Widget* get_flowbox_child_for(Gtk::FlowBox& flowbox, Gtk::Widget* target_wi
     return nullptr;
 }
 
+
+std::map<std::string, std::vector<std::string>*> key_vectors = {
+    {"Talon", &talon_keys},
+    {"Falcon", &falcon_keys},
+    {"Linear", &linear_keys},
+    {"Autonomy", &autonomy_keys},
+    {"Communication", &communication_keys},
+    {"Power2", &power2_keys},
+    {"Power", &power_keys},
+    {"Zed", &zed_keys},
+    {"Drivetrain", &drivetrain_keys}
+};
+
+std::vector<std::string> getKeys(const std::string& label) {
+    if(label == "Power2"){
+        return power2_keys;
+    }
+    for (const auto& [prefix, keys_ptr] : key_vectors) {
+        if (label.rfind(prefix, 0) == 0) {
+            return *keys_ptr;
+        }
+    }
+    return talon_keys;
+}
+
 // Dark mode
 std::string darkMode =
     "* { font-family: 'Proxima Nova'; font-weight: bold; }\n"
@@ -1581,45 +1620,28 @@ std::string lightMode =
 std::string generateDarkModeString(const std::string& color) {
     return
         "* { font-family: 'Proxima Nova'; font-weight: bold; }\n"
-    "window { background-color: " + color + "; }\n"
-    "#dark_text, #dark_text label { color: #000000; }\n"
-    "label, button, entry { color: #edf6fa; }\n"
-    "button { border: 1px solid #edf6fa; background-color: transparent; }\n";
+        "window, notebook, box, flowbox { background-color: " + color + "; }\n"
+        "#dark_text, #dark_text label { color: #000000; }\n"
+        "label, button, entry { color: #edf6fa; }\n"
+        "button { border: 1px solid #edf6fa; background-color: transparent; }\n"
+        
+        "notebook tab { background-color: #2a2a2e; border-color: #444; }\n"
+        "notebook tab label { color: #edf6fa; }\n"
+        "notebook tab:checked { background-color: " + color + "; }\n";
 }
 
 // Light mode
 std::string generateLightModeString(const std::string& color) {
     return
         "* { font-family: 'Proxima Nova'; font-weight: bold }\n"
-    "window { background-color: " + color + "; }\n"
-    "label, button, entry { color: #000000; }\n"
-    "button {  border: 1px solid #000000; background-color: #f0f0f0; }\n";
+        "window, notebook, box, flowbox { background-color: " + color + "; }\n"
+        "label, button, entry { color: #000000; }\n"
+        "button { border: 1px solid #000000; background-color: #f0f0f0; }\n"
+        
+        "notebook tab { background-color: #e6e6e6; border-color: #cccccc; }\n"
+        "notebook tab label { color: #000000; }\n"
+        "notebook tab:checked { background-color: " + color + "; }\n";
 }
-
-
-void toggleMode() {
-    auto css_provider = Gtk::CssProvider::create();
-    Gdk::RGBA background;
-
-    if (isLightMode) {
-        css_provider->load_from_data(generateDarkModeString(darkBackgroundColor));
-        isLightMode = false;
-        background.set(darkBackgroundColor);
-    } 
-    else {
-        css_provider->load_from_data(generateLightModeString(lightBackgroundColor));
-        isLightMode = true;
-        background.set(lightBackgroundColor);
-    }
-    if(!noVideo)
-        setBackgroundColors(background);
-
-    auto screen = Gdk::Screen::get_default();
-    Gtk::StyleContext::add_provider_for_screen(
-        screen, css_provider, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION
-    );
-} 
-
 
 void updateBackgroundColor(InfoFrame* infoFrame, std::string label){
     if(isLightMode){
@@ -1632,6 +1654,37 @@ void updateBackgroundColor(InfoFrame* infoFrame, std::string label){
     }
 }
 
+void toggleMode() {
+    Gdk::RGBA background;
+    isLightMode = !isLightMode;
+
+    auto css_provider = Gtk::CssProvider::create();
+    if (isLightMode) {
+        css_provider->load_from_data(generateLightModeString(lightBackgroundColor));
+        background.set(lightBackgroundColor);    
+    }
+    else {
+        css_provider->load_from_data(generateDarkModeString(darkBackgroundColor));
+        background.set(darkBackgroundColor);
+    }
+
+    auto screen = Gdk::Screen::get_default();
+    Gtk::StyleContext::add_provider_for_screen(
+        screen, css_provider, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION
+    );
+    
+    for (InfoFrame* frame : infoFrameList) {
+        std::string label = frame->get_label();
+        std::vector<std::string> keys = getKeys(label);
+        for (const std::string& key : keys) {
+            updateBackgroundColor(frame, key);
+        }
+    }
+
+    if(!noVideo) {
+        setBackgroundColors(background);
+    }
+}
 
 void updateBackgroundColor(Gtk::Box* box, bool synced){
     if(synced){
@@ -2038,30 +2091,6 @@ std::map<std::string, bool>& getMap(std::string label){
     return talon_values;
 }
 
-std::map<std::string, std::vector<std::string>*> key_vectors = {
-    {"Talon", &talon_keys},
-    {"Falcon", &falcon_keys},
-    {"Linear", &linear_keys},
-    {"Autonomy", &autonomy_keys},
-    {"Communication", &communication_keys},
-    {"Power2", &power2_keys},
-    {"Power", &power_keys},
-    {"Zed", &zed_keys},
-    {"Drivetrain", &drivetrain_keys}
-};
-
-std::vector<std::string> getKeys(const std::string& label) {
-    if(label == "Power2"){
-        return power2_keys;
-    }
-    for (const auto& [prefix, keys_ptr] : key_vectors) {
-        if (label.rfind(prefix, 0) == 0) {
-            return *keys_ptr;
-        }
-    }
-    return talon_keys;
-}
-
 // Define element-adding lambdas keyed by prefix
 // This creates the binary messages associated with the string
 std::map<std::string, std::vector<ElementInfo>> element_definitions = {
@@ -2405,11 +2434,13 @@ void handleGenericElements(std::string label, InfoFrame* frame, const std::vecto
         else if (element.type == TYPE::UINT16) {
             if(element.label == "Bus Voltage" || element.label == "Output Current"){
                 float val = value.uint16 / 100.0f;
+                updateBackgroundColor(frame, element.label);
+
                 if (element.label == "Bus Voltage" && val < 15.0f) {
                     frame->setBackground(element.label, "#FF0000");
                     frame->setTextColor(element.label, "white", true);
                 }
-                else updateBackgroundColor(frame, element.label);
+                
                 frame->setItem(element.label, val);
             }
             else{
@@ -2579,6 +2610,7 @@ void updateGUI(){
             auto it = values.find(key);
             if (it != values.end() && it->second) {
                 frame->addItem(key);
+                updateBackgroundColor(frame, key); 
             }
         }
     }
@@ -4573,7 +4605,7 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
             create_config_editor_window(configFile);
     });
     settingsButton->set_size_request(50, 50);
-    settingsButton->set_name("dark_text");
+    settingsButton->set_name("settings_button");
 
     // Apply CSS
     auto css_provider = Gtk::CssProvider::create();

@@ -93,6 +93,7 @@ add_executable(control
   src/InfoFrame.cpp
   src/InfoItem.cpp
   src/BinaryMessage.cpp
+  src/Speedometer.cpp
 )
 
 

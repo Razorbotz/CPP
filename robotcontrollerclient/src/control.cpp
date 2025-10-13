@@ -4597,15 +4597,22 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
     toggleModeButton->set_size_request(100, 50);
 
     settingsButton = Gtk::make_managed<Gtk::Button>();
-    auto image = Gtk::make_managed<Gtk::Image>("emblem-system", Gtk::ICON_SIZE_BUTTON);
-    settingsButton->set_image(*image);
+    try {
+        Glib::RefPtr<Gdk::Pixbuf> pixbuf = Gdk::Pixbuf::create_from_file("../resources/SettingsIcon.png");
+        Glib::RefPtr<Gdk::Pixbuf> scaled_pixbuf = pixbuf->scale_simple(24, 24, Gdk::INTERP_BILINEAR);
+        auto image = Gtk::make_managed<Gtk::Image>(scaled_pixbuf);
+        settingsButton->set_image(*image);
+    }
+    catch (const Glib::FileError& e) {
+        g_warning("Failed to load settings icon: %s", e.what().c_str());
+    }
     settingsButton->set_tooltip_text("Open Settings");
     settingsButton->signal_clicked().connect([]() {
         if(allowConfig)
             create_config_editor_window(configFile);
     });
     settingsButton->set_size_request(50, 50);
-    settingsButton->set_name("settings_button");
+    settingsButton->set_name("dark_text");
 
     // Apply CSS
     auto css_provider = Gtk::CssProvider::create();

@@ -56,7 +56,8 @@ struct Element{
     Element(std::string label, std::list<Data> data, uint8_t type);
     Element(std::string label, std::list<Data> data, uint8_t type, size_t dimensionCount, ...);
     Element(std::string label, std::list<Data> data, uint8_t type, size_t dimensionCount, std::vector<size_t> sizeList);
-//    Element(std::string label, std::list<Data> data, uint8_t type){
+    Element() = default;
+    //    Element(std::string label, std::list<Data> data, uint8_t type){
 //        this->label = std::move(label);
 //        this->type = type;
 //        this->dimensionCount = 1;

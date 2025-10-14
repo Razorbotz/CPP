@@ -1,8 +1,12 @@
 #pragma once
+
 #include <string>
 #include <vector>
 #include <map>
 #include <set>
+#include <gtkmm.h>
+#include "InfoFrame.hpp"
+#include "BinaryMessage.hpp"
 
 // --- Element Type Definitions ---
 enum class ElementType {
@@ -13,6 +17,14 @@ struct ElementInfo {
     ElementType type;
     std::string name;
 };
+
+// --- Global UI State Variables ---
+extern std::string lightBackgroundColor;
+extern std::string darkBackgroundColor;
+extern bool displaySpeed;
+extern bool numbersInside;
+extern bool numberTicks;
+extern bool allowConfig;
 
 // --- Accessor Functions for all Data ---
 
@@ -67,3 +79,9 @@ void initialize_maps();
 std::vector<std::string> getKeys(const std::string& label);
 std::map<std::string, bool>& getMap(std::string label);
 std::string getNameFromPrefix(std::string label);
+
+// --- UI Helper Functions (Moved from control.cpp) ---
+Gdk::RGBA parse_color(const std::string& color_str);
+std::string to_color_string(const Gdk::RGBA& color);
+void addElementToInfoFrame(InfoFrame* frame, const Element& element);
+void updateGUI();

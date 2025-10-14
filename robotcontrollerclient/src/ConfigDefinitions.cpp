@@ -2,13 +2,31 @@
 
 // --- Helper for Initialization ---
 static void initialize_bool_map(std::map<std::string, bool>& map, const std::vector<std::string>& keys) {
-    for (const auto& key : keys) {
+    for (const auto& key : keys)
         map[key] = true;
-    }
 }
 
-// --- Accessor Function Implementations ---
+// --- Generic Macro to Declare Accessors ---
+#define DEFINE_KEY_GROUP(NAME, ...) \
+std::vector<std::string>& get_##NAME##_keys() { \
+    static std::vector<std::string> keys = { __VA_ARGS__ }; \
+    return keys; \
+} \
+std::vector<std::string>& get_reset_##NAME##_keys() { \
+    auto& keys = get_##NAME##_keys(); \
+    keys = { __VA_ARGS__ }; \
+    return keys; \
+} \
+std::map<std::string, bool>& get_##NAME##_values() { \
+    static std::map<std::string, bool> values; \
+    if (values.empty()) { \
+        for (const auto& key : get_##NAME##_keys()) \
+            values[key] = true; \
+    } \
+    return values; \
+}
 
+// --- Accessor Implementations ---
 std::string& get_configFile() {
     static std::string configFile = "config.txt";
     return configFile;
@@ -21,144 +39,49 @@ std::set<std::string>& get_speedometer_keys() {
     return speedometer_keys;
 }
 
-std::vector<std::string>& get_talon_keys() {
-    static std::vector<std::string> talon_keys = {
-        "Device ID", "Bus Voltage", "Output Current", "Output Percent",
-        "Temperature", "Sensor Position", "Sensor Velocity", "Max Current"
-    };
-    return talon_keys;
-}
-std::vector<std::string>& get_reset_talon_keys() {
-    static std::vector<std::string> reset_talon_keys = get_talon_keys();
-    return reset_talon_keys;
-}
-std::map<std::string, bool>& get_talon_values() {
-    static std::map<std::string, bool> talon_values;
-    return talon_values;
-}
+// --- Subsystem Definitions ---
+DEFINE_KEY_GROUP(talon,
+    "Device ID", "Bus Voltage", "Output Current", "Output Percent",
+    "Temperature", "Sensor Position", "Sensor Velocity", "Max Current"
+)
 
-std::vector<std::string>& get_falcon_keys() {
-    static std::vector<std::string> falcon_keys = get_talon_keys();
-    return falcon_keys;
-}
-std::vector<std::string>& get_reset_falcon_keys() {
-    static std::vector<std::string> reset_falcon_keys = get_talon_keys();
-    return reset_falcon_keys;
-}
-std::map<std::string, bool>& get_falcon_values() {
-    static std::map<std::string, bool> falcon_values;
-    return falcon_values;
-}
+DEFINE_KEY_GROUP(falcon, get_talon_keys())
 
-std::vector<std::string>& get_linear_keys() {
-    static std::vector<std::string> linear_keys = {
-        "Motor Number", "Speed", "Potentiometer", "Time Without Change",
-        "Max", "Min", "Error", "At Min", "At Max", "Distance", "Sensorless"
-    };
-    return linear_keys;
-}
-std::vector<std::string>& get_reset_linear_keys() {
-    static std::vector<std::string> reset_linear_keys = get_linear_keys();
-    return reset_linear_keys;
-}
-std::map<std::string, bool>& get_linear_values() {
-    static std::map<std::string, bool> linear_values;
-    return linear_values;
-}
+DEFINE_KEY_GROUP(linear,
+    "Motor Number", "Speed", "Potentiometer", "Time Without Change",
+    "Max", "Min", "Error", "At Min", "At Max", "Distance", "Sensorless"
+)
 
-std::vector<std::string>& get_power_keys(){
-    static std::vector<std::string> power_keys = {
-        "Voltage", "Temp", "Current 0", "Current 1", "Current 2",
-        "Current 3", "Current 4", "Current 5", "Current 6"
-    };
-    return power_keys;
-}
-std::vector<std::string>& get_reset_power_keys(){
-    static std::vector<std::string> reset_power_keys = get_power_keys();
-    return reset_power_keys;
-}
-std::map<std::string, bool>& get_power_values(){
-    static std::map<std::string, bool> power_values;
-    return power_values;
-}
+DEFINE_KEY_GROUP(power,
+    "Voltage", "Temp", "Current 0", "Current 1", "Current 2",
+    "Current 3", "Current 4", "Current 5", "Current 6"
+)
 
-std::vector<std::string>& get_power2_keys(){
-    static std::vector<std::string> power2_keys = {
-        "Current 7", "Current 8", "Current 9", "Current 10", "Current 11",
-        "Current 12", "Current 13", "Current 14", "Current 15"
-    };
-    return power2_keys;
-}
-std::vector<std::string>& get_reset_power2_keys(){
-    static std::vector<std::string> reset_power2_keys = get_power2_keys();
-    return reset_power2_keys;
-}
-std::map<std::string, bool>& get_power2_values(){
-    static std::map<std::string, bool> power2_values;
-    return power2_values;
-}
+DEFINE_KEY_GROUP(power2,
+    "Current 7", "Current 8", "Current 9", "Current 10",
+    "Current 11", "Current 12", "Current 13", "Current 14", "Current 15"
+)
 
-std::vector<std::string>& get_autonomy_keys(){
-    static std::vector<std::string> autonomy_keys = {
-        "Robot State", "Excavation State", "Error State", "Diagnostics State",
-        "Tilt State", "Dump State", "Level Bucket", "Level Arms", "Dest X", "Dest Z"
-    };
-    return autonomy_keys;
-}
-std::vector<std::string>& get_reset_autonomy_keys(){
-    static std::vector<std::string> reset_autonomy_keys = get_autonomy_keys();
-    return reset_autonomy_keys;
-}
-std::map<std::string, bool>& get_autonomy_values(){
-    static std::map<std::string, bool> autonomy_values;
-    return autonomy_values;
-}
+DEFINE_KEY_GROUP(autonomy,
+    "Robot State", "Excavation State", "Error State", "Diagnostics State",
+    "Tilt State", "Dump State", "Level Bucket", "Level Arms", "Dest X", "Dest Z"
+)
 
-std::vector<std::string>& get_zed_keys(){
-    static std::vector<std::string> zed_keys = {
-        "X", "Y", "Z", "roll", "pitch", "yaw", "aruco"
-    };
-    return zed_keys;
-}
-std::vector<std::string>& get_reset_zed_keys(){
-    static std::vector<std::string> reset_zed_keys = get_zed_keys();
-    return reset_zed_keys;
-}
-std::map<std::string, bool>& get_zed_values(){
-    static std::map<std::string, bool> zed_values;
-    return zed_values;
-}
+DEFINE_KEY_GROUP(zed,
+    "X", "Y", "Z", "roll", "pitch", "yaw", "aruco"
+)
 
-std::vector<std::string>& get_communication_keys(){
-    static std::vector<std::string> communication_keys = {
-        "RSSI", "Wi-Fi", "CAN Bus", "Using CAN1", "RX packets", "TX packets", "CAN Bus2", "RX2 packets", "TX2 packets", "Status"
-    };
-    return communication_keys;
-}
-std::vector<std::string>& get_reset_communication_keys(){
-    static std::vector<std::string> reset_communication_keys = get_communication_keys();
-    return reset_communication_keys;
-}
-std::map<std::string, bool>& get_communication_values(){
-    static std::map<std::string, bool> communication_values;
-    return communication_values;
-}
+DEFINE_KEY_GROUP(communication,
+    "RSSI", "Wi-Fi", "CAN Bus", "Using CAN1", "RX packets", "TX packets",
+    "CAN Bus2", "RX2 packets", "TX2 packets", "Status"
+)
 
-std::vector<std::string>& get_drivetrain_keys(){
-    static std::vector<std::string> drivetrain_keys = {
-        "F1 Vel", "F1 RPM", "F1 Speed", "F2 Vel", "F2 RPM", "F2 Speed", "F3 Vel", "F3 RPM", "F3 Speed", "F4 Vel", "F4 RPM", "F4 Speed"
-    };
-    return drivetrain_keys;
-}
-std::vector<std::string>& get_reset_drivetrain_keys(){
-    static std::vector<std::string> reset_drivetrain_keys = get_drivetrain_keys();
-    return reset_drivetrain_keys;
-}
-std::map<std::string, bool>& get_drivetrain_values(){
-    static std::map<std::string, bool> drivetrain_values;
-    return drivetrain_values;
-}
-
+DEFINE_KEY_GROUP(drivetrain,
+    "F1 Vel", "F1 RPM", "F1 Speed",
+    "F2 Vel", "F2 RPM", "F2 Speed",
+    "F3 Vel", "F3 RPM", "F3 Speed",
+    "F4 Vel", "F4 RPM", "F4 Speed"
+)
 
 // --- Central Maps ---
 std::map<std::string, std::vector<std::string>*>& get_key_vectors() {
@@ -228,24 +151,16 @@ std::map<std::string, std::vector<ElementInfo>>& get_element_definitions() {
             {ElementType::Float32, "Current 13"}, {ElementType::Float32, "Current 14"}, {ElementType::Float32, "Current 15"}
         }},
         {"DRIVETRAIN", {
-            {ElementType::Float32, "F1 Vel"},
-            {ElementType::Float32, "F1 RPM"},
-            {ElementType::Float32, "F1 Speed"},
-            {ElementType::Float32, "F2 Vel"},
-            {ElementType::Float32, "F2 RPM"},
-            {ElementType::Float32, "F2 Speed"},
-            {ElementType::Float32, "F3 Vel"},
-            {ElementType::Float32, "F3 RPM"},
-            {ElementType::Float32, "F3 Speed"},
-            {ElementType::Float32, "F4 Vel"},
-            {ElementType::Float32, "F4 RPM"},
-            {ElementType::Float32, "F4 Speed"}
+            {ElementType::Float32, "F1 Vel"}, {ElementType::Float32, "F1 RPM"}, {ElementType::Float32, "F1 Speed"},
+            {ElementType::Float32, "F2 Vel"}, {ElementType::Float32, "F2 RPM"}, {ElementType::Float32, "F2 Speed"},
+            {ElementType::Float32, "F3 Vel"}, {ElementType::Float32, "F3 RPM"}, {ElementType::Float32, "F3 Speed"},
+            {ElementType::Float32, "F4 Vel"}, {ElementType::Float32, "F4 RPM"}, {ElementType::Float32, "F4 Speed"}
         }}
     };
     return element_definitions;
 }
 
-
+// --- Initialization ---
 void initialize_maps() {
     initialize_bool_map(get_talon_values(), get_talon_keys());
     initialize_bool_map(get_falcon_values(), get_falcon_keys());
@@ -258,13 +173,12 @@ void initialize_maps() {
     initialize_bool_map(get_drivetrain_values(), get_drivetrain_keys());
 }
 
-// --- Helper Function Implementations ---
+// --- Helper Functions ---
 std::vector<std::string> getKeys(const std::string& label) {
     if (label == "Power2") return get_power2_keys();
-    for (const auto& [prefix, keys_ptr] : get_key_vectors()) {
+    for (const auto& [prefix, keys_ptr] : get_key_vectors())
         if (label.rfind(prefix, 0) == 0)
             return *keys_ptr;
-    }
     return get_talon_keys();
 }
 
@@ -293,4 +207,44 @@ std::string getNameFromPrefix(std::string label) {
     if (label.rfind("TEST", 0) == 0) return "Test";
     if (label.rfind("DRIVETRAIN", 0) == 0) return "Drivetrain";
     return "Talon";
+}
+
+Gdk::RGBA parse_color(const std::string& color_str) {
+    Gdk::RGBA color;
+    color.set(color_str);
+    return color;
+}
+
+std::string to_color_string(const Gdk::RGBA& color) {
+    return color.to_string();
+}
+
+void addElementToInfoFrame(InfoFrame* frame, const Element& element) {
+    frame->addItem(element.label);
+    const auto& data = element.data.front();
+    switch (element.type) {
+        case TYPE::BOOLEAN:   frame->setItem(element.label, data.boolean); break;
+        case TYPE::INT8:      frame->setItem(element.label, data.int8); break;
+        case TYPE::UINT8:     frame->setItem(element.label, data.uint8); break;
+        case TYPE::INT16:     frame->setItem(element.label, data.int16); break;
+        case TYPE::UINT16:
+            if (element.label == "Bus Voltage" || element.label == "Output Current")
+                frame->setItem(element.label, data.uint16 / 100.0f);
+            else
+                frame->setItem(element.label, data.uint16);
+            break;
+        case TYPE::INT32:     frame->setItem(element.label, data.int32); break;
+        case TYPE::UINT32:    frame->setItem(element.label, data.uint32); break;
+        case TYPE::INT64:     frame->setItem(element.label, data.int64); break;
+        case TYPE::UINT64:    frame->setItem(element.label, data.uint64); break;
+        case TYPE::FLOAT32:   frame->setItem(element.label, data.float32); break;
+        case TYPE::FLOAT64:   frame->setItem(element.label, data.float64); break;
+        case TYPE::STRING: {
+            std::string text;
+            for (const auto& c : element.data) text += c.character;
+            frame->setItem(element.label, text);
+            break;
+        }
+        default: break;
+    }
 }

@@ -53,6 +53,7 @@ extern "C" {
 #include "Speedometer.hpp"
 #include "ConfigDefinitions.hpp"
 #include "ConfigEditorWindow.hpp"
+#include "NetworkHandler.hpp"
 
 /*
 TODO: 
@@ -126,13 +127,14 @@ Gtk::Label* videoConnectionStatusLabel;
   
 Gtk::Button* videoStreamButton;
 Gtk::Button* videoConnectButton;
-bool isStreamingActive = false;
 bool isGray = true;
 std::mutex frameMutex;
 cv::Mat latestFrame;
-bool newFrameAvailable;
+std::atomic<bool> newFrameAvailable;
 Glib::Dispatcher videoDisconnectDispatcher;
 std::atomic<bool> shouldVideoDisconnect = false;
+Glib::Dispatcher connection_finished_dispatcher;
+Glib::Dispatcher video_connection_finished_dispatcher;
   
 Gtk::FlowBox* sensorBox;
 Gtk::Box* innerLeftBox;
@@ -140,10 +142,6 @@ Gtk::Box* innerRightBox;
 Gtk::Box* bottomLowerBox;
 
 Gtk::Window* window;
-int sock = 0; 
-bool connected=false;
-bool silentRunning=true;
-bool initialized = false;
 
 bool initVals = false;
 bool threeMonitors = false;
@@ -156,8 +154,8 @@ bool useAltLayout = false;
 bool isController = false;
 bool twoJoysticks = false;
 
-int videoSock = 0; 
-bool videoConnected=false;
+ServerUI server_ui;
+VideoServerUI video_server_ui;
 
 Gtk::Window* arenaWindow;
 Gtk::Window* sensorsWindow;
@@ -1903,549 +1901,29 @@ void updateGUI(){
 
 
 /*** Helper functions and variables for the video and robot server connections ***/
-struct RemoteRobot{
-    std::string tag;
-    time_t lastSeenTime;
-};
-std::vector<RemoteRobot> robotList;
-std::mutex robotListMutex;
-
-std::vector<RemoteRobot> videoRobotList;
-std::mutex videoRobotListMutex;
-
-
 bool contains(std::vector<std::string>& list, std::string& value){
     for(std::string storedValue: list) if(storedValue==value) return true;
     return false;
 }
 
 
-bool contains(std::vector<RemoteRobot>& list, std::string& robotTag){
-    for(RemoteRobot storedValue: list) if(storedValue.tag==robotTag) return true;
-    return false;
-}
-
-
-void update(std::vector<RemoteRobot>& list, std::string& robotTag){
-    for(int index=0;index < list.size() ; ++index){
-    time_t now;
-    time(&now);
-        list.at(index).lastSeenTime=now;
-    }
-}
-
-std::vector<std::string> getAddressList(){
-    std::vector<std::string> addressList;
-    ifaddrs* interfaceAddresses = nullptr;
-    for(int failed=getifaddrs(&interfaceAddresses); !failed && interfaceAddresses; interfaceAddresses=interfaceAddresses->ifa_next){
-        if(interfaceAddresses->ifa_addr != NULL && interfaceAddresses->ifa_addr->sa_family == AF_INET){
-            std::cout << "address" << std::endl;
-            sockaddr_in* socketAddress=reinterpret_cast<sockaddr_in*>(interfaceAddresses->ifa_addr);
-            std::string addressString(inet_ntoa(socketAddress->sin_addr));
-            if(addressString=="0.0.0.0") continue;
-            if(addressString=="127.0.0.1") continue;
-            if(contains(addressList,addressString)) continue;
-            addressList.push_back(addressString);
-        }
-    }
-    return addressList;
-}
-
-
-/*** Functions associated with the video server ***/
-void setVideoDisconnectedState(){
-    videoConnectButton->set_label("Connect");
-    videoConnectionStatusLabel->set_text("Not Connected");
-    videoStreamButton->set_label("Not Video Streaming");
-    Gdk::RGBA red;
-    red.set_rgba(1.0,0,0,1.0);
-    videoConnectionStatusLabel->override_background_color(red);
-    videoIPAddressEntry->set_can_focus(true);
-    videoIPAddressEntry->set_editable(true);
-    videoConnected=false;
-
-}
-
-void setVideoConnectedState(){
-    videoConnectButton->set_label("Disconnect");
-    videoConnectionStatusLabel->set_text("Connected");
-    Gdk::RGBA green;
-    green.set_rgba(0,1.0,0,1.0);
-    videoConnectionStatusLabel->override_background_color(green);
-    videoIPAddressEntry->set_can_focus(false);
-    videoIPAddressEntry->set_editable(false);
-    videoConnected=true;
-}
-
-void connectToVideoServer(){
-    if(videoConnected==true)return;
-    struct sockaddr_in address; 
-    int bytesRead; 
-    struct sockaddr_in serv_addr; 
-    std::string hello("Hello Robot"); 
-
-    memset(&serv_addr, '0', sizeof(serv_addr)); 
-
-    serv_addr.sin_family = AF_INET; 
-    serv_addr.sin_port = htons(VIDEO_PORT);
-
-    char buffer[1024] = {0}; 
-    if ((videoSock = socket(AF_INET, SOCK_STREAM, 0)) < 0) { 
-
-        printf("\n Socket creation error \n");
-
-        setVideoDisconnectedState();
-        return; 
-    } 
-    if(inet_pton(AF_INET, videoIPAddressEntry->get_text().c_str(), &serv_addr.sin_addr)<=0)  { 
-
-        printf("\nInvalid address/ Address not supported \n");
-
-        Gtk::MessageDialog dialog(*window,"Invalid Address",false,Gtk::MESSAGE_QUESTION,Gtk::BUTTONS_OK);
-        int result=dialog.run();
-
-        setVideoDisconnectedState();
-        return;
-    } 
-    if(connect(videoSock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
-        printf("\nConnection Failed \n");
-
-        Gtk::MessageDialog dialog(*window,"Connection Failed",false,Gtk::MESSAGE_QUESTION,Gtk::BUTTONS_OK);
-        int result=dialog.run();
-
-        setVideoDisconnectedState();
-    }
-    else{
-        send(videoSock , hello.c_str() , strlen(hello.c_str()) , 0 );
-        bytesRead = read( videoSock , buffer, 1024);
-        fcntl(videoSock,F_SETFL, O_NONBLOCK);
-
-        setVideoConnectedState();
-    }
-}
-
-void disconnectFromVideoServer(){
-    Gtk::MessageDialog dialog(*window,"Disconnect now?",false,Gtk::MESSAGE_QUESTION,Gtk::BUTTONS_OK_CANCEL);
-    //dialog.set_secondary_text("Do you want to shutdown now?");
-    int result=dialog.run();
-
-    switch(result) {
-        case (Gtk::RESPONSE_OK): 
-            if(shutdown(videoSock,SHUT_RDWR)==-1){
-                Gtk::MessageDialog dialog(*window,"Failed Shutdown",false,Gtk::MESSAGE_ERROR,Gtk::BUTTONS_OK);
-                int result=dialog.run();
-            }
-            if(close(videoSock)==0){
-                setVideoDisconnectedState();
-            }
-            else{
-                Gtk::MessageDialog dialog(*window,"Failed Close",false,Gtk::MESSAGE_ERROR,Gtk::BUTTONS_OK);
-                int result=dialog.run();
-            }
-            break;
-        case (Gtk::RESPONSE_CANCEL):
-        case (Gtk::RESPONSE_NONE):
-        default:
-            break;
-    }
-}
-
-void videoConnectOrDisconnect(){
-    Glib::ustring string=videoConnectButton->get_label();
-    //std::cout << "connect" << string << std::endl;
-    if(string=="Connect"){
-        connectToVideoServer();
-    }
-    else{
-        disconnectFromVideoServer();
-    }
-}
-
-void videoStream(){
-    if(!videoConnected)return;
-    std::string currentButtonState=videoStreamButton->get_label();
-    if(currentButtonState=="Not Video Streaming"){
-        int messageSize=3;
-        uint8_t command=1;// silence 
-        uint8_t message[messageSize];
-        message[0]=messageSize;
-        message[1]=command;
-        message[2]=1;
-        send(videoSock, message, messageSize, 0); 
-
-        videoStreamButton->set_label("Video Streaming");
-        isStreamingActive = true;
-    }
-    else{
-        int messageSize=3;
-        uint8_t command=1;// silence 
-        uint8_t message[messageSize];
-        message[0]=messageSize;
-        message[1]=command;
-        message[2]=0;
-        send(videoSock, message, messageSize, 0); 
-
-        videoStreamButton->set_label("Not Video Streaming");
-        isStreamingActive = true;
-    }
-}
-
-void videoRowActivated(Gtk::ListBoxRow* listBoxRow){
-    Gtk::Label* label=static_cast<Gtk::Label*>(listBoxRow->get_child());
-    Glib::ustring connectionString(label->get_text());
-    int index=connectionString.rfind('@');
-    if(index==-1)return;
-    ++index;
-    Glib::ustring addressString=connectionString.substr(index,connectionString.length()-index);
-    videoIPAddressEntry->set_text(addressString);
-}
-
-void videoBroadcastListen(){
-    int sd = socket(AF_INET, SOCK_DGRAM, 0);
-    if(sd < 0) {
-        perror("Opening datagram socket error");
-        return; 
-    }
-
-    int reuse = 1;
-    if(setsockopt(sd, SOL_SOCKET, SO_REUSEADDR, (char *)&reuse, sizeof(reuse)) < 0) {
-        perror("Setting SO_REUSEADDR error");
-        close(sd);
-        return;
-    }
-
-    /* Bind to the proper port number with the IP address */
-    /* specified as INADDR_ANY. */
-    struct sockaddr_in localSock;
-    localSock.sin_family = AF_INET;
-    localSock.sin_port = htons(4322);
-    localSock.sin_addr.s_addr = INADDR_ANY;
-    if(bind(sd, (struct sockaddr*)&localSock, sizeof(localSock))) {
-        perror("Binding datagram socket error");
-        close(sd);
-        return;
-    }
-
-    /* Join the multicast group 226.1.1.1 on the local 203.106.93.94 */
-    /* interface. Note that this IP_ADD_MEMBERSHIP option must be */
-    /* called for each local interface over which the multicast */
-    /* datagrams are to be received. */
-
-    std::vector<std::string> addressList=getAddressList(); 
-    for(std::string addressString:addressList){
-        std::cout << "got " << addressString << std::endl;
-        struct ip_mreq group;
-        group.imr_multiaddr.s_addr = inet_addr("226.1.1.1");
-        group.imr_interface.s_addr = inet_addr(addressString.c_str());
-        if(setsockopt(sd, IPPROTO_IP, IP_ADD_MEMBERSHIP, (char *)&group, sizeof(group)) < 0) {
-            perror("Adding multicast group error");
-        } 
-    }
-
-    char databuf[1024];
-    int datalen = sizeof(databuf);
-    while(true){
-        try{
-            ssize_t bytesRead = read(sd, databuf, datalen);
-            if (bytesRead > 0) {
-                std::string message(databuf, bytesRead);
-                std::lock_guard<std::mutex> lock(videoRobotListMutex);
-
-                bool robotExists = false;
-                for (auto& robot : videoRobotList) {
-                    if (robot.tag == message) {
-                        time(&robot.lastSeenTime);
-                        robotExists = true;
-                        break;
-                    }
-                }
-
-                if (!robotExists) {
-                    RemoteRobot newRobot;
-                    newRobot.tag = message;
-                    time(&newRobot.lastSeenTime);
-                    videoRobotList.push_back(newRobot);
-                }
-            }
-        }
-        catch(std::exception e){
-            std::cout << "Caught exception: " << e.what() << " in videoBroadcastLisetn" << std::endl;
-        }
-    }
-}
-
-void adjustVideoRobotList() {
-    std::lock_guard<std::mutex> lock(videoRobotListMutex);
-    if (!videoAddressListBox) {
-        std::cerr << "[ERROR] videoAddressListBox is null in adjustVideoRobotList()" << std::endl;
-        return;
-    }
-
-    time_t now;
-    time(&now);
-
-    std::vector<Gtk::ListBoxRow*> rows_to_remove;
-    std::vector<std::string> robots_in_gui;
-
-    int index = 0;
-    for (Gtk::ListBoxRow* row = videoAddressListBox->get_row_at_index(index); row; row = videoAddressListBox->get_row_at_index(++index)) {
-        Gtk::Label* label = static_cast<Gtk::Label*>(row->get_child());
-        std::string row_text = label->get_text();
-        robots_in_gui.push_back(row_text);
-
-        bool found_in_data = false;
-        for (const auto& robot : videoRobotList) {
-            if (robot.tag == row_text) {
-                found_in_data = true;
-                if (now - robot.lastSeenTime > 12) {
-                    rows_to_remove.push_back(row);
-                }
-                break;
-            }
-        }
-        if (!found_in_data) {
-            rows_to_remove.push_back(row);
-        }
-    }
-
-    for (auto* row : rows_to_remove) {
-        Gtk::Label* label = static_cast<Gtk::Label*>(row->get_child());
-        std::string row_text = label->get_text();
-        
-        videoRobotList.erase(std::remove_if(videoRobotList.begin(), videoRobotList.end(),
-            [&](const RemoteRobot& robot) {
-                return robot.tag == row_text;
-            }),
-            videoRobotList.end());
-
-        // Remove from the GUI ListBox
-        videoAddressListBox->remove(*row);
-    }
-
-    for (const auto& robot : videoRobotList) {
-        if (std::find(robots_in_gui.begin(), robots_in_gui.end(), robot.tag) == robots_in_gui.end()) {
-            Gtk::Label* label = Gtk::manage(new Gtk::Label(robot.tag));
-            label->set_visible(true);
-            videoAddressListBox->append(*label);
-        }
-    }
-}
-
-/* Main function to receive and display the H.265 video stream */
-void videoMain() {
-    std::thread broadcastListenThread2(videoBroadcastListen);
-
-    // --- FFmpeg Decoder Initialization ---
-    const AVCodec* codec = avcodec_find_decoder(AV_CODEC_ID_HEVC);
-    if (!codec) {
-        std::cerr << "H.265 (HEVC) decoder not found" << std::endl;
-        return;
-    }
-
-    AVCodecParserContext* parser = av_parser_init(codec->id);
-    if (!parser) {
-        std::cerr << "Failed to initialize H.265 parser" << std::endl;
-        return;
-    }
-
-    AVCodecContext* codec_ctx = avcodec_alloc_context3(codec);
-    if (!codec_ctx) {
-        std::cerr << "Failed to allocate codec context" << std::endl;
-        av_parser_close(parser);
-        return;
-    }
-
-    if (avcodec_open2(codec_ctx, codec, NULL) < 0) {
-        std::cerr << "Failed to open codec" << std::endl;
-        avcodec_free_context(&codec_ctx);
-        av_parser_close(parser);
-        return;
-    }
-
-    AVPacket* pkt = av_packet_alloc();
-    AVFrame* frame = av_frame_alloc();
-    AVFrame* bgr_frame = av_frame_alloc();
-    SwsContext* sws_ctx = nullptr;
-    uint8_t* bgr_buffer = nullptr;
-
-    bool running = true;
-    while (running) {
-        if (!videoConnected || !isStreamingActive) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
-            continue;
-        }
-
-        // 1. Read the size of the next H.265 frame from the socket
-        uint32_t network_frame_size = 0;
-        ssize_t bytesRead = 0;
-        size_t totalHeaderRead = 0;
-        while (totalHeaderRead < sizeof(network_frame_size)) {
-            bytesRead = recv(videoSock, reinterpret_cast<char*>(&network_frame_size) + totalHeaderRead, sizeof(network_frame_size) - totalHeaderRead, 0);
-            
-            // ** START FIX **
-            if (bytesRead > 0) {
-                totalHeaderRead += bytesRead;
-            } else if (bytesRead == 0) { // Peer has performed an orderly shutdown
-                break;
-            } else { // bytesRead == -1
-                if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                    // This is not an error, just no data available yet.
-                    // Sleep briefly to avoid busy-waiting and hogging the CPU.
-                    std::this_thread::sleep_for(std::chrono::milliseconds(5)); 
-                    continue; 
-                }
-                // An actual error occurred
-                break; 
-            }
-            // ** END FIX **
-        }
-
-        if (bytesRead <= 0) {
-            if (videoConnected) { // Only show error if we expected to be connected
-                if (bytesRead == 0) {
-                    std::cout << "Video connection closed by peer." << std::endl;
-                } else {
-                    perror("Socket recv error");
-                }
-                shouldVideoDisconnect = true;
-                videoDisconnectDispatcher.emit();
-            }
-            continue;
-        }
-        
-        uint32_t frameSize = ntohl(network_frame_size);
-        if (frameSize == 0 || frameSize > 1000000) {
-            std::cerr << "Invalid frame size received: " << frameSize << std::endl;
-            continue;
-        }
-
-        // 2. Read the full H.265 frame data
-        std::vector<uint8_t> frameDataBuffer(frameSize);
-        size_t totalFrameRead = 0;
-        while (totalFrameRead < frameSize) {
-            bytesRead = recv(videoSock, frameDataBuffer.data() + totalFrameRead, frameSize - totalFrameRead, 0);
-
-            if (bytesRead > 0) {
-                totalFrameRead += bytesRead;
-            }
-            else if (bytesRead == 0) {
-                break;
-            }
-            else {
-                if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                    std::this_thread::sleep_for(std::chrono::milliseconds(5));
-                    continue;
-                }
-                break;
-            }
-        }
-        if (bytesRead <= 0) {
-             if (videoConnected) {
-                if (bytesRead == 0) {
-                    std::cout << "Video connection closed by peer while reading frame." << std::endl;
-                } else {
-                    perror("Socket recv error while reading frame data");
-                }
-                shouldVideoDisconnect = true;
-                videoDisconnectDispatcher.emit();
-            }
-            continue;
-        }
-
-        // 3. Parse and Decode the H.265 frame
-        uint8_t* data_ptr = frameDataBuffer.data();
-        size_t data_size = frameDataBuffer.size();
-
-        while (data_size > 0) {
-            int ret = av_parser_parse2(parser, codec_ctx, &pkt->data, &pkt->size,
-                                       data_ptr, data_size,
-                                       AV_NOPTS_VALUE, AV_NOPTS_VALUE, 0);
-            if (ret < 0) {
-                std::cerr << "Error while parsing frame" << std::endl;
-                break;
-            }
-            data_ptr += ret;
-            data_size -= ret;
-
-            if (pkt->size) {
-                // Send packet to the decoder
-                if (avcodec_send_packet(codec_ctx, pkt) >= 0) {
-                    // Receive decoded frames
-                    while (avcodec_receive_frame(codec_ctx, frame) == 0) {
-                        // Got a decoded frame, now convert it to BGR for OpenCV
-                        
-                        // Initialize SWS context for color conversion on first frame
-                        if (!sws_ctx) {
-                            sws_ctx = sws_getContext(codec_ctx->width, codec_ctx->height, codec_ctx->pix_fmt,
-                                                     codec_ctx->width, codec_ctx->height, AV_PIX_FMT_BGR24,
-                                                     SWS_BILINEAR, NULL, NULL, NULL);
-                            int num_bytes = av_image_get_buffer_size(AV_PIX_FMT_BGR24, codec_ctx->width, codec_ctx->height, 32);
-                            bgr_buffer = (uint8_t*)av_malloc(num_bytes * sizeof(uint8_t));
-                            av_image_fill_arrays(bgr_frame->data, bgr_frame->linesize, bgr_buffer, AV_PIX_FMT_BGR24, codec_ctx->width, codec_ctx->height, 32);
-                        }
-
-                        // Perform color conversion (e.g., YUV to BGR)
-                        sws_scale(sws_ctx, (uint8_t const * const *)frame->data, frame->linesize, 0, codec_ctx->height,
-                                  bgr_frame->data, bgr_frame->linesize);
-
-                        // Create an OpenCV Mat from the BGR data
-                        cv::Mat decoded_mat(codec_ctx->height, codec_ctx->width, CV_8UC3, bgr_frame->data[0], bgr_frame->linesize[0]);
-
-                        // Resize and update the GUI
-                        cv::Mat display_img;
-                        cv::resize(decoded_mat, display_img, cv::Size(1600, 1000), 0, 0, cv::INTER_LINEAR);
-                        
-                        {
-                            std::lock_guard<std::mutex> lock(frameMutex);
-                            latestFrame = display_img.clone(); // Clone is crucial for thread safety
-                            newFrameAvailable = true;
-                        }
-                    }
-                }
-            }
-        }
-        av_packet_unref(pkt);
-    }
-
-    // --- Cleanup ---
-    if (sws_ctx) sws_freeContext(sws_ctx);
-    if (bgr_buffer) av_freep(&bgr_buffer);
-    av_frame_free(&bgr_frame);
-    av_frame_free(&frame);
-    av_packet_free(&pkt);
-    avcodec_free_context(&codec_ctx);
-    av_parser_close(parser);
-}
-
-
 /*** Functions associated with the server ***/
-void setDisconnectedState(){
-    connectButton->set_label("Connect");
-    connectionStatusLabel->set_text("Not Connected");
-    silentRunButton->set_label("Silent Running");
-    Gdk::RGBA red;
-    red.set_rgba(1.0,0,0,1.0);
-    connectionStatusLabel->override_background_color(red);
-    ipAddressEntry->set_can_focus(true);
-    ipAddressEntry->set_editable(true);
-    connected=false;
-    silentRunning = true;
-    initialized = false;
-
-    if (connected) {
-        if (sock > 0) {
-            if (close(sock) != 0) {
-                perror("Failed to close socket");
-            }
-            sock = 0;
-        }
-    }
-
+void resetUIOnDisconnect() {
     arm_init = false;
     bucket_init = false;
     roll_init = false;
+    pitch_init = false;
+    bucketLevel_init = false;
 
-    if(!noVideo){
+    auto children = sensorBox->get_children();
+    for(auto child : children) {
+        sensorBox->remove(*child);
+    }
+    infoFrameList.clear();
+
+
+    // Reset the motor status indicator circles to black
+    if(!noVideo) {
         Gdk::RGBA black;
         black.set_rgba(0.0, 0.0, 0.0, 1.0);
         updateCircleColor(talon1Circle, black);
@@ -2458,310 +1936,6 @@ void setDisconnectedState(){
         updateCircleColor(lowerFalcon2Circle, black);
         updateCircleColor(lowerFalcon3Circle, black);
         updateCircleColor(lowerFalcon4Circle, black);
-    }
-}
-
-
-void setConnectedState(){
-    connectButton->set_label("Disconnect");
-    connectionStatusLabel->set_text("Connected");
-    Gdk::RGBA green;
-    green.set_rgba(0,1.0,0,1.0);
-    connectionStatusLabel->override_background_color(green);
-    ipAddressEntry->set_can_focus(false);
-    ipAddressEntry->set_editable(false);
-    connected=true;
-}
-
-// Server address
-struct sockaddr_in serv_addr; 
-socklen_t addr_len = sizeof(serv_addr);
-std::chrono::high_resolution_clock::time_point lastHeartbeatTime;
-
-//UDP Version
-void connectToServer(){
-    if(connected==true) return;
-
-    std::string hello("Hello Robot"); 
-
-    memset(&serv_addr, '0', sizeof(serv_addr)); 
-
-    serv_addr.sin_family = AF_INET; 
-    serv_addr.sin_port = htons(PORT);
-
-    if(useOrin) {
-        if(inet_pton(AF_INET, ORIN_IP, &serv_addr.sin_addr) <= 0) {
-            std::cerr << "Invalid ORIN_IP" << std::endl;
-            return;
-        }
-    }
-    else {
-        if(inet_pton(AF_INET, NANO_IP, &serv_addr.sin_addr) <= 0) {
-            std::cerr << "Invalid NANO_IP" << std::endl;
-            return;
-        }
-    }
-
-    if ((sock = socket(AF_INET, SOCK_DGRAM, 0)) < 0) { 
-        perror("Socket creation error");
-        setDisconnectedState();
-        return; 
-    }
-    fcntl(sock, F_SETFL, O_NONBLOCK);
-
-    sendto(sock, hello.c_str(), hello.length(), 0, (struct sockaddr *)&serv_addr, addr_len);
-    std::cout << "Hello sent to server." << std::endl;
-
-    auto startTime = std::chrono::steady_clock::now();
-    bool replyReceived = false;
-    char buffer[2048] = {0};
-    int bytesRead = 0;
-
-    while (std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - startTime).count() < 2) {
-        bytesRead = recvfrom(sock, buffer, 2048, 0, (struct sockaddr *)&serv_addr, &addr_len);
-        if (bytesRead > 0) {
-            replyReceived = true;
-            break;
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(50));
-    }
-    
-    if (replyReceived) {
-        std::cout << "Received reply from server. Connection established." << std::endl;
-        setConnectedState();
-        ipAddressEntry->set_text(inet_ntoa(serv_addr.sin_addr));
-        initialized = true;
-        lastHeartbeatTime = std::chrono::high_resolution_clock::now();
-    }
-    else {
-        std::cout << "Did not receive reply from server (timeout). Connection failed." << std::endl;
-        setDisconnectedState();
-        close(sock);
-        sock = 0;
-    }
-}
-
-void disconnectFromServer(){
-    Gtk::MessageDialog dialog(*window,"Disconnect now?",false,Gtk::MESSAGE_QUESTION,Gtk::BUTTONS_OK_CANCEL);
-    //dialog.set_secondary_text("Do you want to shutdown now?");
-    int result=dialog.run();
-
-    switch(result) {
-        case (Gtk::RESPONSE_OK): 
-            if(close(sock)==0){
-                setDisconnectedState();
-            }
-            else{
-                Gtk::MessageDialog dialog(*window,"Failed Close",false,Gtk::MESSAGE_ERROR,Gtk::BUTTONS_OK);
-                int result=dialog.run();
-            }
-            break;
-        case (Gtk::RESPONSE_CANCEL):
-        case (Gtk::RESPONSE_NONE):
-        default:
-            break;
-    }
-}
-
-void connectOrDisconnect(){
-    Glib::ustring string=connectButton->get_label();
-    //std::cout << "connect" << string << std::endl;
-    if(string=="Connect"){
-        connectToServer();
-    }
-    else{
-        disconnectFromServer();
-    }
-}
-
-void silentRun(){
-    if(!connected)return;
-    std::string currentButtonState=silentRunButton->get_label();
-    if(currentButtonState=="Silent Running"){
-        int messageSize=3;
-        uint8_t command=7;// silence 
-        uint8_t message[messageSize];
-        message[0]=messageSize;
-        message[1]=command;
-        message[2]=0;
-        // send(sock, message, messageSize, 0);
-        sendto(sock , message , messageSize , 0 ,(struct sockaddr *)&serv_addr, addr_len);
-
-
-        silentRunButton->set_label("Not Silent Running");
-        silentRunning = false;
-    }
-    else{
-        int messageSize=3;
-        uint8_t command=7;// silence 
-        uint8_t message[messageSize];
-        message[0]=messageSize;
-        message[1]=command;
-        message[2]=1;
-        // send(sock, message, messageSize, 0); 
-        sendto(sock , message , messageSize , 0 ,(struct sockaddr *)&serv_addr, addr_len);
-
-        silentRunButton->set_label("Silent Running");
-        silentRunning = true;
-    }
-}
-
-void rowActivated(Gtk::ListBoxRow* listBoxRow){
-    Gtk::Label* label=static_cast<Gtk::Label*>(listBoxRow->get_child());
-    Glib::ustring connectionString(label->get_text());
-    int index=connectionString.rfind('@');
-    if(index==-1)return;
-    ++index;
-    Glib::ustring addressString=connectionString.substr(index,connectionString.length()-index);
-    ipAddressEntry->set_text(addressString);
-}
-
-void shutdownRobot(){
-    int messageSize=2;
-    uint8_t command=8;// shutdown
-    uint8_t message[messageSize];
-    message[0]=messageSize;
-    message[1]=command;
-    // send(sock, message, messageSize, 0);
-    sendto(sock , message , messageSize , 0 ,(struct sockaddr *)&serv_addr, addr_len);
-}
-
-void shutdownDialog(Gtk::Window* parentWindow){
-    Gtk::MessageDialog dialog(*parentWindow,"Shutdown now?",false,Gtk::MESSAGE_QUESTION,Gtk::BUTTONS_OK_CANCEL);
-    int result=dialog.run();
-
-    switch(result) {
-        case (Gtk::RESPONSE_OK):
-            shutdownRobot();
-            break;
-        case (Gtk::RESPONSE_CANCEL):
-        case (Gtk::RESPONSE_NONE):
-        default:
-            break;
-    }
-}
-
-void broadcastListen(){
-    int sd = socket(AF_INET, SOCK_DGRAM, 0);
-    if(sd < 0) {
-        perror("Opening datagram socket error");
-        return; 
-    }
-//
-    int reuse = 1;
-    if(setsockopt(sd, SOL_SOCKET, SO_REUSEADDR, (char *)&reuse, sizeof(reuse)) < 0) {
-        perror("Setting SO_REUSEADDR error");
-        close(sd);
-        return;
-    }
-//
-    /* Bind to the proper port number with the IP address */
-    /* specified as INADDR_ANY. */
-    struct sockaddr_in localSock;
-    localSock.sin_family = AF_INET;
-    localSock.sin_port = htons(4321);
-    localSock.sin_addr.s_addr = INADDR_ANY;
-    if(bind(sd, (struct sockaddr*)&localSock, sizeof(localSock))) {
-        perror("Binding datagram socket error");
-        close(sd);
-        return;
-    }
-//
-    /* Join the multicast group 226.1.1.1 on the local 203.106.93.94 */
-    /* interface. Note that this IP_ADD_MEMBERSHIP option must be */
-    /* called for each local interface over which the multicast */
-    /* datagrams are to be received. */
-//
-    std::vector<std::string> addressList=getAddressList(); 
-    for(std::string addressString:addressList){
-        std::cout << "got " << addressString << std::endl;
-        struct ip_mreq group;
-        group.imr_multiaddr.s_addr = inet_addr("226.1.1.1");
-        group.imr_interface.s_addr = inet_addr(addressString.c_str());
-        if(setsockopt(sd, IPPROTO_IP, IP_ADD_MEMBERSHIP, (char *)&group, sizeof(group)) < 0) {
-            perror("Adding multicast group error");
-        } 
-    }
-//
-    char databuf[2048];
-    int datalen = sizeof(databuf);
-    while(true){
-        ssize_t bytesRead = read(sd, databuf, datalen);
-        if (bytesRead > 0) {
-            std::string message(databuf, bytesRead); 
-            std::lock_guard<std::mutex> lock(robotListMutex);
-            bool robotExists = false;
-
-            for (auto& robot : robotList) {
-                if (robot.tag == message) {
-                    time(&robot.lastSeenTime);
-                    robotExists = true;
-                    break; 
-                }
-            }
-
-            if (!robotExists) {
-                RemoteRobot newRobot;
-                newRobot.tag = message;
-                time(&newRobot.lastSeenTime);
-                robotList.push_back(newRobot);
-            }
-        }
-    }
-}
-
-void adjustRobotList() {
-    std::lock_guard<std::mutex> lock(robotListMutex);
-    time_t now;
-    time(&now);
-
-    // --- UNIFIED LOGIC ---
-    std::vector<Gtk::ListBoxRow*> rows_to_remove;
-    std::vector<std::string> robots_in_gui;
-
-    // 1. Check existing GUI rows against the data list
-    int index = 0;
-    for (Gtk::ListBoxRow* row = addressListBox->get_row_at_index(index); row; row = addressListBox->get_row_at_index(++index)) {
-        Gtk::Label* label = static_cast<Gtk::Label*>(row->get_child());
-        std::string row_text = label->get_text();
-        robots_in_gui.push_back(row_text);
-
-        bool found_in_data = false;
-        for (const auto& robot : robotList) {
-            if (robot.tag == row_text) {
-                found_in_data = true;
-                if (now - robot.lastSeenTime > 12) {
-                    rows_to_remove.push_back(row);
-                }
-                break;
-            }
-        }
-        if (!found_in_data) {
-            rows_to_remove.push_back(row);
-        }
-    }
-
-    for (auto* row : rows_to_remove) {
-        Gtk::Label* label = static_cast<Gtk::Label*>(row->get_child());
-        std::string row_text = label->get_text();
-        
-        // Remove from data vector
-        robotList.erase(std::remove_if(robotList.begin(), robotList.end(),
-            [&](const RemoteRobot& robot) {
-                return robot.tag == row_text;
-            }),
-            robotList.end());
-
-        // Remove from GUI
-        addressListBox->remove(*row);
-    }
-
-    for (const auto& robot : robotList) {
-        if (std::find(robots_in_gui.begin(), robots_in_gui.end(), robot.tag) == robots_in_gui.end()) {
-            Gtk::Label* label = Gtk::manage(new Gtk::Label(robot.tag));
-            label->set_visible(true);
-            addressListBox->append(*label);
-        }
     }
 }
 
@@ -2959,18 +2133,7 @@ bool on_key_release_event(GdkEventKey* key_event){
             return false;
             break;
     }
-    int messageSize=5;
-    uint8_t command=2;// keyboard
-    uint8_t message[messageSize];
-    message[0]=messageSize;
-    message[1]=command;
-    message[2]=(uint8_t)(((key_event->keyval)>>8)& 0xff);
-    message[3]=(uint8_t)(((key_event->keyval)>>0)& 0xff);
-    message[4]=0;
-    // send(sock, message, messageSize, 0);
-    sendto(sock , message , messageSize , 0 ,(struct sockaddr *)&serv_addr, addr_len);
-
-
+    sendKeyboardEvent(key_event->keyval, 0); // 0 for key release
     return false;
 }
 
@@ -3010,19 +2173,7 @@ bool on_key_press_event(GdkEventKey* key_event){
                 increaseGear();
             break;
     }
-
-    int messageSize=5;
-    uint8_t command=2;// keyboard
-    uint8_t message[messageSize];
-    message[0]=messageSize;
-    message[1]=command;
-    message[2]=(uint8_t)(((key_event->keyval)>>8)& 0xff);
-    message[3]=(uint8_t)(((key_event->keyval)>>0)& 0xff);
-    message[4]=1;
-    // send(sock, message, messageSize, 0);
-    sendto(sock , message , messageSize , 0 ,(struct sockaddr *)&serv_addr, addr_len);
-
-
+    sendKeyboardEvent(key_event->keyval, 1); // 1 for key press
     return false;
 }
 
@@ -3117,6 +2268,14 @@ Gtk::Box* create_lower_motor_column(std::vector<std::pair<Glib::ustring, CircleD
     return column;
 }
 
+void on_connection_finished() {
+    update_connection_status(server_ui);
+}
+
+void on_video_connection_finished() {
+    update_video_connection_status(video_server_ui);
+}
+
 
 /*** Functions that setup the GUI and windows ***/
 void setupGUI(Glib::RefPtr<Gtk::Application> application) {
@@ -3150,7 +2309,9 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
     // Create scrolled window instance and list of addresses 
     Gtk::ScrolledWindow* scrolledList = Gtk::manage(new Gtk::ScrolledWindow());
     addressListBox = Gtk::manage(new Gtk::ListBox());
-    addressListBox->signal_row_activated().connect(sigc::ptr_fun(&rowActivated));
+    addressListBox->signal_row_activated().connect(
+        [&](Gtk::ListBoxRow* row){ rowActivated(row, server_ui); }
+    );
 
     // Create vertical box on right of screen to house controls 
     Gtk::Box* controlsRightBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
@@ -3174,7 +2335,6 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
 
     // Create connection button, single click logic to connectOrDisconnect function
     connectButton = Gtk::manage(new Gtk::Button("Connect"));
-    connectButton->signal_clicked().connect(sigc::ptr_fun(&connectOrDisconnect));
     connectButton->set_name("dark_text");
 
     connectionStatusLabel = Gtk::manage(new Gtk::Label("Not Connected"));
@@ -3187,7 +2347,6 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
     // Create horizontal box to hold silent run functionality
     Gtk::Box* stateBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 2));
     silentRunButton = Gtk::manage(new Gtk::Button("Silent Running"));
-    silentRunButton->signal_clicked().connect(sigc::ptr_fun(&silentRun));
     silentRunButton->set_name("dark_text");
 
     // Create horizontal box to hold remote control functionality
@@ -3195,12 +2354,10 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
 
     // Create button to shutdown robot
     Gtk::Button* shutdownRobotButton = Gtk::manage(new Gtk::Button("Shutdown Robot"));
-    shutdownRobotButton->signal_clicked().connect(sigc::bind<Gtk::Window*>(sigc::ptr_fun(&shutdownDialog), window));
     shutdownRobotButton->set_name("dark_text");
 
     // Button to toggle from dark to light mode
     toggleModeButton = Gtk::manage(new Gtk::Button("Toggle Dark/Light Mode"));
-    toggleModeButton->signal_clicked().connect(sigc::ptr_fun(&toggleMode));
     toggleModeButton->set_name("dark_text");
     toggleModeButton->set_size_request(100, 50);
 
@@ -3239,20 +2396,24 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
         std::string font_file = "../resources/ProximaNova.otf";
         if (!Glib::file_test(font_file, Glib::FILE_TEST_EXISTS)) {
             g_print("Font file not found: %s\n", font_file.c_str());
-        } else {
+        }
+        else {
             // If you need to load the font into Pango, you can do it here
             Pango::FontDescription font_desc;
             font_desc.set_family("Proxima Nova");
             font_desc.set_weight(Pango::WEIGHT_BOLD);
         }
-    } catch (const Glib::Error& e) {
+    }
+    catch (const Glib::Error& e) {
         g_print("Failed to load font: %s\n", e.what().c_str());
     }
     Gtk::Box* videoControlsBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,5));
 
     Gtk::ScrolledWindow* videoScrolledList=Gtk::manage(new Gtk::ScrolledWindow());
     videoAddressListBox=Gtk::manage(new Gtk::ListBox());
-    videoAddressListBox->signal_row_activated().connect(sigc::ptr_fun(&videoRowActivated));
+    videoAddressListBox->signal_row_activated().connect(
+        [&](Gtk::ListBoxRow* row){ videoRowActivated(row, video_server_ui); }
+    );
 
     Gtk::Box* videoControlsRightBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL,5));
 
@@ -3268,7 +2429,6 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
     videoIPAddressEntry->set_name("dark_text");
 
     videoConnectButton=Gtk::manage(new Gtk::Button("Connect"));
-    videoConnectButton->signal_clicked().connect(sigc::ptr_fun(&videoConnectOrDisconnect));
     videoConnectButton->set_name("dark_text");
     videoConnectionStatusLabel=Gtk::manage(new Gtk::Label("Not Connected"));
     videoConnectionStatusLabel->override_background_color(red);
@@ -3276,7 +2436,6 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
     
     Gtk::Box* videoStateBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,2));
     videoStreamButton=Gtk::manage(new Gtk::Button("Not Video Streaming"));
-    videoStreamButton->signal_clicked().connect(sigc::ptr_fun(&videoStream));
     videoStreamButton->set_name("dark_text");
 
     videoAddressListBox->set_size_request(200,30);
@@ -3331,6 +2490,47 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
     topControlsBox->add(*controlsBox);
     topControlsBox->add(*videoTopLevelBox);
     topLevelBox->add(*topControlsBox);
+
+    // Create the structs to hold UI pointers
+    server_ui.connectButton = connectButton;
+    server_ui.connectionStatusLabel = connectionStatusLabel;
+    server_ui.silentRunButton = silentRunButton;
+    server_ui.ipAddressEntry = ipAddressEntry;
+    server_ui.addressListBox = addressListBox;
+    server_ui.parentWindow = window;
+
+    video_server_ui.connectButton = videoConnectButton;
+    video_server_ui.connectionStatusLabel = videoConnectionStatusLabel;
+    video_server_ui.streamButton = videoStreamButton;
+    video_server_ui.ipAddressEntry = videoIPAddressEntry;
+    video_server_ui.addressListBox = videoAddressListBox;
+    video_server_ui.parentWindow = window;
+
+    connectButton->signal_clicked().connect([useOrin]() {
+        connectOrDisconnect(server_ui, useOrin, connection_finished_dispatcher);
+    });
+
+    silentRunButton->signal_clicked().connect([]() {
+        silentRun(server_ui);
+    });
+
+    addressListBox->signal_row_activated().connect(
+        [&](Gtk::ListBoxRow* row){ rowActivated(row, server_ui); }
+    );
+
+    toggleModeButton->signal_clicked().connect(sigc::ptr_fun(&toggleMode));
+
+    videoConnectButton->signal_clicked().connect([&]() {
+        videoConnectOrDisconnect(video_server_ui, video_connection_finished_dispatcher);
+    });
+
+    videoStreamButton->signal_clicked().connect([&]() {
+        videoStream(video_server_ui);
+    });
+
+    videoAddressListBox->signal_row_activated().connect(
+        [&](Gtk::ListBoxRow* row){ videoRowActivated(row, video_server_ui); }
+    );
 
     if(!noVideo){
         Gtk::Box* bottomBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
@@ -3937,20 +3137,28 @@ int main(int argc, char** argv) {
         initSensorsWindow();
     moveWindows();
     initGUI();
-
-    videoDisconnectDispatcher.connect([]() {
-        if (shouldVideoDisconnect) {
-            setVideoDisconnectedState();
-            shouldVideoDisconnect = false;
-        }
-
-    });
     
     //Start a thread to listen to updates from the robot
+    videoDisconnectDispatcher.connect([&video_server_ui]() {
+        if (shouldVideoDisconnect) {
+            handleVideoDisconnect(video_server_ui);
+            shouldVideoDisconnect = false;
+        }
+    });
+
+    connection_finished_dispatcher.connect(sigc::ptr_fun(&on_connection_finished));
+    video_connection_finished_dispatcher.connect(sigc::ptr_fun(&on_video_connection_finished));
+    
     std::thread broadcastListenThread(broadcastListen);
     broadcastListenThread.detach();
-    std::thread broadcastVideoListenThread(videoMain);
-    broadcastVideoListenThread.detach();
+
+    std::thread videoBroadcastListenThread(videoBroadcastListen);
+    videoBroadcastListenThread.detach();
+
+    std::thread videoMainThread(videoMain, std::ref(latestFrame), std::ref(frameMutex), 
+        std::ref(newFrameAvailable), std::ref(videoDisconnectDispatcher), 
+        std::ref(shouldVideoDisconnect));
+    videoMainThread.detach();
 
     if (SDL_Init(SDL_INIT_GAMECONTROLLER | SDL_INIT_JOYSTICK | SDL_INIT_EVENTS) != 0) {
         SDL_Log("Unable to initialize SDL: %s", SDL_GetError());
@@ -4007,7 +3215,7 @@ int main(int argc, char** argv) {
     std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
     std::chrono::high_resolution_clock::time_point lastTransmitTime = std::chrono::high_resolution_clock::now();
     std::chrono::high_resolution_clock::time_point lastReceiveTime = std::chrono::high_resolution_clock::now();
-    lastHeartbeatTime = std::chrono::high_resolution_clock::now();
+    std::chrono::high_resolution_clock::time_point lastHeartbeatTime = std::chrono::high_resolution_clock::now();
     now = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> time_span = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastTransmitTime);
     double deltaTime = time_span.count();
@@ -4016,8 +3224,8 @@ int main(int argc, char** argv) {
     uint8_t message[256];
     bool running=true;
     while(running){
-        adjustRobotList();
-        adjustVideoRobotList();
+        adjustRobotList(addressListBox);
+        adjustVideoRobotList(videoAddressListBox);
 
         while(Gtk::Main::events_pending()){
             Gtk::Main::iteration();
@@ -4030,209 +3238,80 @@ int main(int argc, char** argv) {
             newFrameAvailable = false;
         }
 
-        if(!testInput){
-            if(!initialized)
+        if(!testInput && !isServerInitialized()) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100)); // Don't busy-wait
             continue;
         }
 
-        //std::cout << "Before Read" << std::endl;
-
-        //Avoid blocking if we hear nothing
-        fcntl(sock,F_SETFL, O_NONBLOCK);
-        //Receive messages from the robot, store in buffer of size 16384
-        bytesRead = recvfrom(sock, buffer, 16384, 0, (struct sockaddr *)&serv_addr, &addr_len);
-
-        if(bytesRead == 17){
-            for(int index=0;index<bytesRead;index++){
-                buffer[index] = 0;
-            }
-            setConnectedState();
-            lastReceiveTime = std::chrono::high_resolution_clock::now();
-            continue;
-        }
-
-        if(!testInput){
-            if(!connected){
-                if(messageBytesList.size() > 0){
-                    messageBytesList.clear();
-                }
-                continue;
-            }
-            if(bytesRead==0){
-                //std::cout << "Lost Connection" << std::endl;
-                setDisconnectedState();
-                if(messageBytesList.size() > 0){
-                    messageBytesList.clear();
-                }
-                continue;
-            }
-        }
-
-        //std::cout << "After Read" << std::endl;
-        
-        //Fill the messageBytesList with the bytes read from the socket
-        if(bytesRead != -1){
-        	//std::cout << bytesRead << std::endl;
-            for(int index=0;index<bytesRead;index++){
-                messageBytesList.push_back(buffer[index]);
+        std::vector<uint8_t> data_buffer;
+        bytesRead = receiveRobotData(data_buffer);
+        if (bytesRead > 0) {
+            for(uint8_t byte : data_buffer) {
+                messageBytesList.push_back(byte);
             }
             lastReceiveTime = std::chrono::high_resolution_clock::now();
         }
-
-        if(silentRunning){
-            lastReceiveTime = std::chrono::high_resolution_clock::now();
-        }
-        else{
+        else if (bytesRead < 0 && isServerConnected()) {
             now = std::chrono::high_resolution_clock::now();
             time_span = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastReceiveTime);
             deltaTime = time_span.count();
-            if(deltaTime > 5.0 && connected){
-                setDisconnectedState();
+            if(deltaTime > 5.0){
+                std::cout << "Connection timed out." << std::endl;
+                setDisconnectedState(server_ui);
+                resetUIOnDisconnect();
             }
         }
         
-        //std::cout << "Before hasMessage check" << std::endl;
         while(BinaryMessage::hasMessage(messageBytesList)){
-	    //print_data(messageBytesList);
-            /****************CHECKSUM: Branch to process each message in messageBytesList in the case that the checksum is to be verified****************/
-            //std::cout << "Before message create" << std::endl;
-            int checksum = checksum_decode(messageBytesList); 
-            if (checksum == 0){
-                break; 
-            }
-            else{
+            if (checksum_decode(messageBytesList) == 1) {
                 BinaryMessage message(messageBytesList);
-                //std::cout << "Before GUI update" << std::endl;
-                updateGUI(message); //Update the GUI with the message
-                //std::cout << "Before size decode" << std::endl;
-                uint64_t size=BinaryMessage::decodeSizeBytes(messageBytesList); //Decode the size of the message
+                updateGUI(message);
+                uint64_t size = BinaryMessage::decodeSizeBytes(messageBytesList);
                 for(int count=0; count < size + 1; count++){
-                    //std::cout << messageBytesList.front();
                     messageBytesList.pop_front();
                 }
             }
-
+            else {
+                break; 
+            }
         }
 
         now = std::chrono::high_resolution_clock::now();
         time_span = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastHeartbeatTime);
         deltaTime = time_span.count();
-        if(deltaTime > 1.0 && connected){
+        if(deltaTime > 1.0 && isServerConnected()){
             lastHeartbeatTime = std::chrono::high_resolution_clock::now();
-            uint8_t command=0;
-            int length=2;
-            uint8_t message[length];
-            message[0]=length;
-            message[1]=command;
-
-            // send(sock, message, length, 0);
-            sendto(sock , message , length , 0 ,(struct sockaddr *)&serv_addr, addr_len);
+            sendHeartbeat();
         }
+
 
         /******************************Handle control events******************************/
         while(SDL_PollEvent(&event)){
-            const Uint8 *state = SDL_GetKeyboardState(NULL);
-
             switch(event.type){
-
-                case SDL_MOUSEMOTION:{
-                    int mouseX = event.motion.x;
-                    int mouseY = event.motion.y;
-
-                    std::cout << "X: " << mouseX << " Y: " << mouseY << std::endl;
-
-                    break;
-                }
-
-                case SDL_KEYDOWN:{
-                    std::cout << event.key.keysym.sym << std::endl;
-                    std::cout << "key down" << std::endl;
-                    break;
-                }
-
-                case SDL_KEYUP:{
-                    std::cout << "key up" << std::endl;
-                    break;
-                }
-
                 case SDL_JOYHATMOTION:{
-
-                    uint8_t command=6;
-                    int length=5;
-                    uint8_t message[length];
-                    message[0]=length;
-                    message[1]=command;
-                    message[2]=event.jhat.which;
-                    message[3]=event.jhat.hat;
-                    message[4]=event.jhat.value;
-
-                    // send(sock, message, length, 0);
-                    sendto(sock , message , length , 0 ,(struct sockaddr *)&serv_addr, addr_len);
+                    sendJoystickHat(event.jhat.which, event.jhat.hat, event.jhat.value);
                     break;
                 }
                 case SDL_JOYBUTTONDOWN:{
-                    std::cout << "Joystick button down" << std::endl;
-                    if(!twoJoysticks){
-                        if(event.jbutton.button == 2 && event.jbutton.state == 1){
-                            axisEventList->at(1)->at(1)->value = 32768.0;
-                        }
-                        if(event.jbutton.button == 2 && event.jbutton.state == 1){
-                            axisEventList->at(1)->at(1)->value = -32768.0;
-                        }
-                    }
-                    uint8_t command=5;
-                    int length=5;
-                    uint8_t message[length];
-                    message[0]=length;
-                    message[1]=command;
-                    message[2]=event.jbutton.which;
-                    message[3]=event.jbutton.button;
-                    message[4]=event.jbutton.state;
-
-                    // send(sock, message, length, 0);
-                    sendto(sock , message , length , 0 ,(struct sockaddr *)&serv_addr, addr_len);
+                    sendJoystickButton(event.jbutton.which, event.jbutton.button, event.jbutton.state);
                     break;
                 }
                 case SDL_JOYBUTTONUP:{
-                    std::cout << "Joystick button up" << std::endl;
-                    uint8_t command=5;
-                    int length=5;
-                    uint8_t message[length];
-                    message[0]=length;
-                    message[1]=command;
-                    message[2]=event.jbutton.which;
-                    message[3]=event.jbutton.button;
-                    message[4]=event.jbutton.state;
-
-                    // send(sock, message, length, 0);
-                    sendto(sock , message , length , 0 ,(struct sockaddr *)&serv_addr, addr_len);
+                    sendJoystickButton(event.jbutton.which, event.jbutton.button, event.jbutton.state);
                     break;
                 }
                 case SDL_JOYAXISMOTION: {
-                    //std::cout << "Joystick axis motion" << std::endl;
                     int deadZone=4000;
                     if(event.jaxis.value < -deadZone || deadZone < event.jaxis.value ) {
                         axisEventList->at(event.jaxis.which)->at(event.jaxis.axis)->isSet = true;
-                        axisEventList->at(event.jaxis.which)->at(event.jaxis.axis)->which = event.jaxis.which;
-                        axisEventList->at(event.jaxis.which)->at(event.jaxis.axis)->axis  = event.jaxis.axis;
-
-                        int value = event.jaxis.value;
-                        if(value < -deadZone)   value-=deadZone;
-                        if(deadZone < value) value+=deadZone;
-
-                        axisEventList->at(event.jaxis.which)->at(event.jaxis.axis)->value = value;
+                        axisEventList->at(event.jaxis.which)->at(event.jaxis.axis)->value = event.jaxis.value;
                     }
                     else{
                         axisEventList->at(event.jaxis.which)->at(event.jaxis.axis)->isSet = true;
-                        axisEventList->at(event.jaxis.which)->at(event.jaxis.axis)->which = event.jaxis.which;
-                        axisEventList->at(event.jaxis.which)->at(event.jaxis.axis)->axis  = event.jaxis.axis;
-
-                        int value = 0;
-                        axisEventList->at(event.jaxis.which)->at(event.jaxis.axis)->value = value;
+                        axisEventList->at(event.jaxis.which)->at(event.jaxis.axis)->value = 0;
                     }
                     break;
                 }
-
                 default:
                     break;
             }
@@ -4246,25 +3325,12 @@ int main(int argc, char** argv) {
             for(int joystickIndex=0; joystickIndex < axisEventList->size(); joystickIndex++){
                 for(int axisIndex=0; axisIndex < axisEventList->at(joystickIndex)->size(); axisIndex++){
                     if(axisEventList->at(joystickIndex)->at(axisIndex)->isSet){
-                        //std::cout << joystickIndex << " " << axisIndex << " " << axisEventList->at(joystickIndex)->at(axisIndex)->value << std::endl;
                         axisEventList->at(joystickIndex)->at(axisIndex)->isSet = false;
-
-                        uint8_t command = 1;
-                        int length = 8;
                         float value = ((float)axisEventList->at(joystickIndex)->at(axisIndex)->value) / -32768.0;
-                        uint8_t message[length];
-                        uint8_t which = axisEventList->at(joystickIndex)->at(axisIndex)->which;
-                        uint8_t axis = axisEventList->at(joystickIndex)->at(axisIndex)->axis;//0-roll 1-pitch 2-throttle 3-yaw
+                        uint8_t which = joystickIndex;
+                        uint8_t axis  = axisIndex;
                         remapJoystickInputs(&which, &axis);
-                        message[0] = length;
-                        message[1] = command;
-                        message[2] = which;
-                        message[3] = axis;
-                        insert(value, &message[4]);
-
-                        // send(sock, message, length, 0);
-                        sendto(sock , message , length , 0 ,(struct sockaddr *)&serv_addr, addr_len);
-                
+                        sendJoystickAxis(which, axis, value);
                     }
                 }
             }

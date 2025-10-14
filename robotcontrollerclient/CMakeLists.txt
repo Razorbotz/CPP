@@ -96,6 +96,7 @@ add_executable(control
   src/Speedometer.cpp
   src/ConfigDefinitions.cpp
   src/ConfigEditorWindow.cpp
+  src/NetworkHandler.cpp
 )
 
 

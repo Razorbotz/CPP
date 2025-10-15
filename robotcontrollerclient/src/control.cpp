@@ -63,8 +63,6 @@ Robot isn't drawing in correct location, need to offset for camera position
 
 */
 
-#define PORT 31337 
-#define VIDEO_PORT 31338
 #define ORIN_IP "192.168.1.6"
 #define NANO_IP "192.168.1.5"
 bool useOrin = true;
@@ -3245,6 +3243,8 @@ int main(int argc, char** argv) {
 
         std::vector<uint8_t> data_buffer;
         bytesRead = receiveRobotData(data_buffer);
+        if(isSilentRunning())
+            lastReceiveTime = std::chrono::high_resolution_clock::now();
         if (bytesRead > 0) {
             for(uint8_t byte : data_buffer) {
                 messageBytesList.push_back(byte);

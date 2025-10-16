@@ -1796,37 +1796,56 @@ void updateGUI(BinaryMessage& message) {
     infoFrame->show_all();
 }
 
-bool decompress_payload(const std::vector<uint8_t>& compressed_payload, std::vector<uint8_t>& decompressed_data) {
-    if (compressed_payload.size() < 4) {
-        std::cerr << "Error: Payload is too small to contain size header." << std::endl;
+/**
+ * @brief Processes an incoming payload, decompressing it only if necessary.
+ * * This function reads the first byte of the payload as a flag.
+ * - If the flag is '1', it assumes the data is compressed, extracts the
+ * original size, and performs zlib decompression.
+ * - If the flag is '0', it assumes the data is uncompressed and copies it directly.
+ * * @param received_payload The raw data buffer received from the socket.
+ * @param processed_data A vector that will be filled with the final, usable data.
+ * @return True if processing was successful, false otherwise.
+ */
+bool process_payload(const std::vector<uint8_t>& received_payload, std::vector<uint8_t>& processed_data) {
+    if (received_payload.empty()) {
         return false;
     }
 
-    uLong original_size = 0;
-    original_size |= static_cast<uLong>(compressed_payload[0]) << 24;
-    original_size |= static_cast<uLong>(compressed_payload[1]) << 16;
-    original_size |= static_cast<uLong>(compressed_payload[2]) << 8;
-    original_size |= static_cast<uLong>(compressed_payload[3]) << 0;
+    // Read the first byte as the compression flag.
+    uint8_t compression_flag = received_payload[0];
 
-    if (original_size == 0 || original_size > 500000) { // Sanity check for size
-        std::cerr << "Error: Invalid original size decoded: " << original_size << std::endl;
-        return false;
+    if (compression_flag == 1) {
+        if (received_payload.size() < 5) { // 1-byte flag + 4-byte size
+            std::cerr << "Error: Compressed payload is too small." << std::endl;
+            return false;
+        }
+
+        // Extract the original uncompressed size from the next 4 bytes.
+        uLong original_size = 0;
+        original_size |= static_cast<uLong>(received_payload[1]) << 24;
+        original_size |= static_cast<uLong>(received_payload[2]) << 16;
+        original_size |= static_cast<uLong>(received_payload[3]) << 8;
+        original_size |= static_cast<uLong>(received_payload[4]) << 0;
+        
+        processed_data.resize(original_size);
+        uLongf dest_len = processed_data.size();
+
+        // Point to the actual compressed data (after flag and size).
+        const Bytef* source = received_payload.data() + 5;
+        uLong source_len = received_payload.size() - 5;
+
+        // Perform decompression.
+        int result = uncompress(processed_data.data(), &dest_len, source, source_len);
+        if (result != Z_OK) {
+            std::cerr << "Decompression failed with error: " << result << std::endl;
+            return false;
+        }
+        processed_data.resize(dest_len);
+
+    } else {
+        // Just copy the data, skipping the '0' flag byte.
+        processed_data.assign(received_payload.begin() + 1, received_payload.end());
     }
-    
-    decompressed_data.resize(original_size);
-    uLongf dest_len = decompressed_data.size();
-
-    const Bytef* source = compressed_payload.data() + 4;
-    uLong source_len = compressed_payload.size() - 4;
-
-    int result = uncompress(decompressed_data.data(), &dest_len, source, source_len);
-
-    if (result != Z_OK) {
-        std::cerr << "Decompression failed with error: " << result << std::endl;
-        return false;
-    }
-    
-    decompressed_data.resize(dest_len); 
 
     return true;
 }
@@ -3258,9 +3277,9 @@ int main(int argc, char** argv) {
         if(isSilentRunning())
             lastReceiveTime = std::chrono::high_resolution_clock::now();
         if (bytesRead > 0) {
-            std::vector<uint8_t> decompressed_buffer;
-            if (decompress_payload(data_buffer, decompressed_buffer)) {
-                for(uint8_t byte : decompressed_buffer) {
+            std::vector<uint8_t> processed_buffer;
+            if (process_payload(data_buffer, processed_buffer)) { 
+                for(uint8_t byte : processed_buffer) {
                     messageBytesList.push_back(byte);
                 }
                 lastReceiveTime = std::chrono::high_resolution_clock::now();

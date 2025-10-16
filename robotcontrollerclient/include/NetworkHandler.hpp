@@ -6,6 +6,7 @@
 #include <mutex>
 #include <atomic>
 #include <opencv2/opencv.hpp>
+#include <sys/socket.h>
 
 // Forward declare GTK types to avoid including heavy headers
 namespace Gtk {
@@ -65,6 +66,8 @@ void setDisconnectedState(ServerUI& ui);
 void update_connection_status(ServerUI& ui);
 
 // --- Function Declarations for Video Server ---
+extern struct sockaddr_in video_serv_addr;
+extern socklen_t video_addr_len;
 void videoConnectOrDisconnect(VideoServerUI& ui, Glib::Dispatcher& dispatcher);
 void videoStream(VideoServerUI& ui);
 void videoRowActivated(Gtk::ListBoxRow* listBoxRow, VideoServerUI& ui);

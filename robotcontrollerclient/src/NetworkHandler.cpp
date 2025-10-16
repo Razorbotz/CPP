@@ -336,6 +336,8 @@ void adjustRobotList(Gtk::ListBox* addressListBox) {
 int videoSock = 0;
 bool videoConnected = false;
 bool isStreamingActive = false;
+struct sockaddr_in video_serv_addr;
+socklen_t video_addr_len = sizeof(video_serv_addr);
 
 std::vector<RemoteRobot> videoRobotList;
 std::mutex videoRobotListMutex;
@@ -381,48 +383,38 @@ std::atomic<ConnStatus> video_connection_status = ConnStatus::PENDING;
 static void connectToVideoServer(VideoServerUI& ui, Glib::Dispatcher& dispatcher) {
     if (videoConnected) return;
 
-    struct sockaddr_in serv_addr;
-    memset(&serv_addr, 0, sizeof(serv_addr));
-    serv_addr.sin_family = AF_INET;
-    serv_addr.sin_port = htons(VIDEO_PORT);
+    memset(&video_serv_addr, 0, sizeof(video_serv_addr));
+    video_serv_addr.sin_family = AF_INET;
+    video_serv_addr.sin_port = htons(VIDEO_PORT);
 
-    if ((videoSock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-        perror("\n Video socket creation error \n");
+    if ((videoSock = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
+        perror("\n Video UDP socket creation error \n");
         video_connection_status = ConnStatus::FAILURE;
         dispatcher.emit();
         return;
     }
 
-    if (inet_pton(AF_INET, ui.ipAddressEntry->get_text().c_str(), &serv_addr.sin_addr) <= 0) {
-        Gtk::MessageDialog dialog(*ui.parentWindow, "Invalid Video IP Address", false, Gtk::MESSAGE_ERROR, Gtk::BUTTONS_OK);
-        dialog.run();
+    if (inet_pton(AF_INET, ui.ipAddressEntry->get_text().c_str(), &video_serv_addr.sin_addr) <= 0) {
+        std::cerr << "Invalid Video IP Address" << std::endl;
         video_connection_status = ConnStatus::FAILURE;
         dispatcher.emit();
         return;
     }
 
-    if (connect(videoSock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
-        Gtk::MessageDialog dialog(*ui.parentWindow, "Video Connection Failed", false, Gtk::MESSAGE_ERROR, Gtk::BUTTONS_OK);
-        dialog.run();
-        video_connection_status = ConnStatus::FAILURE;
-        dispatcher.emit();
-    }
-    else {
-        std::string hello("Hello Robot");
-        send(videoSock, hello.c_str(), hello.length(), 0);
-        char buffer[1024] = {0};
-        read(videoSock, buffer, sizeof(buffer)); // Clear any initial response
-        fcntl(videoSock, F_SETFL, O_NONBLOCK);
-        video_connection_status = ConnStatus::SUCCESS;
-        dispatcher.emit();
-    }
+    std::string hello("Hello Robot");
+    sendto(videoSock, hello.c_str(), hello.length(), 0, (struct sockaddr *)&video_serv_addr, video_addr_len);
+
+    fcntl(videoSock, F_SETFL, O_NONBLOCK);
+    video_connection_status = ConnStatus::SUCCESS;
+    dispatcher.emit();
 }
 
 void update_video_connection_status(VideoServerUI& ui) {
     ConnStatus status = video_connection_status;
     if (status == ConnStatus::SUCCESS) {
         setVideoConnectedState(ui);
-    } else if (status == ConnStatus::FAILURE) {
+    }
+    else if (status == ConnStatus::FAILURE) {
         setVideoDisconnectedState(ui);
     }
     ui.connectButton->set_sensitive(true);
@@ -432,12 +424,10 @@ void update_video_connection_status(VideoServerUI& ui) {
 static void disconnectFromVideoServer(VideoServerUI& ui) {
     Gtk::MessageDialog dialog(*ui.parentWindow, "Disconnect from video server?", false, Gtk::MESSAGE_QUESTION, Gtk::BUTTONS_OK_CANCEL);
     if (dialog.run() == Gtk::RESPONSE_OK) {
-        if (shutdown(videoSock, SHUT_RDWR) == -1) {
-            perror("Video socket shutdown failed");
-        }
         if (close(videoSock) == 0) {
             setVideoDisconnectedState(ui);
-        } else {
+        }
+        else {
             Gtk::MessageDialog errDialog(*ui.parentWindow, "Failed to close video socket", false, Gtk::MESSAGE_ERROR, Gtk::BUTTONS_OK);
             errDialog.run();
         }
@@ -457,27 +447,31 @@ void videoConnectOrDisconnect(VideoServerUI& ui, Glib::Dispatcher& dispatcher) {
     }
 }
 
+void sendVideoHeartbeat() {
+    if (!videoConnected) return;
+    uint8_t heartbeat_packet = 0xFF; 
+    sendto(videoSock, &heartbeat_packet, sizeof(heartbeat_packet), 0, (struct sockaddr *)&video_serv_addr, video_addr_len);
+}
+
 // --- UI Interaction Functions ---
 void videoStream(VideoServerUI& ui) {
     if (!videoConnected) return;
     
     uint8_t message[3];
-    message[0] = 3; // messageSize
-    message[1] = 1; // command (video stream toggle)
+    message[0] = 3; 
+    message[1] = 1;
 
     if (ui.streamButton->get_label() == "Not Video Streaming") {
-        message[2] = 1; // Start streaming
-        send(videoSock, message, sizeof(message), 0);
+        message[2] = 1;
         ui.streamButton->set_label("Video Streaming");
         isStreamingActive = true;
-    } else {
-        message[2] = 0; // Stop streaming
-        send(videoSock, message, sizeof(message), 0);
-        ui.streamButton->set_label("Not Video Streaming");
-        // Note: The original code sets isStreamingActive to true here as well.
-        // This is preserved to maintain identical functionality.
-        isStreamingActive = true;
     }
+    else {
+        message[2] = 0;
+        ui.streamButton->set_label("Not Video Streaming");
+        isStreamingActive = false;
+    }
+    sendto(videoSock, message, sizeof(message), 0, (struct sockaddr *)&video_serv_addr, video_addr_len);
 }
 
 void videoRowActivated(Gtk::ListBoxRow* listBoxRow, VideoServerUI& ui) {
@@ -627,6 +621,8 @@ void videoMain(cv::Mat& latestFrame, std::mutex& frameMutex, std::atomic<bool>& 
     SwsContext* sws_ctx = nullptr;
     uint8_t* bgr_buffer = nullptr;
 
+    std::vector<uint8_t> frameDataBuffer(1000000); // 1 MB buffer should be safe
+
     bool running = true;
     while (running) {
         if (!videoConnected || !isStreamingActive) {
@@ -634,93 +630,31 @@ void videoMain(cv::Mat& latestFrame, std::mutex& frameMutex, std::atomic<bool>& 
             continue;
         }
 
-        // 1. Read the size of the next H.265 frame from the socket
-        uint32_t network_frame_size = 0;
-        ssize_t bytesRead = 0;
-        size_t totalHeaderRead = 0;
-        while (totalHeaderRead < sizeof(network_frame_size)) {
-            bytesRead = recv(videoSock, reinterpret_cast<char*>(&network_frame_size) + totalHeaderRead, sizeof(network_frame_size) - totalHeaderRead, 0);
-            
-            if (bytesRead > 0) {
-                totalHeaderRead += bytesRead;
-            }
-            else if (bytesRead == 0) { // Peer has performed an orderly shutdown
-                break;
-            }
-            else { // bytesRead == -1
-                if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                    // This is not an error, just no data available yet.
-                    // Sleep briefly to avoid busy-waiting and hogging the CPU.
-                    std::this_thread::sleep_for(std::chrono::milliseconds(5)); 
-                    continue; 
-                }
-                break; 
-            }
-        }
+        ssize_t bytesRead = recvfrom(videoSock, frameDataBuffer.data(), frameDataBuffer.size(), 0, NULL, NULL);
 
         if (bytesRead <= 0) {
-            if (videoConnected) { // Only show error if we expected to be connected
-                if (bytesRead == 0) {
-                    std::cout << "Video connection closed by peer." << std::endl;
-                }
-                else {
-                    perror("Socket recv error");
-                }
-                shouldVideoDisconnect = true;
-                videoDisconnectDispatcher.emit();
-            }
-            continue;
-        }
-        
-        uint32_t frameSize = ntohl(network_frame_size);
-        if (frameSize == 0 || frameSize > 1000000) {
-            std::cerr << "Invalid frame size received: " << frameSize << std::endl;
-            continue;
-        }
-
-        // 2. Read the full H.265 frame data
-        std::vector<uint8_t> frameDataBuffer(frameSize);
-        size_t totalFrameRead = 0;
-        while (totalFrameRead < frameSize) {
-            bytesRead = recv(videoSock, frameDataBuffer.data() + totalFrameRead, frameSize - totalFrameRead, 0);
-
-            if (bytesRead > 0) {
-                totalFrameRead += bytesRead;
-            }
-            else if (bytesRead == 0) {
-                break;
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+                continue;
             }
             else {
-                if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                    std::this_thread::sleep_for(std::chrono::milliseconds(5));
-                    continue;
+                if (videoConnected) {
+                    perror("UDP recvfrom error");
+                    shouldVideoDisconnect = true;
+                    videoDisconnectDispatcher.emit();
                 }
-                break;
+                continue;
             }
-        }
-        if (bytesRead <= 0) {
-             if (videoConnected) {
-                if (bytesRead == 0) {
-                    std::cout << "Video connection closed by peer while reading frame." << std::endl;
-                }
-                else {
-                    perror("Socket recv error while reading frame data");
-                }
-                shouldVideoDisconnect = true;
-                videoDisconnectDispatcher.emit();
-            }
-            continue;
         }
 
-        // 3. Parse and Decode the H.265 frame
         uint8_t* data_ptr = frameDataBuffer.data();
-        size_t data_size = frameDataBuffer.size();
+        size_t data_size = bytesRead;
 
         while (data_size > 0) {
             int ret = av_parser_parse2(parser, codec_ctx, &pkt->data, &pkt->size,
                                        data_ptr, data_size,
                                        AV_NOPTS_VALUE, AV_NOPTS_VALUE, 0);
-            if (ret < 0) {
+            if (ret < 0) { 
                 std::cerr << "Error while parsing frame" << std::endl;
                 break;
             }
@@ -728,9 +662,7 @@ void videoMain(cv::Mat& latestFrame, std::mutex& frameMutex, std::atomic<bool>& 
             data_size -= ret;
 
             if (pkt->size) {
-                // Send packet to the decoder
                 if (avcodec_send_packet(codec_ctx, pkt) >= 0) {
-                    // Receive decoded frames
                     while (avcodec_receive_frame(codec_ctx, frame) == 0) {
                         // Got a decoded frame, now convert it to BGR for OpenCV
                         

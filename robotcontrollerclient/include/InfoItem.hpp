@@ -26,6 +26,7 @@ class InfoItem:public Gtk::Box{
     void setValue(double value);
     void setValue(float value);
     void setValue(std::string value);
+    void setValue(const char* value);
     template<typename T>
     void setValue(T value) {
         std::string valueString = std::to_string(value);

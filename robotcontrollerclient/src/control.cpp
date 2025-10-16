@@ -67,6 +67,8 @@ Robot isn't drawing in correct location, need to offset for camera position
 #define NANO_IP "192.168.1.5"
 bool useOrin = true;
 
+#define LOW_VOLTAGE 12.0f
+
 float parseFloat(const uint8_t* array){
     uint32_t axisYInteger=0;
     axisYInteger|=uint32_t(array[0])<<24;
@@ -1372,175 +1374,155 @@ bool onMotorClick(GdkEventButton* event, const std::string& label){
 
 
 /*** Functions associated with GUI initialization ***/
-void initRoll(){
-    if(!roll_init){
-        roll_image = Gtk::manage(new Gtk::Image());
-        
-        if(noVideo)
-            sensorBox->add(*roll_image);
-        else
-            bottomLowerBox->add(*roll_image);
-        
-        try{
-            roll_pixbuf = Gdk::Pixbuf::create_from_file("../resources/RobotSide.png");
-        }
-        catch(const Glib::FileError& e){
-            g_print("Failed to load image: %s\n", e.what().c_str());
-            return;
-        }
+/**
+ * Creates a position indicator widget composed of two vertical bars and labels.
+ */
+Gtk::Box* createPositionIndicator(const std::string& title, int spacing,
+                                  DrawingArea*& left_indicator, 
+                                  DrawingArea*& right_indicator, 
+                                  Gtk::Box*& container_box) 
+{
+    auto text_box = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 2));
+    container_box = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, spacing));
+    container_box->set_size_request(110, -1);
+    
+    left_indicator = Gtk::manage(new DrawingArea());
+    left_indicator->set_size_request(40, 180);
+    left_indicator->set_hexpand(true);
+    left_indicator->set_halign(Gtk::ALIGN_CENTER);
+    container_box->add(*left_indicator);
+    left_indicator->show();
+    
+    right_indicator = Gtk::manage(new DrawingArea());
+    right_indicator->set_size_request(40, 180);
+    right_indicator->set_hexpand(true);
+    right_indicator->set_halign(Gtk::ALIGN_CENTER);
+    container_box->add(*right_indicator);
+    right_indicator->show();
+    right_indicator->set_height_ratio(0.5);
+    
+    container_box->set_halign(Gtk::ALIGN_CENTER);
+    container_box->set_valign(Gtk::ALIGN_CENTER);
+    
+    text_box->add(*container_box);
+    text_box->set_halign(Gtk::ALIGN_CENTER);
+    
+    auto pos_label = Gtk::manage(new Gtk::Label("L         R"));
+    auto title_label = Gtk::manage(new Gtk::Label(title));
+    
+    pos_label->set_halign(Gtk::ALIGN_CENTER);
+    title_label->set_halign(Gtk::ALIGN_CENTER);
+    
+    text_box->add(*pos_label);
+    text_box->add(*title_label);
+    
+    return text_box;
+}
 
-        if(!noVideo){
-            Gtk::Box* padding = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
+/**
+ * Creates and initializes an image widget from a file.
+ */
+bool createImageIndicator(Gtk::Image*& image_widget, Glib::RefPtr<Gdk::Pixbuf>& pixbuf, 
+                          const std::string& file_path, Gtk::Container* parent, double initial_rotation)
+{
+    image_widget = Gtk::manage(new Gtk::Image());
+    try {
+        pixbuf = Gdk::Pixbuf::create_from_file(file_path);
+    } catch(const Glib::FileError& e) {
+        g_print("Failed to load image: %s\n", e.what().c_str());
+        return false;
+    }
+    
+    parent->add(*image_widget);
+
+    Glib::RefPtr<Gdk::Pixbuf> new_pixbuf = rotate_image(pixbuf, initial_rotation, 200, 200);
+    image_widget->set(new_pixbuf);
+    return true;
+}
+
+void initRoll() {
+    if (!roll_init) {
+        Gtk::Container* parent = noVideo ? static_cast<Gtk::Container*>(sensorBox) : bottomLowerBox;
+        
+        bool success = createImageIndicator(roll_image, roll_pixbuf, 
+            "../resources/RobotSide.png", parent, roll_rotation_angle);
+
+        if (success) {
+            if (!noVideo) {
+                auto* padding = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
+                padding->set_size_request(100, 100);
+                bottomLowerBox->add(*padding);
+            }
+            roll_init = true;
+            window->show_all();
+        }
+    }
+}
+
+void initPitch() {
+    if (!pitch_init) {
+        if (!noVideo) {
+            auto* padding = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
             padding->set_size_request(100, 100);
             bottomLowerBox->add(*padding);
         }
+
+        Gtk::Container* parent = noVideo ? static_cast<Gtk::Container*>(sensorBox) : bottomLowerBox;
         
-        Glib::RefPtr<Gdk::Pixbuf> newrollpixbuf = rotate_image(roll_pixbuf, roll_rotation_angle, 200, 200);
-        roll_image->set(newrollpixbuf);
-        roll_init = true;
-        window->show_all();
+        bool success = createImageIndicator(pitch_image, pitch_pixbuf, 
+            "../resources/RobotBack.png", parent, pitch_rotation_angle);
+
+        if (success) {
+            pitch_init = true;
+            window->show_all();
+        }
     }
 }
 
-void initPitch(){
-    if(!pitch_init){
-        if(!noVideo){
-            Gtk::Box* padding = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
+void initBucketLvl() {
+    if (!bucketLevel_init) {
+        if (!noVideo) {
+            auto* padding = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
             padding->set_size_request(100, 100);
             bottomLowerBox->add(*padding);
         }
-        pitch_image = Gtk::manage(new Gtk::Image());
-        if(noVideo)
-            sensorBox->add(*pitch_image);
-        else
-            bottomLowerBox->add(*pitch_image);
-        
-        try{
-            pitch_pixbuf = Gdk::Pixbuf::create_from_file("../resources/RobotBack.png");
+
+        Gtk::Container* parent = noVideo ? static_cast<Gtk::Container*>(sensorBox) : bottomLowerBox;
+        if (createImageIndicator(lvl_image, lvl_pixbuf, "../resources/bucket.png", parent, 0)) {
+            bucketLevel_init = true;
+            window->show_all();
         }
-        catch(const Glib::FileError& e){
-            g_print("Failed to load image: %s\n", e.what().c_str());
-            return;
-        }
-        
-        Glib::RefPtr<Gdk::Pixbuf> newpitchpixbuf = rotate_image(pitch_pixbuf, pitch_rotation_angle, 200, 200);
-        pitch_image->set(newpitchpixbuf);
-        pitch_init = true;
-        window->show_all();
     }
 }
 
-void initBucketLvl(){
-    if(!bucketLevel_init){
-        Gtk::Box* padding = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
-        padding->set_size_request(100, 100);
-        bottomLowerBox->add(*padding);
-        lvl_image = Gtk::manage(new Gtk::Image());
-        try{
-            lvl_pixbuf = Gdk::Pixbuf::create_from_file("../resources/bucket.png");
-        }
-        catch(const Glib::FileError& e){
-            g_print("Failed to load image: %s\n", e.what().c_str());
-            return;
-        }
-
-        if(noVideo)
-            sensorBox->add(*lvl_image);
+void initArmPos() {
+    if (!arm_init) {
+        auto* arm_widget = createPositionIndicator("Arm Positions", 5, left_arm, right_arm, armBox);
+        
+        if (noVideo)
+            sensorBox->add(*arm_widget);
         else
-            bottomLowerBox->add(*lvl_image);
-
-
-        Glib::RefPtr<Gdk::Pixbuf> newlvlpixbuf = rotate_image(lvl_pixbuf, 0, 200, 200);
-        lvl_image->set(newlvlpixbuf);
-        bucketLevel_init = true;
-        window->show_all();
-    }
-}
-
-void initArmPos(){
-    if(!arm_init){
-        Gtk::Box* armTextBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL,2));
-        armBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,5));
-        armBox->set_size_request(110, -1);
-        
-        left_arm = Gtk::manage(new DrawingArea());
-        left_arm->set_size_request(40, 180);
-        left_arm->set_hexpand(true);
-        left_arm->set_halign(Gtk::ALIGN_CENTER);
-        armBox->add(*left_arm);
-        left_arm->show();
-        
-        right_arm = Gtk::manage(new DrawingArea());
-        right_arm->set_size_request(40, 180);
-        right_arm->set_hexpand(true);
-        right_arm->set_halign(Gtk::ALIGN_CENTER);
-        armBox->add(*right_arm);
-        right_arm->show();
-        right_arm->set_height_ratio(0.5);
-        
-        armBox->set_halign(Gtk::ALIGN_CENTER);
-        armBox->set_valign(Gtk::ALIGN_CENTER);
-        
-        armTextBox->add(*armBox);
-        armTextBox->set_halign(Gtk::ALIGN_CENTER);
-        
-        Gtk::Label* armPosLabel = Gtk::manage(new Gtk::Label("L 		R"));
-        Gtk::Label* armLabel = Gtk::manage(new Gtk::Label("Arm Positions"));
-        
-        armPosLabel->set_halign(Gtk::ALIGN_CENTER);    
-        armLabel->set_halign(Gtk::ALIGN_CENTER);
-        
-        armTextBox->add(*armPosLabel);
-        armTextBox->add(*armLabel);
-        
-        if(noVideo)
-            sensorBox->add(*armTextBox);
-        else
-            innerLeftBox->add(*armTextBox);
+            innerLeftBox->add(*arm_widget);
 
         arm_init = true;
         window->show_all();
     }
 }
 
-void initBucketPos(){
-    if(!bucket_init){
-        Gtk::Box* bucketTextBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL,3));
-        bucketBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,20));
-        bucketBox->set_size_request(110, -1);
+void initBucketPos() {
+    if (!bucket_init) {
+        auto* bucket_widget = createPositionIndicator("Bucket Positions", 20, left_bucket, right_bucket, bucketBox);
         
-        left_bucket = Gtk::manage(new DrawingArea());
-        left_bucket->set_size_request(40, 180);
-        left_bucket->set_hexpand(true);
-        left_bucket->set_halign(Gtk::ALIGN_CENTER);
-        bucketBox->add(*left_bucket);
-        left_bucket->show();
-        
-        right_bucket = Gtk::manage(new DrawingArea());
-        right_bucket->set_size_request(40, 180);
-        right_bucket->set_hexpand(true);
-        right_bucket->set_halign(Gtk::ALIGN_CENTER);
-        bucketBox->add(*right_bucket);
-        right_bucket->show();
-        right_bucket->set_height_ratio(0.5);
-        
-        bucketBox->set_halign(Gtk::ALIGN_CENTER);
-        bucketBox->set_valign(Gtk::ALIGN_CENTER);
-        
-        bucketTextBox->add(*bucketBox);
-        Gtk::Label* bucketPosLabel = Gtk::manage(new Gtk::Label("L 		R"));
-        Gtk::Label* bucketLabel = Gtk::manage(new Gtk::Label("Bucket Positions"));
-        bucketTextBox->add(*bucketPosLabel);
-        bucketTextBox->add(*bucketLabel);
-        
-        if(noVideo)
-            sensorBox->add(*bucketTextBox);
+        if (noVideo)
+            sensorBox->add(*bucket_widget);
         else
-            innerRightBox->add(*bucketTextBox);
+            innerRightBox->add(*bucket_widget);
+
         bucket_init = true;
         window->show_all();
     }
 }
+
 
 /*** Functions associated with GUI Updates ***/
 const std::unordered_set<std::string> validLabels = {
@@ -1620,7 +1602,7 @@ void handleTalonElements(const std::string& label, const std::vector<Element>& e
         else if (element.label == "Bus Voltage") {
             float voltage = element.data.front().uint16 / 100.0f;
             if (!noVideo) talonVoltageGraph->update_data(label, voltage);
-            updateCircleColor(getTalonCircle(label), voltage < 15.0f);
+            updateCircleColor(getTalonCircle(label), voltage < LOW_VOLTAGE);
         }
         else if (element.label == "Output Current") {
             float current = element.data.front().uint16 / 100.0f;
@@ -1638,7 +1620,7 @@ void handleFalconElements(const std::string& label, const std::vector<Element>& 
         if (element.label == "Bus Voltage") {
             float voltage = element.data.front().uint16 / 100.0f;
             if (!noVideo) falconVoltageGraph->update_data(label, voltage);
-            updateCircleColor(getFalconCircle(label), voltage < 15.0f);
+            updateCircleColor(getFalconCircle(label), voltage < LOW_VOLTAGE);
         }
         else if (element.label == "Output Current") {
             float current = element.data.front().uint16 / 100.0f;
@@ -1715,7 +1697,7 @@ void handleGenericElements(std::string label, InfoFrame* frame, const std::vecto
                 float val = value.uint16 / 100.0f;
                 updateBackgroundColor(frame, element.label);
 
-                if (element.label == "Bus Voltage" && val < 15.0f) {
+                if (element.label == "Bus Voltage" && val < LOW_VOLTAGE) {
                     frame->setBackground(element.label, "#FF0000");
                     frame->setTextColor(element.label, "white", true);
                 }
@@ -1907,17 +1889,9 @@ bool contains(std::vector<std::string>& list, std::string& value){
 
 /*** Functions associated with the server ***/
 void resetUIOnDisconnect() {
-    arm_init = false;
-    bucket_init = false;
-    roll_init = false;
-    pitch_init = false;
-    bucketLevel_init = false;
-
-    auto children = sensorBox->get_children();
-    for(auto child : children) {
-        sensorBox->remove(*child);
+    for (InfoFrame* frame : infoFrameList) {
+        frame->setAllItemsStale();
     }
-    infoFrameList.clear();
 
 
     // Reset the motor status indicator circles to black
@@ -2504,7 +2478,7 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
     video_server_ui.addressListBox = videoAddressListBox;
     video_server_ui.parentWindow = window;
 
-    connectButton->signal_clicked().connect([useOrin]() {
+    connectButton->signal_clicked().connect([]() {
         connectOrDisconnect(server_ui, useOrin, connection_finished_dispatcher);
     });
 
@@ -3137,7 +3111,7 @@ int main(int argc, char** argv) {
     initGUI();
     
     //Start a thread to listen to updates from the robot
-    videoDisconnectDispatcher.connect([&video_server_ui]() {
+    videoDisconnectDispatcher.connect([&]() {
         if (shouldVideoDisconnect) {
             handleVideoDisconnect(video_server_ui);
             shouldVideoDisconnect = false;

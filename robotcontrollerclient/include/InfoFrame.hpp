@@ -24,25 +24,20 @@ public:
     void removeAllItems();
     void addWidget(Gtk::Widget& widget);
     template <typename T>
-    void setItem(std::string itemName, T itemValue) {
-        for (std::shared_ptr<InfoItem> infoItem : itemList) {
+    void setItem(const std::string& itemName, T itemValue) {
+        for (const auto& infoItem : itemList) {
             if (infoItem->getName() == itemName) {
                 infoItem->setValue(itemValue);
                 return;
             }
         }
-        addItem(itemName);
-        if (!itemList.empty() && itemList.back()->getName() == itemName) {
+
+        addItem(itemName); 
+        if (!itemList.empty()) {
             itemList.back()->setValue(itemValue);
-        } else {
-            for (std::shared_ptr<InfoItem> infoItem : itemList) {
-                if (infoItem->getName() == itemName) {
-                    infoItem->setValue(itemValue);
-                    return;
-                }
-            }
         }
     }
+    void setAllItemsStale();
 
     void setBackground(std::string itemName, std::string color);
     void setTextColor(std::string itemName, std::string color, bool bold);

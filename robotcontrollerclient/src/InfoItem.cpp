@@ -26,6 +26,10 @@ void InfoItem::setValue(std::string value) {
     valueLabel->set_text(value);
 }
 
+void InfoItem::setValue(const char* value) {
+    valueLabel->set_text(value);
+}
+
 // Specializations or overloads for types with string truncation
 void InfoItem::setValue(float value) {
     std::string valueString = std::to_string(value);

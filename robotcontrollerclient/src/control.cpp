@@ -3245,6 +3245,7 @@ int main(int argc, char** argv) {
     std::chrono::high_resolution_clock::time_point lastTransmitTime = std::chrono::high_resolution_clock::now();
     std::chrono::high_resolution_clock::time_point lastReceiveTime = std::chrono::high_resolution_clock::now();
     std::chrono::high_resolution_clock::time_point lastHeartbeatTime = std::chrono::high_resolution_clock::now();
+    std::chrono::high_resolution_clock::time_point lastVideoHeartbeatTime = std::chrono::high_resolution_clock::now();
     now = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> time_span = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastTransmitTime);
     double deltaTime = time_span.count();
@@ -3316,6 +3317,12 @@ int main(int argc, char** argv) {
         if(deltaTime > 1.0 && isServerConnected()){
             lastHeartbeatTime = std::chrono::high_resolution_clock::now();
             sendHeartbeat();
+        }
+
+        time_span = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastVideoHeartbeatTime);
+        if (time_span.count() > 1.0 && isVideoConnected()) {
+            lastVideoHeartbeatTime = now;
+            sendVideoHeartbeat();
         }
 
 

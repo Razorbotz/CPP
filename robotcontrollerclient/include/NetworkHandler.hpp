@@ -57,6 +57,7 @@ void shutdownDialog(Gtk::Window* parentWindow);
 void broadcastListen();
 void adjustRobotList(Gtk::ListBox* addressListBox);
 void sendHeartbeat();
+void sendVideoHeartbeat();
 void sendJoystickAxis(uint8_t which, uint8_t axis, float value);
 void sendJoystickButton(uint8_t which, uint8_t button, uint8_t state);
 void sendJoystickHat(uint8_t which, uint8_t hat, uint8_t value);

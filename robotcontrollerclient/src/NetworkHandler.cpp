@@ -338,6 +338,7 @@ bool videoConnected = false;
 bool isStreamingActive = false;
 struct sockaddr_in video_serv_addr;
 socklen_t video_addr_len = sizeof(video_serv_addr);
+std::chrono::steady_clock::time_point last_packet_time;
 
 std::vector<RemoteRobot> videoRobotList;
 std::mutex videoRobotListMutex;
@@ -447,12 +448,6 @@ void videoConnectOrDisconnect(VideoServerUI& ui, Glib::Dispatcher& dispatcher) {
     }
 }
 
-void sendVideoHeartbeat() {
-    if (!videoConnected) return;
-    uint8_t heartbeat_packet = 0xFF; 
-    sendto(videoSock, &heartbeat_packet, sizeof(heartbeat_packet), 0, (struct sockaddr *)&video_serv_addr, video_addr_len);
-}
-
 // --- UI Interaction Functions ---
 void videoStream(VideoServerUI& ui) {
     if (!videoConnected) return;
@@ -465,6 +460,7 @@ void videoStream(VideoServerUI& ui) {
         message[2] = 1;
         ui.streamButton->set_label("Video Streaming");
         isStreamingActive = true;
+        last_packet_time = std::chrono::steady_clock::now();
     }
     else {
         message[2] = 0;
@@ -587,6 +583,16 @@ void adjustVideoRobotList(Gtk::ListBox* videoAddressListBox) {
     videoAddressListBox->show_all();
 }
 
+struct FrameChunkHeader {
+    uint16_t frame_id;
+    uint16_t chunk_index;
+    uint16_t total_chunks;
+} __attribute__((packed));
+
+std::unordered_map<uint16_t, std::vector<std::vector<uint8_t>>> frameChunks;
+std::unordered_map<uint16_t, size_t> frameSizes;
+uint16_t lastFrameID = 0;
+
 void videoMain(cv::Mat& latestFrame, std::mutex& frameMutex, std::atomic<bool>& newFrameAvailable, Glib::Dispatcher& videoDisconnectDispatcher, std::atomic<bool>& shouldVideoDisconnect) {
     // --- FFmpeg Decoder Initialization ---
     const AVCodec* codec = avcodec_find_decoder(AV_CODEC_ID_HEVC);
@@ -630,39 +636,64 @@ void videoMain(cv::Mat& latestFrame, std::mutex& frameMutex, std::atomic<bool>& 
             continue;
         }
 
-        ssize_t bytesRead = recvfrom(videoSock, frameDataBuffer.data(), frameDataBuffer.size(), 0, NULL, NULL);
+        auto now = std::chrono::steady_clock::now();
+        if (std::chrono::duration_cast<std::chrono::seconds>(now - last_packet_time).count() >= 1) {
+            std::cerr << "Video stream timed out." << std::endl;
+            isStreamingActive = false;
+            shouldVideoDisconnect = true;
+            videoDisconnectDispatcher.emit();
+            continue;
+        }
 
-        if (bytesRead <= 0) {
-            if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(5));
-                continue;
-            }
-            else {
-                if (videoConnected) {
-                    perror("UDP recvfrom error");
-                    shouldVideoDisconnect = true;
-                    videoDisconnectDispatcher.emit();
-                }
-                continue;
+        ssize_t bytesRead = recvfrom(videoSock, frameDataBuffer.data(), frameDataBuffer.size(), 0, NULL, NULL);
+        if (bytesRead < (ssize_t)sizeof(FrameChunkHeader))
+            continue;
+
+        last_packet_time = std::chrono::steady_clock::now();
+
+        FrameChunkHeader hdr;
+        memcpy(&hdr, frameDataBuffer.data(), sizeof(hdr));
+        hdr.frame_id = ntohs(hdr.frame_id);
+        hdr.chunk_index = ntohs(hdr.chunk_index);
+        hdr.total_chunks = ntohs(hdr.total_chunks);
+
+        std::vector<uint8_t> chunk(frameDataBuffer.begin() + sizeof(hdr),
+                                frameDataBuffer.begin() + bytesRead);
+
+        // Store chunk
+        frameChunks[hdr.frame_id].resize(hdr.total_chunks);
+        frameChunks[hdr.frame_id][hdr.chunk_index] = std::move(chunk);
+
+        // Check if we have all chunks for this frame
+        bool complete = true;
+        for (size_t i = 0; i < hdr.total_chunks; ++i) {
+            if (frameChunks[hdr.frame_id][i].empty()) {
+                complete = false;
+                break;
             }
         }
 
-        uint8_t* data_ptr = frameDataBuffer.data();
-        size_t data_size = bytesRead;
+        if (complete) {
+            // Combine chunks into single H.265 frame
+            std::vector<uint8_t> fullFrame;
+            for (auto &chunk : frameChunks[hdr.frame_id])
+                fullFrame.insert(fullFrame.end(), chunk.begin(), chunk.end());
 
-        while (data_size > 0) {
-            int ret = av_parser_parse2(parser, codec_ctx, &pkt->data, &pkt->size,
-                                       data_ptr, data_size,
-                                       AV_NOPTS_VALUE, AV_NOPTS_VALUE, 0);
-            if (ret < 0) { 
-                std::cerr << "Error while parsing frame" << std::endl;
-                break;
-            }
-            data_ptr += ret;
-            data_size -= ret;
+            frameChunks.erase(hdr.frame_id);
 
-            if (pkt->size) {
-                if (avcodec_send_packet(codec_ctx, pkt) >= 0) {
+            // Decode as before
+            uint8_t* data_ptr = fullFrame.data();
+            size_t data_size = fullFrame.size();
+
+            while (data_size > 0) {
+                int ret = av_parser_parse2(parser, codec_ctx, &pkt->data, &pkt->size,
+                                        data_ptr, data_size,
+                                        AV_NOPTS_VALUE, AV_NOPTS_VALUE, 0);
+                if (ret < 0) break;
+                data_ptr += ret;
+                data_size -= ret;
+
+                if (pkt->size && avcodec_send_packet(codec_ctx, pkt) >= 0) {
                     while (avcodec_receive_frame(codec_ctx, frame) == 0) {
                         // Got a decoded frame, now convert it to BGR for OpenCV
                         
@@ -695,8 +726,8 @@ void videoMain(cv::Mat& latestFrame, std::mutex& frameMutex, std::atomic<bool>& 
                     }
                 }
             }
+            av_packet_unref(pkt);
         }
-        av_packet_unref(pkt);
     }
 
     // --- Cleanup ---
@@ -794,4 +825,12 @@ void sendHeartbeat() {
         message[1] = 0; // command (heartbeat)
         sendto(sock, message, sizeof(message), 0, (struct sockaddr *)&serv_addr, addr_len);
     }
+}
+
+void sendVideoHeartbeat() {
+    if (!videoConnected) return;
+    uint8_t message[2];
+    message[0] = 2; // length
+    message[1] = 0; // command (heartbeat)
+    sendto(videoSock, message, sizeof(message), 0, (struct sockaddr *)&video_serv_addr, video_addr_len);
 }

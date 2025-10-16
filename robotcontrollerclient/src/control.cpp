@@ -40,6 +40,7 @@
 #include <regex>
 #include <mutex>
 #include <atomic>
+#include <zlib.h>
 
 extern "C" {
 #include <libavcodec/avcodec.h>
@@ -60,6 +61,8 @@ TODO:
 Map Issues:
 Cosmic map isn't drawing robot in correct location
 Robot isn't drawing in correct location, need to offset for camera position
+
+Convert video stream from TCP to UDP
 
 */
 
@@ -1793,6 +1796,41 @@ void updateGUI(BinaryMessage& message) {
     infoFrame->show_all();
 }
 
+bool decompress_payload(const std::vector<uint8_t>& compressed_payload, std::vector<uint8_t>& decompressed_data) {
+    if (compressed_payload.size() < 4) {
+        std::cerr << "Error: Payload is too small to contain size header." << std::endl;
+        return false;
+    }
+
+    uLong original_size = 0;
+    original_size |= static_cast<uLong>(compressed_payload[0]) << 24;
+    original_size |= static_cast<uLong>(compressed_payload[1]) << 16;
+    original_size |= static_cast<uLong>(compressed_payload[2]) << 8;
+    original_size |= static_cast<uLong>(compressed_payload[3]) << 0;
+
+    if (original_size == 0 || original_size > 500000) { // Sanity check for size
+        std::cerr << "Error: Invalid original size decoded: " << original_size << std::endl;
+        return false;
+    }
+    
+    decompressed_data.resize(original_size);
+    uLongf dest_len = decompressed_data.size();
+
+    const Bytef* source = compressed_payload.data() + 4;
+    uLong source_len = compressed_payload.size() - 4;
+
+    int result = uncompress(decompressed_data.data(), &dest_len, source, source_len);
+
+    if (result != Z_OK) {
+        std::cerr << "Decompression failed with error: " << result << std::endl;
+        return false;
+    }
+    
+    decompressed_data.resize(dest_len); 
+
+    return true;
+}
+
 // This function populates a binary message with default values for all of the values that are
 // associated with the particular info frame
 void populateBinaryMessage(const std::string& name, const std::string& prefix, BinaryMessage& message) {
@@ -3220,10 +3258,13 @@ int main(int argc, char** argv) {
         if(isSilentRunning())
             lastReceiveTime = std::chrono::high_resolution_clock::now();
         if (bytesRead > 0) {
-            for(uint8_t byte : data_buffer) {
-                messageBytesList.push_back(byte);
+            std::vector<uint8_t> decompressed_buffer;
+            if (decompress_payload(data_buffer, decompressed_buffer)) {
+                for(uint8_t byte : decompressed_buffer) {
+                    messageBytesList.push_back(byte);
+                }
+                lastReceiveTime = std::chrono::high_resolution_clock::now();
             }
-            lastReceiveTime = std::chrono::high_resolution_clock::now();
         }
         else if (bytesRead < 0 && isServerConnected()) {
             now = std::chrono::high_resolution_clock::now();

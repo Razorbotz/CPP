@@ -10,6 +10,7 @@ set(CMAKE_CXX_STANDARD 17)
 find_package(OpenCV REQUIRED)
 find_package(PkgConfig REQUIRED)
 find_package(CURL REQUIRED)
+find_package(ZLIB REQUIRED)
 pkg_check_modules(GTKMM REQUIRED gtkmm-3.0)
 pkg_check_modules(CAIRO REQUIRED cairo)
 pkg_check_modules(WEBKITGTK REQUIRED webkit2gtk-4.0)
@@ -122,6 +123,7 @@ target_link_libraries(control
   cairo
   ${WEBKITGTK_LIBRARIES}
   ${OpenCV_LIBS}
+  ${ZLIB_LIBRARIES}
   pthread
   CURL::libcurl
   PkgConfig::FFMPEG

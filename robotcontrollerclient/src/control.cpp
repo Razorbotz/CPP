@@ -3315,7 +3315,7 @@ int main(int argc, char** argv) {
         time_span = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastHeartbeatTime);
         deltaTime = time_span.count();
         if(deltaTime > 1.0 && isServerConnected()){
-            lastHeartbeatTime = std::chrono::high_resolution_clock::now();
+            lastHeartbeatTime = now;
             sendHeartbeat();
         }
 

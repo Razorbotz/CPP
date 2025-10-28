@@ -700,11 +700,11 @@ void videoMain(cv::Mat& latestFrame, std::mutex& frameMutex, std::atomic<bool>& 
                         // Initialize SWS context for color conversion on first frame
                         if (!sws_ctx) {
                             sws_ctx = sws_getContext(codec_ctx->width, codec_ctx->height, codec_ctx->pix_fmt,
-                                                     codec_ctx->width, codec_ctx->height, AV_PIX_FMT_BGR24,
+                                                     codec_ctx->width, codec_ctx->height, AV_PIX_FMT_GRAY8,
                                                      SWS_BILINEAR, NULL, NULL, NULL);
-                            int num_bytes = av_image_get_buffer_size(AV_PIX_FMT_BGR24, codec_ctx->width, codec_ctx->height, 32);
+                            int num_bytes = av_image_get_buffer_size(AV_PIX_FMT_GRAY8, codec_ctx->width, codec_ctx->height, 32);
                             bgr_buffer = (uint8_t*)av_malloc(num_bytes * sizeof(uint8_t));
-                            av_image_fill_arrays(bgr_frame->data, bgr_frame->linesize, bgr_buffer, AV_PIX_FMT_BGR24, codec_ctx->width, codec_ctx->height, 32);
+                            av_image_fill_arrays(bgr_frame->data, bgr_frame->linesize, bgr_buffer, AV_PIX_FMT_GRAY8, codec_ctx->width, codec_ctx->height, 32);
                         }
 
                         // Perform color conversion (e.g., YUV to BGR)
@@ -712,7 +712,7 @@ void videoMain(cv::Mat& latestFrame, std::mutex& frameMutex, std::atomic<bool>& 
                                   bgr_frame->data, bgr_frame->linesize);
 
                         // Create an OpenCV Mat from the BGR data
-                        cv::Mat decoded_mat(codec_ctx->height, codec_ctx->width, CV_8UC3, bgr_frame->data[0], bgr_frame->linesize[0]);
+                        cv::Mat decoded_mat(codec_ctx->height, codec_ctx->width, CV_8UC1, bgr_frame->data[0], bgr_frame->linesize[0]);
 
                         // Resize and update the GUI
                         cv::Mat display_img;
@@ -815,16 +815,11 @@ void sendJoystickHat(uint8_t which, uint8_t hat, uint8_t value) {
 void sendHeartbeat() {
     if (!connected) return;
     
-    auto now = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double> time_span = now - lastHeartbeatTime;
-    
-    if (time_span.count() > 1.0) {
-        lastHeartbeatTime = now;
-        uint8_t message[2];
-        message[0] = 2; // length
-        message[1] = 0; // command (heartbeat)
-        sendto(sock, message, sizeof(message), 0, (struct sockaddr *)&serv_addr, addr_len);
-    }
+    lastHeartbeatTime = std::chrono::high_resolution_clock::now();
+    uint8_t message[2];
+    message[0] = 2; // length
+    message[1] = 0; // command (heartbeat)
+    sendto(sock, message, sizeof(message), 0, (struct sockaddr *)&serv_addr, addr_len);
 }
 
 void sendVideoHeartbeat() {

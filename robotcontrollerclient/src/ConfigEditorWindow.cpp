@@ -283,14 +283,12 @@ void ConfigEditorWindow::save_config() {
     for (const auto& pair : m_subsystems) {
         const auto& editor = pair.second;
         
-        // ** NEW: Save the reordered keys to the file **
         outfile << "ORDER_" << editor.prefix << "=";
         for (size_t i = 0; i < editor.local_keys.size(); ++i) {
             outfile << editor.local_keys[i] << (i == editor.local_keys.size() - 1 ? "" : ",");
         }
         outfile << "\n";
 
-        // This part updates the live, in-memory order for the main app
         if (editor.prefix == "TALON") get_talon_keys() = editor.local_keys;
         else if (editor.prefix == "FALCON") get_falcon_keys() = editor.local_keys;
         else if (editor.prefix == "LINEAR") get_linear_keys() = editor.local_keys;

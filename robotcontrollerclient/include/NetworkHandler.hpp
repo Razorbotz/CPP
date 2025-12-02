@@ -35,6 +35,10 @@ struct ServerUI {
     Gtk::Label* connectionStatusLabel;
     Gtk::Button* silentRunButton;
     Gtk::Entry* ipAddressEntry;
+    Gtk::Button* connectButton2;
+    Gtk::Label* connectionStatusLabel2;
+    Gtk::Button* silentRunButton2;
+    Gtk::Entry* ipAddressEntry2;
     Gtk::ListBox* addressListBox;
     Gtk::Window* parentWindow;
 };
@@ -51,7 +55,9 @@ struct VideoServerUI {
 
 // --- Function Declarations for Main Robot Server ---
 void connectOrDisconnect(ServerUI& ui, bool useOrin, Glib::Dispatcher& dispatcher);
+void connectOrDisconnect2(ServerUI& ui, bool useOrin, Glib::Dispatcher& dispatcher);
 void silentRun(ServerUI& ui);
+void silentRun2(ServerUI& ui);
 void rowActivated(Gtk::ListBoxRow* listBoxRow, ServerUI& ui);
 void shutdownDialog(Gtk::Window* parentWindow);
 void broadcastListen();
@@ -65,6 +71,8 @@ void sendKeyboardEvent(uint32_t keyval, uint8_t state);
 int receiveRobotData(std::vector<uint8_t>& buffer);
 void setDisconnectedState(ServerUI& ui);
 void update_connection_status(ServerUI& ui);
+void setDisconnectedState2(ServerUI& ui);
+void update_connection_status2(ServerUI& ui);
 
 // --- Function Declarations for Video Server ---
 extern struct sockaddr_in video_serv_addr;
@@ -82,6 +90,9 @@ void update_video_connection_status(VideoServerUI& ui);
 bool isServerConnected();
 bool isServerInitialized();
 bool isSilentRunning();
+bool isServerConnected2();
+bool isServerInitialized2();
+bool isSilentRunning2();
 bool isVideoStreamActive();
 bool isVideoConnected();
 

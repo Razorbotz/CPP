@@ -118,9 +118,13 @@ bool quit(GdkEventAny* event){
 Gtk::ListBox* addressListBox;
 Gtk::Entry* ipAddressEntry;
 Gtk::Label* connectionStatusLabel;
+Gtk::Entry* ipAddressEntry2;
+Gtk::Label* connectionStatusLabel2;
   
 Gtk::Button* silentRunButton;
 Gtk::Button* connectButton;
+Gtk::Button* silentRunButton2;
+Gtk::Button* connectButton2;
 Gtk::Button* toggleModeButton;
 Gtk::Button* settingsButton;
 
@@ -137,6 +141,7 @@ std::atomic<bool> newFrameAvailable;
 Glib::Dispatcher videoDisconnectDispatcher;
 std::atomic<bool> shouldVideoDisconnect = false;
 Glib::Dispatcher connection_finished_dispatcher;
+Glib::Dispatcher connection_finished_dispatcher2;
 Glib::Dispatcher video_connection_finished_dispatcher;
   
 Gtk::FlowBox* sensorBox;
@@ -2317,6 +2322,10 @@ void on_connection_finished() {
     update_connection_status(server_ui);
 }
 
+void on_connection2_finished() {
+    update_connection_status2(server_ui);
+}
+
 void on_video_connection_finished() {
     update_video_connection_status(video_server_ui);
 }
@@ -2334,7 +2343,8 @@ various custom elements that are included in the GUI.
 void setupGUI(Glib::RefPtr<Gtk::Application> application) {
     window = nullptr;
     ipAddressEntry = nullptr; connectButton = nullptr; connectionStatusLabel = nullptr;
-    silentRunButton = nullptr; addressListBox = nullptr;
+    ipAddressEntry2 = nullptr; connectButton2 = nullptr; connectionStatusLabel2 = nullptr;
+    silentRunButton = nullptr; silentRunButton2 = nullptr; addressListBox = nullptr;
     videoConnectButton = nullptr; videoConnectionStatusLabel = nullptr; videoStreamButton = nullptr;
     videoIPAddressEntry = nullptr; videoAddressListBox = nullptr;
     toggleModeButton = nullptr; settingsButton = nullptr;
@@ -2344,16 +2354,16 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
 
     auto builder = Gtk::Builder::create();
     try {
-        builder->add_from_file("../resources/layout.glade");
+        builder->add_from_file("../resources/mainLayout.glade");
     }
     catch(const Glib::Error& ex) {
-        std::cerr << "CRITICAL: Failed to load layout.glade: " << ex.what() << std::endl;
+        std::cerr << "CRITICAL: Failed to load mainLayout.glade: " << ex.what() << std::endl;
         exit(1); 
     }
 
     builder->get_widget("mainWindow", window);
     if (!window) {
-        std::cerr << "FATAL: 'mainWindow' ID not found in layout.glade" << std::endl;
+        std::cerr << "FATAL: 'mainWindow' ID not found in mainLayout.glade" << std::endl;
         exit(1);
     }
     window->maximize();
@@ -2369,6 +2379,10 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
     builder->get_widget("btn_robot_connect", connectButton);
     builder->get_widget("lbl_robot_status", connectionStatusLabel);
     builder->get_widget("btn_silent_run", silentRunButton);
+    builder->get_widget("entry_robot_ip2", ipAddressEntry2);
+    builder->get_widget("btn_robot_connect2", connectButton2);
+    builder->get_widget("lbl_robot_status2", connectionStatusLabel2);
+    builder->get_widget("btn_silent_run2", silentRunButton2);
     
     builder->get_widget("list_video_address", videoAddressListBox);
     builder->get_widget("entry_video_ip", videoIPAddressEntry);
@@ -2419,7 +2433,10 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
     server_ui.connectionStatusLabel = connectionStatusLabel;
     server_ui.silentRunButton = silentRunButton;
     server_ui.ipAddressEntry = ipAddressEntry;
-    server_ui.addressListBox = addressListBox;
+    server_ui.connectButton2 = connectButton2;
+    server_ui.connectionStatusLabel2 = connectionStatusLabel2;
+    server_ui.silentRunButton2 = silentRunButton2;
+    server_ui.ipAddressEntry2 = ipAddressEntry2;
     server_ui.parentWindow = window;
 
     video_server_ui.connectButton = videoConnectButton;
@@ -2429,8 +2446,10 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
     video_server_ui.addressListBox = videoAddressListBox;
     video_server_ui.parentWindow = window;
 
-    if (connectButton) connectButton->signal_clicked().connect([&](){ connectOrDisconnect(server_ui, useOrin, connection_finished_dispatcher); });
+    if (connectButton) connectButton->signal_clicked().connect([&](){ connectOrDisconnect(server_ui, true, connection_finished_dispatcher); });
     if (silentRunButton) silentRunButton->signal_clicked().connect([&](){ silentRun(server_ui); });
+    if (connectButton2) connectButton2->signal_clicked().connect([&](){ connectOrDisconnect2(server_ui, false, connection_finished_dispatcher2); });
+    if (silentRunButton2) silentRunButton2->signal_clicked().connect([&](){ silentRun2(server_ui); });
     if (addressListBox) addressListBox->signal_row_activated().connect([&](Gtk::ListBoxRow* row){ rowActivated(row, server_ui); });
     if (toggleModeButton) toggleModeButton->signal_clicked().connect(sigc::ptr_fun(&toggleMode));
     if (settingsButton) settingsButton->signal_clicked().connect([&](){ if(allowConfig) create_config_editor_window(get_configFile()); });
@@ -2542,7 +2561,7 @@ void initSensorsWindow() {
 
     auto builder = Gtk::Builder::create();
     try {
-        builder->add_from_file("../resources/sensors.glade");
+        builder->add_from_file("../resources/sensorsLayout.glade");
     } catch(const Glib::Error& ex) {
         std::cerr << "Error loading sensors.glade: " << ex.what() << std::endl;
         return;
@@ -2621,7 +2640,7 @@ void initSensorsWindow() {
 }
 
 void initArenaWindow() {
-    auto builder = Gtk::Builder::create_from_file("../resources/arena.glade");
+    auto builder = Gtk::Builder::create_from_file("../resources/arenaLayout.glade");
 
     builder->get_widget("arenaWindow", arenaWindow);
 
@@ -3011,6 +3030,7 @@ int main(int argc, char** argv) {
     });
 
     connection_finished_dispatcher.connect(sigc::ptr_fun(&on_connection_finished));
+    connection_finished_dispatcher2.connect(sigc::ptr_fun(&on_connection2_finished));
     video_connection_finished_dispatcher.connect(sigc::ptr_fun(&on_video_connection_finished));
     
     std::thread broadcastListenThread(broadcastListen);

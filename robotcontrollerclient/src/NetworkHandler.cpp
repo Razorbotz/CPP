@@ -21,6 +21,9 @@ int sock = 0;
 bool connected = false;
 bool silentRunning = true;
 bool initialized = false;
+bool connected2 = false;
+bool silentRunning2 = true;
+bool initialized2 = false;
 
 struct sockaddr_in serv_addr;
 socklen_t addr_len = sizeof(serv_addr);
@@ -41,6 +44,10 @@ std::mutex robotListMutex;
 bool isServerConnected() { return connected; }
 bool isServerInitialized() { return initialized; }
 bool isSilentRunning() { return silentRunning; }
+
+bool isServerConnected2() { return connected2; }
+bool isServerInitialized2() { return initialized2; }
+bool isSilentRunning2() { return silentRunning2; }
 
 void setDisconnectedState(ServerUI& ui) {
     ui.connectButton->set_label("Connect");
@@ -87,8 +94,54 @@ void disconnectFromServer(ServerUI& ui) {
     }
 }
 
+void setDisconnectedState2(ServerUI& ui) {
+    ui.connectButton2->set_label("Connect");
+    ui.connectionStatusLabel2->set_text("Not Connected");
+    ui.silentRunButton2->set_label("Silent Running");
+    Gdk::RGBA red;
+    red.set_rgba(1.0, 0, 0, 1.0);
+    ui.connectionStatusLabel2->override_background_color(red);
+    ui.ipAddressEntry2->set_can_focus(true);
+    ui.ipAddressEntry2->set_editable(true);
+    
+    if (connected2) {
+        if (sock > 0) {
+            close(sock);
+            sock = 0;
+        }
+    }
+    connected2 = false;
+    silentRunning2 = true;
+    initialized2 = false;
+}
+
+void setConnectedState2(ServerUI& ui) {
+    ui.connectButton2->set_label("Disconnect");
+    ui.connectionStatusLabel2->set_text("Connected");
+    Gdk::RGBA green;
+    green.set_rgba(0, 1.0, 0, 1.0);
+    ui.connectionStatusLabel2->override_background_color(green);
+    ui.ipAddressEntry2->set_can_focus(false);
+    ui.ipAddressEntry2->set_editable(false);
+    connected2 = true;
+}
+
+void disconnectFromServer2(ServerUI& ui) {
+    Gtk::MessageDialog dialog(*ui.parentWindow, "Disconnect now?", false, Gtk::MESSAGE_QUESTION, Gtk::BUTTONS_OK_CANCEL);
+    if (dialog.run() == Gtk::RESPONSE_OK) {
+        if (close(sock) == 0) {
+            setDisconnectedState2(ui);
+        }
+        else {
+            Gtk::MessageDialog errDialog(*ui.parentWindow, "Failed Close", false, Gtk::MESSAGE_ERROR, Gtk::BUTTONS_OK);
+            errDialog.run();
+        }
+    }
+}
+
 enum class ConnStatus { PENDING, SUCCESS, FAILURE };
 std::atomic<ConnStatus> connection_status = ConnStatus::PENDING;
+std::atomic<ConnStatus> connection_status2 = ConnStatus::PENDING;
 
 void connectToServer(ServerUI& ui, bool useOrin, Glib::Dispatcher& dispatcher) {
     if (connected) return;
@@ -118,7 +171,10 @@ void connectToServer(ServerUI& ui, bool useOrin, Glib::Dispatcher& dispatcher) {
     while (std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - startTime).count() < 2) {
         if (recvfrom(sock, buffer, sizeof(buffer), 0, (struct sockaddr *)&serv_addr, &addr_len) > 0) {
             std::cout << "Received reply from server. Connection established." << std::endl;
-            connection_status = ConnStatus::SUCCESS;
+            if(useOrin)
+                connection_status = ConnStatus::SUCCESS;
+            else
+                connection_status2 = ConnStatus::SUCCESS;
             dispatcher.emit();
             lastHeartbeatTime = std::chrono::high_resolution_clock::now();
             return;
@@ -127,7 +183,10 @@ void connectToServer(ServerUI& ui, bool useOrin, Glib::Dispatcher& dispatcher) {
     }
 
     std::cout << "Connection to server failed (timeout)." << std::endl;
-    connection_status = ConnStatus::FAILURE;
+    if(useOrin)
+        connection_status = ConnStatus::FAILURE;
+    else
+        connection_status2 = ConnStatus::FAILURE;
     dispatcher.emit();
 }
 
@@ -144,6 +203,19 @@ void update_connection_status(ServerUI& ui) {
     ui.connectButton->set_sensitive(true);
 }
 
+void update_connection_status2(ServerUI& ui) {
+    ConnStatus status = connection_status2;
+    if (status == ConnStatus::SUCCESS) {
+        setConnectedState2(ui);
+        initialized2 = true;
+        lastHeartbeatTime = std::chrono::high_resolution_clock::now();
+    }
+    else if (status == ConnStatus::FAILURE) {
+        setDisconnectedState2(ui);
+    }
+    ui.connectButton2->set_sensitive(true);
+}
+
 
 void connectOrDisconnect(ServerUI& ui, bool useOrin, Glib::Dispatcher& dispatcher) {
      if (ui.connectButton->get_label() == "Connect") {
@@ -155,6 +227,19 @@ void connectOrDisconnect(ServerUI& ui, bool useOrin, Glib::Dispatcher& dispatche
     }
     else {
         disconnectFromServer(ui);
+    }
+}
+
+void connectOrDisconnect2(ServerUI& ui, bool useOrin, Glib::Dispatcher& dispatcher) {
+     if (ui.connectButton2->get_label() == "Connect") {
+        ui.connectButton2->set_sensitive(false);
+        ui.connectionStatusLabel2->set_text("Connecting...");
+        
+        std::thread conn_thread(connectToServer, std::ref(ui), useOrin, std::ref(dispatcher));
+        conn_thread.detach();
+    }
+    else {
+        disconnectFromServer2(ui);
     }
 }
 
@@ -202,6 +287,27 @@ void silentRun(ServerUI& ui) {
         message[2] = 1; // Silent
         sendto(sock, message, sizeof(message), 0, (struct sockaddr *)&serv_addr, addr_len);
         ui.silentRunButton->set_label("Silent Running");
+        silentRunning = true;
+    }
+}
+
+void silentRun2(ServerUI& ui) {
+    if (!connected) return;
+    
+    std::string currentButtonState = ui.silentRunButton2->get_label();
+    uint8_t message[3];
+    message[0] = 3;  // messageSize
+    message[1] = 7;  // command (silence)
+
+    if (currentButtonState == "Silent Running") {
+        message[2] = 0; // Not silent
+        sendto(sock, message, sizeof(message), 0, (struct sockaddr *)&serv_addr, addr_len);
+        ui.silentRunButton2->set_label("Not Silent Running");
+        silentRunning = false;
+    } else {
+        message[2] = 1; // Silent
+        sendto(sock, message, sizeof(message), 0, (struct sockaddr *)&serv_addr, addr_len);
+        ui.silentRunButton2->set_label("Silent Running");
         silentRunning = true;
     }
 }

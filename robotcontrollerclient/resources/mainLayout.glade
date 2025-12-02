@@ -84,24 +84,48 @@
                           <object class="GtkLabel" id="lbl_robot_status">
                             <property name="visible">True</property>
                             <property name="can_focus">False</property>
-                            <property name="label" translatable="yes">Not Connected</property>
+                            <property name="label" translatable="yes">  </property>
                             <property name="name">dark_text</property>
                             <attributes>
                               <attribute name="background" value="#ffff00000000"/>
                             </attributes>
                           </object>
                         </child>
-                      </object>
-                    </child>
-                    
-                    <child>
-                      <object class="GtkBox" id="stateBox">
-                        <property name="visible">True</property>
-                        <property name="can_focus">False</property>
-                        <property name="spacing">2</property>
                         <child>
                           <object class="GtkButton" id="btn_silent_run">
-                            <property name="label" translatable="yes">Silent Running</property>
+                            <property name="label" translatable="yes">Silent</property>
+                            <property name="visible">True</property>
+                            <property name="can_focus">True</property>
+                            <property name="receives_default">True</property>
+                            <property name="name">dark_text</property>
+                          </object>
+                        </child>
+                      </object>
+                    </child>
+
+                    <child>
+                      <object class="GtkBox" id="connectBox2">
+                        <property name="visible">True</property>
+                        <property name="can_focus">False</property>
+                        <property name="spacing">5</property>
+                        <child>
+                          <object class="GtkLabel" id="lbl_ip_prompt2">
+                            <property name="visible">True</property>
+                            <property name="can_focus">False</property>
+                            <property name="label" translatable="yes"> IP Address </property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkEntry" id="entry_robot_ip2">
+                            <property name="visible">True</property>
+                            <property name="can_focus">True</property>
+                            <property name="text" translatable="yes">192.168.1.7</property>
+                            <property name="name">dark_text</property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkButton" id="btn_robot_connect2">
+                            <property name="label" translatable="yes">Connect</property>
                             <property name="visible">True</property>
                             <property name="can_focus">True</property>
                             <property name="receives_default">True</property>
@@ -109,8 +133,19 @@
                           </object>
                         </child>
                         <child>
-                          <object class="GtkButton" id="btn_shutdown">
-                            <property name="label" translatable="yes">Shutdown Robot</property>
+                          <object class="GtkLabel" id="lbl_robot_status2">
+                            <property name="visible">True</property>
+                            <property name="can_focus">False</property>
+                            <property name="label" translatable="yes">  </property>
+                            <property name="name">dark_text</property>
+                            <attributes>
+                              <attribute name="background" value="#ffff00000000"/>
+                            </attributes>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkButton" id="btn_silent_run2">
+                            <property name="label" translatable="yes">Silent</property>
                             <property name="visible">True</property>
                             <property name="can_focus">True</property>
                             <property name="receives_default">True</property>

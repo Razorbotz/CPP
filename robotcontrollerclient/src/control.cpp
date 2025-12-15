@@ -353,23 +353,22 @@ class ImageOverlay : public Gtk::DrawingArea {
 
         cr->save();
         
-        double cam_offset_x = 20.0; // meters * 160
-        double cam_offset_y = 60.0;
+        cr->save();
 
-        double cos_theta = std::cos(rotation_angle);
-        double sin_theta = std::sin(rotation_angle);
-        double rotated_offset_x = cam_offset_x * cos_theta - cam_offset_y * sin_theta;
-        double rotated_offset_y = cam_offset_x * sin_theta + cam_offset_y * cos_theta;
+        cr->translate(img_x, height - img_y);
 
-        cr->translate(img_x + rotated_offset_x + overlay->get_width() / 2,
-                    height - (img_y + rotated_offset_y + overlay->get_height() / 2));
         cr->rotate(rotation_angle);
-        cr->translate(-overlay->get_width() / 2, -overlay->get_height() / 2);
+
+        double cam_pixel_x = overlay->get_width() * 0.4;
+        double cam_pixel_y = overlay->get_height() * 0.5;
+
+        cr->translate(-cam_pixel_x, -cam_pixel_y);
 
         Gdk::Cairo::set_source_pixbuf(cr, overlay, 0, 0);
         cr->paint();
-        cr->restore();
 
+        cr->restore();
+        
         // Draw rocks
         for (const auto& data : rock_data) {
             int new_width = rock->get_width() * data.scale_multiplier;
@@ -2223,6 +2222,7 @@ bool on_key_press_event(GdkEventKey* key_event){
                 increaseGear();
             break;
     }
+    
     sendKeyboardEvent(key_event->keyval, 1); // 1 for key press
     return false;
 }
@@ -3090,6 +3090,9 @@ int main(int argc, char** argv) {
                 std::cout << "Couldn't open Joystick " << joystickIndex << std::endl;
             }
         }
+    }
+    else {
+        axisEventList = new std::vector<std::vector<AxisEvent*>*>(0);
     }
 
     SDL_Event event;

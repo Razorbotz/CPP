@@ -84,7 +84,7 @@
                           <object class="GtkLabel" id="lbl_robot_status">
                             <property name="visible">True</property>
                             <property name="can_focus">False</property>
-                            <property name="label" translatable="yes">  </property>
+                            <property name="label" translatable="yes">Not Connected</property>
                             <property name="name">dark_text</property>
                             <attributes>
                               <attribute name="background" value="#ffff00000000"/>
@@ -93,7 +93,7 @@
                         </child>
                         <child>
                           <object class="GtkButton" id="btn_silent_run">
-                            <property name="label" translatable="yes">Silent</property>
+                            <property name="label" translatable="yes">Silent Running</property>
                             <property name="visible">True</property>
                             <property name="can_focus">True</property>
                             <property name="receives_default">True</property>
@@ -136,7 +136,7 @@
                           <object class="GtkLabel" id="lbl_robot_status2">
                             <property name="visible">True</property>
                             <property name="can_focus">False</property>
-                            <property name="label" translatable="yes">  </property>
+                            <property name="label" translatable="yes">Not Connected</property>
                             <property name="name">dark_text</property>
                             <attributes>
                               <attribute name="background" value="#ffff00000000"/>
@@ -145,7 +145,7 @@
                         </child>
                         <child>
                           <object class="GtkButton" id="btn_silent_run2">
-                            <property name="label" translatable="yes">Silent</property>
+                            <property name="label" translatable="yes">Silent Running</property>
                             <property name="visible">True</property>
                             <property name="can_focus">True</property>
                             <property name="receives_default">True</property>

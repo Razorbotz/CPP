@@ -523,6 +523,7 @@ static void connectToVideoServer(VideoServerUI& ui, Glib::Dispatcher& dispatcher
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
                std::chrono::steady_clock::now() - startTime).count() < 4) {
 =======
                std::chrono::steady_clock::now() - startTime).count() < 2) {
@@ -533,6 +534,9 @@ static void connectToVideoServer(VideoServerUI& ui, Glib::Dispatcher& dispatcher
 =======
                std::chrono::steady_clock::now() - startTime).count() < 4) {
 >>>>>>> c790928 (Added simulated network traffic)
+=======
+               std::chrono::steady_clock::now() - startTime).count() < 2) {
+>>>>>>> 3801b90 (Working on dynamic resize for widgets to support better WSL integration)
 
         socklen_t from_len = video_addr_len;
 

@@ -155,7 +155,10 @@ bool initVals = false;
 bool threeMonitors = false;
 bool smallLaptop = false;
 <<<<<<< HEAD
+<<<<<<< HEAD
 bool wsl = false;
+=======
+>>>>>>> 3801b90 (Working on dynamic resize for widgets to support better WSL integration)
 =======
 >>>>>>> 3801b90 (Working on dynamic resize for widgets to support better WSL integration)
 double GUI_SCALE = 1.0;
@@ -3139,6 +3142,9 @@ void processArguments(int argc, char** argv){
                 wsl = true;
 =======
                 smallLaptop = true;
+<<<<<<< HEAD
+>>>>>>> 3801b90 (Working on dynamic resize for widgets to support better WSL integration)
+=======
 >>>>>>> 3801b90 (Working on dynamic resize for widgets to support better WSL integration)
                 ORIN_IP = "127.0.0.1";
                 NANO_IP = "127.0.0.1";

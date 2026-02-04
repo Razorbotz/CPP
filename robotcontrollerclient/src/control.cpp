@@ -66,8 +66,8 @@ Convert video stream from TCP to UDP
 
 */
 
-#define ORIN_IP "192.168.1.6"
-#define NANO_IP "192.168.1.5"
+std::string ORIN_IP = "192.168.1.6";
+std::string NANO_IP = "192.168.1.5";
 bool useOrin = true;
 
 #define LOW_VOLTAGE 12.0f
@@ -154,6 +154,7 @@ Gtk::Window* window;
 bool initVals = false;
 bool threeMonitors = false;
 bool smallLaptop = false;
+double GUI_SCALE = 1.0;
 bool noVideo = false;
 bool noArena = false;
 std::string mapUsed = "NASA";
@@ -1285,7 +1286,7 @@ void updateMotor(std::string label, const std::vector<Element>& elements) {
 Speedometer* createDial(std::string label, double min_speed, double max_speed, 
                         int major_divisions, int minor_ticks, double zero_angle, double sweep){
     auto speedometer = Gtk::manage(new Speedometer(label));
-    speedometer->set_size_request(300, 300);
+    speedometer->set_size_request(300 * GUI_SCALE, 300 * GUI_SCALE);
     speedometer->set_display_speed(displaySpeed);
     speedometer->set_numbers_inside(numbersInside);
     speedometer->set_numbers_on_ticks(numberTicks);
@@ -1398,17 +1399,17 @@ Gtk::Box* createPositionIndicator(const std::string& title, int spacing,
 {
     auto text_box = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 2));
     container_box = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, spacing));
-    container_box->set_size_request(110, -1);
+    container_box->set_size_request(110 * GUI_SCALE, -1);
     
     left_indicator = Gtk::manage(new DrawingArea());
-    left_indicator->set_size_request(40, 180);
+    left_indicator->set_size_request(40 * GUI_SCALE, 180 * GUI_SCALE);
     left_indicator->set_hexpand(true);
     left_indicator->set_halign(Gtk::ALIGN_CENTER);
     container_box->add(*left_indicator);
     left_indicator->show();
     
     right_indicator = Gtk::manage(new DrawingArea());
-    right_indicator->set_size_request(40, 180);
+    right_indicator->set_size_request(40 * GUI_SCALE, 180 * GUI_SCALE);
     right_indicator->set_hexpand(true);
     right_indicator->set_halign(Gtk::ALIGN_CENTER);
     container_box->add(*right_indicator);
@@ -2231,17 +2232,17 @@ Gtk::EventBox* create_labeled_box(const Glib::ustring& label_text, CircleDrawing
     auto event_box = Gtk::manage(new Gtk::EventBox());
 
     auto box = Gtk::manage(new BorderedBox(Gtk::ORIENTATION_HORIZONTAL, 5));
-    box->set_size_request(300, 75);
+    box->set_size_request(300 * GUI_SCALE, 75 * GUI_SCALE);
 
     auto label = Gtk::manage(new Gtk::Label(label_text));
     label->set_hexpand(true);
 
     Pango::FontDescription font;
-    font.set_size(20 * Pango::SCALE);
+    font.set_size(20 * GUI_SCALE * Pango::SCALE);
     label->override_font(font);
 
     out_circle = Gtk::manage(new CircleDrawingArea());
-    out_circle->set_size_request(75, 75);
+    out_circle->set_size_request(75 * GUI_SCALE, 75 * GUI_SCALE);
     out_circle->set_hexpand(false);
     out_circle->set_halign(Gtk::ALIGN_CENTER);
 
@@ -2406,10 +2407,19 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
     if(ipAddressEntry) ipAddressEntry->set_text(useOrin ? ORIN_IP : NANO_IP);
     if(videoIPAddressEntry) videoIPAddressEntry->set_text(useOrin ? ORIN_IP : NANO_IP);
 
-    Gdk::RGBA red; red.set_rgba(1.0, 0, 0, 1.0);
-    if(connectionStatusLabel) connectionStatusLabel->override_background_color(red);
-    if(videoConnectionStatusLabel) videoConnectionStatusLabel->override_background_color(red);
-
+    if(connectionStatusLabel) {
+        Gdk::RGBA red;
+        red.set_rgba(1.0, 0, 0, 1.0);
+        connectionStatusLabel->override_background_color(red);
+        connectionStatusLabel->set_text("Not Connected");
+    }
+    if(videoConnectionStatusLabel) {
+        Gdk::RGBA red;
+        red.set_rgba(1.0, 0, 0, 1.0);
+        videoConnectionStatusLabel->override_background_color(red);
+        videoConnectionStatusLabel->set_text("Not Connected");
+    }
+    
     if (settingsButton) {
         try {
             auto pixbuf = Gdk::Pixbuf::create_from_file("../resources/SettingsIcon.png");
@@ -2457,6 +2467,24 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
     if (videoStreamButton) videoStreamButton->signal_clicked().connect([&](){ videoStream(video_server_ui); });
     if (videoAddressListBox) videoAddressListBox->signal_row_activated().connect([&](Gtk::ListBoxRow* row){ videoRowActivated(row, video_server_ui); });
 
+    if(connectButton) {
+        connectButton->set_can_focus(false);
+        connectButton->set_focus_on_click(false);
+    }
+    if(connectButton2){
+        connectButton2->set_can_focus(false);
+        connectButton2->set_focus_on_click(false);
+    }
+    if(silentRunButton) {
+        silentRunButton->set_can_focus(false);
+        silentRunButton->set_focus_on_click(false);
+    }
+    
+    if(videoConnectButton) {
+        videoConnectButton->set_can_focus(false);
+        videoConnectButton->set_focus_on_click(false);
+    }
+
     if (!noVideo) {
         sensorBox->set_visible(false);
 
@@ -2475,7 +2503,7 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
         Gtk::Box* pVideo = nullptr; builder->get_widget("placeholder_video_area", pVideo);
         if (pVideo) {
             videoArea = Gtk::manage(new VideoWidget());
-            videoArea->set_size_request(smallLaptop ? 800 : 1600, smallLaptop ? 500 : 1000);
+            videoArea->set_size_request(1600 * GUI_SCALE, 1000 * GUI_SCALE);
             pVideo->add(*videoArea);
         }
 
@@ -2501,7 +2529,7 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
         Gtk::Box* pSpeedLeft = nullptr; builder->get_widget("placeholder_speed_left", pSpeedLeft);
         if(pSpeedLeft) {
             leftSpeedometer = Gtk::manage(new Speedometer("Left Speedometer"));
-            leftSpeedometer->set_size_request(300, 175);
+            leftSpeedometer->set_size_request(300 * GUI_SCALE, 175 * GUI_SCALE);
             leftSpeedometer->set_display_speed(displaySpeed);
             leftSpeedometer->set_numbers_inside(numbersInside);
             leftSpeedometer->set_numbers_on_ticks(numberTicks);
@@ -2511,7 +2539,7 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
         Gtk::Box* pSpeedRight = nullptr; builder->get_widget("placeholder_speed_right", pSpeedRight);
         if(pSpeedRight) {
             rightSpeedometer = Gtk::manage(new Speedometer("Right Speedometer"));
-            rightSpeedometer->set_size_request(300, 175);
+            rightSpeedometer->set_size_request(300 * GUI_SCALE, 175 * GUI_SCALE);
             rightSpeedometer->set_display_speed(displaySpeed);
             rightSpeedometer->set_numbers_inside(numbersInside);
             rightSpeedometer->set_numbers_on_ticks(numberTicks);
@@ -2898,6 +2926,10 @@ void processArguments(int argc, char** argv){
             }
             else if(!strcmp("--wsl", argv[i])){
                 smallLaptop = true;
+                ORIN_IP = "127.0.0.1";
+                NANO_IP = "127.0.0.1";
+                
+                std::cout << "WSL Mode: defaulting to Localhost (" << ORIN_IP << ")" << std::endl;
             }
             else if(!strcmp("--config_file", argv[i])){
                 parseConfigFile(argv[i+1]);
@@ -2930,8 +2962,14 @@ void checkSize(){
         int x = geometry.get_x();
         int y = geometry.get_y();
         int width = geometry.get_width();
-        int height = geometry.get_height();
-        std::cout << "Height: " << height << std::endl << "Width: " << width << std::endl;
+        
+        // Calculate scale relative to the target 2560px display
+        GUI_SCALE = (double)width / 2560.0;
+
+        if(GUI_SCALE < 0.5) GUI_SCALE = 0.5;
+        
+        std::cout << "Detected Width: " << width << " | Applying GUI Scale: " << GUI_SCALE << std::endl;
+
         if(width < 1920){
             smallLaptop = true;
         }
@@ -3126,7 +3164,7 @@ int main(int argc, char** argv) {
             newFrameAvailable = false;
         }
 
-        if(!testInput && !isServerInitialized()) {
+        if(!testInput && !isServerInitialized() && !isServerInitialized2() && !isVideoStreamActive()) {
             std::this_thread::sleep_for(std::chrono::milliseconds(100)); // Don't busy-wait
             continue;
         }
@@ -3215,7 +3253,9 @@ int main(int argc, char** argv) {
                     break;
             }
         }
-
+        // Two ways we might be able to decrease bandwidth usage here:
+        // 1. Introduce delta threshold and only send values over certain delta
+        // 2. Send all axes together, not individually
         now = std::chrono::high_resolution_clock::now();
         time_span = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastTransmitTime);
         deltaTime = time_span.count();

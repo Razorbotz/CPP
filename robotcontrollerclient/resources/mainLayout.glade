@@ -86,9 +86,6 @@
                             <property name="can_focus">False</property>
                             <property name="label" translatable="yes">Not Connected</property>
                             <property name="name">dark_text</property>
-                            <attributes>
-                              <attribute name="background" value="#ffff00000000"/>
-                            </attributes>
                           </object>
                         </child>
                         <child>
@@ -138,9 +135,6 @@
                             <property name="can_focus">False</property>
                             <property name="label" translatable="yes">Not Connected</property>
                             <property name="name">dark_text</property>
-                            <attributes>
-                              <attribute name="background" value="#ffff00000000"/>
-                            </attributes>
                           </object>
                         </child>
                         <child>
@@ -222,9 +216,6 @@
                             <property name="can_focus">False</property>
                             <property name="label" translatable="yes">Not Connected</property>
                             <property name="name">dark_text</property>
-                            <attributes>
-                              <attribute name="background" value="#ffff00000000"/>
-                            </attributes>
                           </object>
                         </child>
                       </object>

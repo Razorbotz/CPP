@@ -14,6 +14,8 @@
 #include <fcntl.h>
 #include <thread>
 
+extern double GUI_SCALE;
+
 
 // --- Main Robot Server Globals & Implementation ---
 
@@ -492,14 +494,7 @@ static void connectToVideoServer(VideoServerUI& ui, Glib::Dispatcher& dispatcher
 
     memset(&video_serv_addr, 0, sizeof(video_serv_addr));
     video_serv_addr.sin_family = AF_INET;
-    video_serv_addr.sin_port = htons(VIDEO_PORT);
-
-    if ((videoSock = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
-        perror("\n Video UDP socket creation error \n");
-        video_connection_status = ConnStatus::FAILURE;
-        dispatcher.emit();
-        return;
-    }
+    video_serv_addr.sin_port   = htons(VIDEO_PORT);
 
     if (inet_pton(AF_INET, ui.ipAddressEntry->get_text().c_str(), &video_serv_addr.sin_addr) <= 0) {
         std::cerr << "Invalid Video IP Address" << std::endl;
@@ -508,13 +503,45 @@ static void connectToVideoServer(VideoServerUI& ui, Glib::Dispatcher& dispatcher
         return;
     }
 
+    // Create socket
+    if ((videoSock = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
+        perror("\n Video UDP socket creation error \n");
+        video_connection_status = ConnStatus::FAILURE;
+        dispatcher.emit();
+        return;
+    }
+
+    fcntl(videoSock, F_SETFL, O_NONBLOCK);
+
     std::string hello("Hello Robot");
     sendto(videoSock, hello.c_str(), hello.length(), 0, (struct sockaddr *)&video_serv_addr, video_addr_len);
 
-    fcntl(videoSock, F_SETFL, O_NONBLOCK);
-    video_connection_status = ConnStatus::SUCCESS;
+    auto startTime = std::chrono::steady_clock::now();
+    char buffer[1024];
+
+    while (std::chrono::duration_cast<std::chrono::seconds>(
+               std::chrono::steady_clock::now() - startTime).count() < 2) {
+
+        socklen_t from_len = video_addr_len;
+
+        ssize_t n = recvfrom(videoSock, buffer, sizeof(buffer), 0,(struct sockaddr *)&video_serv_addr, &from_len);
+
+        if (n > 0) {
+            std::cout << "Received reply from video server. Connection established." << std::endl;
+            video_connection_status = ConnStatus::SUCCESS;
+            dispatcher.emit();
+            videoConnected = true;
+            return;
+        }
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+
+    std::cout << "Connection to video server failed (timeout)." << std::endl;
+    video_connection_status = ConnStatus::FAILURE;
     dispatcher.emit();
 }
+
 
 void update_video_connection_status(VideoServerUI& ui) {
     ConnStatus status = video_connection_status;
@@ -701,15 +728,16 @@ uint16_t lastFrameID = 0;
 
 void videoMain(cv::Mat& latestFrame, std::mutex& frameMutex, std::atomic<bool>& newFrameAvailable, Glib::Dispatcher& videoDisconnectDispatcher, std::atomic<bool>& shouldVideoDisconnect) {
     // --- FFmpeg Decoder Initialization ---
-    const AVCodec* codec = avcodec_find_decoder(AV_CODEC_ID_HEVC);
+    const AVCodec* codec = avcodec_find_decoder(AV_CODEC_ID_H264); 
+
     if (!codec) {
-        std::cerr << "H.265 (HEVC) decoder not found" << std::endl;
+        std::cerr << "H.264 decoder not found" << std::endl;
         return;
     }
 
     AVCodecParserContext* parser = av_parser_init(codec->id);
     if (!parser) {
-        std::cerr << "Failed to initialize H.265 parser" << std::endl;
+        std::cerr << "Failed to initialize H.264 parser" << std::endl;
         return;
     }
 
@@ -743,7 +771,7 @@ void videoMain(cv::Mat& latestFrame, std::mutex& frameMutex, std::atomic<bool>& 
         }
 
         auto now = std::chrono::steady_clock::now();
-        if (std::chrono::duration_cast<std::chrono::seconds>(now - last_packet_time).count() >= 1) {
+        if (std::chrono::duration_cast<std::chrono::seconds>(now - last_packet_time).count() >= 3) {
             std::cerr << "Video stream timed out." << std::endl;
             isStreamingActive = false;
             shouldVideoDisconnect = true;
@@ -820,9 +848,12 @@ void videoMain(cv::Mat& latestFrame, std::mutex& frameMutex, std::atomic<bool>& 
                         // Create an OpenCV Mat from the BGR data
                         cv::Mat decoded_mat(codec_ctx->height, codec_ctx->width, CV_8UC1, bgr_frame->data[0], bgr_frame->linesize[0]);
 
+                        int target_width = 1600 * GUI_SCALE;
+                        int target_height = 1000 * GUI_SCALE;
+
                         // Resize and update the GUI
                         cv::Mat display_img;
-                        cv::resize(decoded_mat, display_img, cv::Size(1600, 1000), 0, 0, cv::INTER_LINEAR);
+                        cv::resize(decoded_mat, display_img, cv::Size(target_width, target_height), 0, 0, cv::INTER_LINEAR);
                         
                         {
                             std::lock_guard<std::mutex> lock(frameMutex);

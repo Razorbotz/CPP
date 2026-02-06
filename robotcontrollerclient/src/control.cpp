@@ -154,6 +154,7 @@ Gtk::Window* window;
 bool initVals = false;
 bool threeMonitors = false;
 bool smallLaptop = false;
+bool wsl = false;
 double GUI_SCALE = 1.0;
 bool noVideo = false;
 bool noArena = false;
@@ -2161,6 +2162,8 @@ void create_config_editor_window(const std::string& config_file) {
 /*** Helper functions for creating GUI windows / binding events ***/
 std::string current_ip = "http://192.168.1.8";
 void send_servo_command(const std::string& direction) {
+    if(wsl)
+        return;
     CURL* curl = curl_easy_init();
     if (curl) {
         std::string url = current_ip + "/action?go=" + direction;
@@ -2176,11 +2179,16 @@ void send_servo_command(const std::string& direction) {
 bool on_key_release_event(GdkEventKey* key_event){
     switch (key_event->keyval) {
         case GDK_KEY_u:
-        case GDK_KEY_i:
         case GDK_KEY_o:
         case GDK_KEY_p:
             send_servo_command("stop");
             return false;
+            break;
+        case GDK_KEY_i:
+            if(!wsl){
+                send_servo_command("stop");
+                return false;
+            }
             break;
     }
     sendKeyboardEvent(key_event->keyval, 0); // 0 for key release
@@ -2194,8 +2202,10 @@ bool on_key_press_event(GdkEventKey* key_event){
             return false;
             break;
         case GDK_KEY_i:
-            send_servo_command("right");
-            return false;
+            if(!wsl){
+                send_servo_command("right");
+                return false;
+            }   
             break;
         case GDK_KEY_o:
             send_servo_command("up");
@@ -2925,7 +2935,7 @@ void processArguments(int argc, char** argv){
                 mapUsed = argv[i+1];
             }
             else if(!strcmp("--wsl", argv[i])){
-                smallLaptop = true;
+                wsl = true;
                 ORIN_IP = "127.0.0.1";
                 NANO_IP = "127.0.0.1";
                 

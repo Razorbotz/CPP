@@ -156,11 +156,15 @@ bool threeMonitors = false;
 bool smallLaptop = false;
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 bool wsl = false;
 =======
 >>>>>>> 3801b90 (Working on dynamic resize for widgets to support better WSL integration)
 =======
 >>>>>>> 3801b90 (Working on dynamic resize for widgets to support better WSL integration)
+=======
+bool wsl = false;
+>>>>>>> f4145eb (Fixed issue with curl)
 double GUI_SCALE = 1.0;
 bool noVideo = false;
 bool noArena = false;
@@ -3139,6 +3143,7 @@ void processArguments(int argc, char** argv){
             }
             else if(!strcmp("--wsl", argv[i])){
 <<<<<<< HEAD
+<<<<<<< HEAD
                 wsl = true;
 =======
                 smallLaptop = true;
@@ -3146,6 +3151,9 @@ void processArguments(int argc, char** argv){
 >>>>>>> 3801b90 (Working on dynamic resize for widgets to support better WSL integration)
 =======
 >>>>>>> 3801b90 (Working on dynamic resize for widgets to support better WSL integration)
+=======
+                wsl = true;
+>>>>>>> f4145eb (Fixed issue with curl)
                 ORIN_IP = "127.0.0.1";
                 NANO_IP = "127.0.0.1";
                 

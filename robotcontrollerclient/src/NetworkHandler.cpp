@@ -522,10 +522,14 @@ static void connectToVideoServer(VideoServerUI& ui, Glib::Dispatcher& dispatcher
     while (std::chrono::duration_cast<std::chrono::seconds>(
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
                std::chrono::steady_clock::now() - startTime).count() < 4) {
 =======
                std::chrono::steady_clock::now() - startTime).count() < 2) {
 >>>>>>> 3801b90 (Working on dynamic resize for widgets to support better WSL integration)
+=======
+               std::chrono::steady_clock::now() - startTime).count() < 4) {
+>>>>>>> c790928 (Added simulated network traffic)
 =======
                std::chrono::steady_clock::now() - startTime).count() < 4) {
 >>>>>>> c790928 (Added simulated network traffic)

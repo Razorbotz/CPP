@@ -45,7 +45,10 @@ DEFINE_KEY_GROUP(talon,
     "Temperature", "Sensor Position", "Sensor Velocity", "Max Current"
 )
 
-DEFINE_KEY_GROUP(falcon, get_talon_keys())
+DEFINE_KEY_GROUP(falcon,
+    "Device ID", "Bus Voltage", "Output Current", "Output Percent",
+    "Temperature", "Sensor Position", "Sensor Velocity", "Max Current", "Error"
+)
 
 DEFINE_KEY_GROUP(linear,
     "Motor Number", "Speed", "Potentiometer", "Time Without Change",
@@ -111,7 +114,8 @@ std::map<std::string, std::vector<ElementInfo>>& get_element_definitions() {
             {ElementType::UInt8, "Device ID"}, {ElementType::UInt16, "Bus Voltage"},
             {ElementType::UInt16, "Output Current"}, {ElementType::Float32, "Output Percent"},
             {ElementType::UInt8, "Temperature"}, {ElementType::Float32, "Sensor Position"},
-            {ElementType::Float32, "Sensor Velocity"}, {ElementType::Float32, "Max Current"}
+            {ElementType::Float32, "Sensor Velocity"}, {ElementType::Float32, "Max Current"},
+            {ElementType::Boolean, "Error"}
         }},
         {"LINEAR", {
             {ElementType::UInt8, "Motor Number"}, {ElementType::Float32, "Speed"},

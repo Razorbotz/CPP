@@ -164,6 +164,14 @@ bool useAltLayout = false;
 bool isController = false;
 bool twoJoysticks = false;
 
+bool simulateNetwork = false;
+Gtk::Window* simulatorWindow = nullptr;
+Gtk::ComboBoxText* simTypeCombo = nullptr;
+Gtk::Box* simContentBox = nullptr;
+
+std::map<std::string, Gtk::Widget*> activeSimWidgets;
+std::map<std::string, uint8_t> activeSimTypes;
+
 ServerUI server_ui;
 VideoServerUI video_server_ui;
 
@@ -2768,6 +2776,195 @@ void initArenaWindow() {
     arenaWindow->show_all();
 }
 
+void clear_sim_inputs() {
+    auto children = simContentBox->get_children();
+    for (auto* child : children) {
+        simContentBox->remove(*child);
+        delete child;
+    }
+    activeSimWidgets.clear();
+    activeSimTypes.clear();
+}
+
+void on_sim_type_changed() {
+    if (!simTypeCombo || !simContentBox) return;
+    
+    std::string label = simTypeCombo->get_active_text();
+    if (label.empty()) return;
+
+    clear_sim_inputs();
+
+    BinaryMessage dummy(label);
+    std::string prefix;
+    if (label.find("Talon") != std::string::npos) prefix = "TALON";
+    else if (label.find("Falcon") != std::string::npos) prefix = "FALCON";
+    else if (label.find("Linear") != std::string::npos) prefix = "LINEAR";
+    else if (label == "Zed") prefix = "ZED";
+    else if (label == "Power") prefix = "POWER";
+    else if (label == "Power2") prefix = "POWER2";
+    else if (label == "Drivetrain") prefix = "DRIVETRAIN";
+    else if (label == "Autonomy") prefix = "AUTONOMY";
+    else prefix = "COMMUNICATION";
+
+    populateBinaryMessage(label, prefix, dummy);
+
+    for (const auto& element : dummy.getObject().elementList) {
+        std::string key = element.label;
+        uint8_t type = element.type;
+        activeSimTypes[key] = type;
+
+        auto row = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 10));
+        row->set_margin_bottom(5);
+        
+        auto lbl = Gtk::manage(new Gtk::Label(key + ":"));
+        lbl->set_size_request(120, -1);
+        lbl->set_xalign(0.0);
+        row->add(*lbl);
+
+        Gtk::Widget* inputWidget = nullptr;
+
+        if (type == TYPE::BOOLEAN) {
+            auto check = Gtk::manage(new Gtk::CheckButton());
+            check->set_active(element.data.front().boolean);
+            inputWidget = check;
+        } 
+        else if (type == TYPE::STRING) {
+            auto entry = Gtk::manage(new Gtk::Entry());
+            std::string text;
+            for (const auto& c : element.data) text += c.character;
+            entry->set_text(text);
+            inputWidget = entry;
+        } 
+        else {
+            auto spin = Gtk::manage(new Gtk::SpinButton());
+            spin->set_range(-100000.0, 100000.0);
+            
+            if (type == TYPE::FLOAT32 || type == TYPE::FLOAT64) {
+                spin->set_digits(4);
+                spin->set_increments(0.1, 1.0);
+                float val = (type == TYPE::FLOAT32) ? element.data.front().float32 : (float)element.data.front().float64;
+                spin->set_value(val);
+            }
+            else {
+                spin->set_digits(0);
+                spin->set_increments(1, 10);
+                
+                int val = 0;
+                if (type == TYPE::UINT16) val = element.data.front().uint16;
+                else if (type == TYPE::INT32) val = element.data.front().int32;
+                else if (type == TYPE::INT8) val = element.data.front().int8;
+                else if (type == TYPE::UINT8) val = element.data.front().uint8;
+                
+                spin->set_value(val);
+            }
+            inputWidget = spin;
+        }
+
+        row->add(*inputWidget);
+        activeSimWidgets[key] = inputWidget;
+        simContentBox->add(*row);
+    }
+    
+    simContentBox->show_all();
+}
+
+void on_simulate_send() {
+    if (!simTypeCombo) return;
+    std::string label = simTypeCombo->get_active_text();
+    if (label.empty()) return;
+
+    BinaryMessage message(label);
+    
+    for (auto const& [key, widget] : activeSimWidgets) {
+        uint8_t type = activeSimTypes[key];
+
+        if (type == TYPE::BOOLEAN) {
+            Gtk::CheckButton* check = dynamic_cast<Gtk::CheckButton*>(widget);
+            if(check) message.addElementBoolean(key, check->get_active());
+        } 
+        else if (type == TYPE::STRING) {
+            Gtk::Entry* entry = dynamic_cast<Gtk::Entry*>(widget);
+            if(entry) message.addElementString(key, entry->get_text());
+        } 
+        else if (type == TYPE::FLOAT32) {
+            Gtk::SpinButton* spin = dynamic_cast<Gtk::SpinButton*>(widget);
+            if(spin) message.addElementFloat32(key, (float)spin->get_value());
+        }
+        else if (type == TYPE::FLOAT64) {
+            Gtk::SpinButton* spin = dynamic_cast<Gtk::SpinButton*>(widget);
+            if(spin) message.addElementFloat64(key, (double)spin->get_value());
+        }
+        else if (type == TYPE::UINT16) {
+            Gtk::SpinButton* spin = dynamic_cast<Gtk::SpinButton*>(widget);
+            if(key == "Bus Voltage" || key == "Output Current"){
+                if(spin) message.addElementUInt16(key, (uint16_t)(spin->get_value_as_int() * 100.0));
+            }
+            else{
+                if(spin) message.addElementUInt16(key, (uint16_t)spin->get_value_as_int());
+            }
+        }
+        else if (type == TYPE::INT32) {
+            Gtk::SpinButton* spin = dynamic_cast<Gtk::SpinButton*>(widget);
+            if(spin) message.addElementInt32(key, (int32_t)spin->get_value_as_int());
+        }
+        else if (type == TYPE::UINT8) {
+            Gtk::SpinButton* spin = dynamic_cast<Gtk::SpinButton*>(widget);
+            if(spin) message.addElementUInt8(key, (uint8_t)spin->get_value_as_int());
+        }
+        else if (type == TYPE::INT8) {
+            Gtk::SpinButton* spin = dynamic_cast<Gtk::SpinButton*>(widget);
+            if(spin) message.addElementInt8(key, (int8_t)spin->get_value_as_int());
+        }
+        else {
+            Gtk::SpinButton* spin = dynamic_cast<Gtk::SpinButton*>(widget);
+            if(spin) message.addElementInt32(key, (int)spin->get_value_as_int());
+        }
+    }
+
+    updateGUI(message);
+}
+
+void initSimulatorWindow() {
+    simulatorWindow = new Gtk::Window();
+    simulatorWindow->set_title("Network Simulator");
+    simulatorWindow->set_default_size(400, 600);
+    simulatorWindow->set_keep_above(true);
+
+    auto mainVBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 10));
+    mainVBox->set_border_width(10);
+
+    mainVBox->add(*Gtk::manage(new Gtk::Label("Select Message Type:")));
+    simTypeCombo = Gtk::manage(new Gtk::ComboBoxText());
+    
+    std::vector<std::string> targets = {
+        "Talon 1", "Talon 2", "Talon 3", "Talon 4",
+        "Falcon 1", "Falcon 2", "Falcon 3", "Falcon 4",
+        "Linear 1", "Linear 2", "Zed", "Drivetrain", 
+        "Power", "Communication", "Autonomy"
+    };
+    for(const auto& t : targets) simTypeCombo->append(t);
+    
+    simTypeCombo->signal_changed().connect(sigc::ptr_fun(&on_sim_type_changed));
+    mainVBox->add(*simTypeCombo);
+
+    auto scrolled = Gtk::manage(new Gtk::ScrolledWindow());
+    scrolled->set_policy(Gtk::POLICY_NEVER, Gtk::POLICY_AUTOMATIC);
+    scrolled->set_vexpand(true);
+    
+    simContentBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
+    scrolled->add(*simContentBox);
+    mainVBox->add(*scrolled);
+
+    auto btnSend = Gtk::manage(new Gtk::Button("Send Message"));
+    btnSend->signal_clicked().connect(sigc::ptr_fun(&on_simulate_send));
+    mainVBox->add(*btnSend);
+
+    simulatorWindow->add(*mainVBox);
+    simulatorWindow->show_all();
+    
+    simTypeCombo->set_active_text("Talon 1");
+}
+
 int key = 0x2C;
 int checksum_decode(std::list<uint8_t>& byteList){
     //Checks last byte of data for the checksum
@@ -2956,6 +3153,10 @@ void processArguments(int argc, char** argv){
             else if(!strcmp("--alt_layout", argv[i])){
                 useAltLayout = true;
             }
+            else if(!strcmp("--simulate", argv[i])){
+                simulateNetwork = true;
+                initVals = true; 
+            }
         }
     }
 }
@@ -3066,6 +3267,9 @@ int main(int argc, char** argv) {
         initArenaWindow();
     if(!noVideo)
         initSensorsWindow();
+    if(simulateNetwork) {
+        initSimulatorWindow();
+    }
     moveWindows();
     initGUI();
     

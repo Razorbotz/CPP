@@ -520,7 +520,7 @@ static void connectToVideoServer(VideoServerUI& ui, Glib::Dispatcher& dispatcher
     char buffer[1024];
 
     while (std::chrono::duration_cast<std::chrono::seconds>(
-               std::chrono::steady_clock::now() - startTime).count() < 2) {
+               std::chrono::steady_clock::now() - startTime).count() < 4) {
 
         socklen_t from_len = video_addr_len;
 

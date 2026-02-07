@@ -154,21 +154,7 @@ Gtk::Window* window;
 bool initVals = false;
 bool threeMonitors = false;
 bool smallLaptop = false;
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
 bool wsl = false;
-=======
->>>>>>> 3801b90 (Working on dynamic resize for widgets to support better WSL integration)
-=======
->>>>>>> 3801b90 (Working on dynamic resize for widgets to support better WSL integration)
-=======
-bool wsl = false;
->>>>>>> f4145eb (Fixed issue with curl)
-=======
-bool wsl = false;
->>>>>>> c790928ab9fdda83dae188f890612e2778e9d7de
 double GUI_SCALE = 1.0;
 bool noVideo = false;
 bool noArena = false;
@@ -336,7 +322,7 @@ class ImageOverlay : public Gtk::DrawingArea {
         if(mapUsed == "NASA"){
             height = ARENA_HEIGHT_P;
         }
-        else if(mapUsed == "UCF"){
+        else if(mapUsed == "UCF" || mapUsed == "UCF_flip"){
             height = UCF_HEIGHT_P;
         }
         else if(mapUsed == "Cosmic"){
@@ -455,6 +441,9 @@ class ImageOverlay : public Gtk::DrawingArea {
                 }
                 else if(mapUsed == "UCF"){
                     background = Gdk::Pixbuf::create_from_file("../resources/UCFArena.png");
+                }
+                else if (mapUsed == "UCF_flip") {
+                    background = Gdk::Pixbuf::create_from_file("../resources/UCFArena_flip.png");
                 }
                 else if(mapUsed == "Cosmic"){
                     background = Gdk::Pixbuf::create_from_file("../resources/CosmicArena.png");
@@ -3146,22 +3135,7 @@ void processArguments(int argc, char** argv){
                 mapUsed = argv[i+1];
             }
             else if(!strcmp("--wsl", argv[i])){
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
                 wsl = true;
-=======
-                smallLaptop = true;
-<<<<<<< HEAD
->>>>>>> 3801b90 (Working on dynamic resize for widgets to support better WSL integration)
-=======
->>>>>>> 3801b90 (Working on dynamic resize for widgets to support better WSL integration)
-=======
-                wsl = true;
->>>>>>> f4145eb (Fixed issue with curl)
-=======
-                wsl = true;
->>>>>>> c790928ab9fdda83dae188f890612e2778e9d7de
                 ORIN_IP = "127.0.0.1";
                 NANO_IP = "127.0.0.1";
                 

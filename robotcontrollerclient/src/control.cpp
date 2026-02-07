@@ -66,8 +66,8 @@ Convert video stream from TCP to UDP
 
 */
 
-#define ORIN_IP "192.168.1.6"
-#define NANO_IP "192.168.1.5"
+std::string ORIN_IP = "192.168.1.6";
+std::string NANO_IP = "192.168.1.5";
 bool useOrin = true;
 
 #define LOW_VOLTAGE 12.0f
@@ -154,6 +154,11 @@ Gtk::Window* window;
 bool initVals = false;
 bool threeMonitors = false;
 bool smallLaptop = false;
+<<<<<<< HEAD
+bool wsl = false;
+=======
+>>>>>>> 3801b90 (Working on dynamic resize for widgets to support better WSL integration)
+double GUI_SCALE = 1.0;
 bool noVideo = false;
 bool noArena = false;
 std::string mapUsed = "NASA";
@@ -161,6 +166,14 @@ bool testInput = false;
 bool useAltLayout = false;
 bool isController = false;
 bool twoJoysticks = false;
+
+bool simulateNetwork = false;
+Gtk::Window* simulatorWindow = nullptr;
+Gtk::ComboBoxText* simTypeCombo = nullptr;
+Gtk::Box* simContentBox = nullptr;
+
+std::map<std::string, Gtk::Widget*> activeSimWidgets;
+std::map<std::string, uint8_t> activeSimTypes;
 
 ServerUI server_ui;
 VideoServerUI video_server_ui;
@@ -1285,7 +1298,7 @@ void updateMotor(std::string label, const std::vector<Element>& elements) {
 Speedometer* createDial(std::string label, double min_speed, double max_speed, 
                         int major_divisions, int minor_ticks, double zero_angle, double sweep){
     auto speedometer = Gtk::manage(new Speedometer(label));
-    speedometer->set_size_request(300, 300);
+    speedometer->set_size_request(300 * GUI_SCALE, 300 * GUI_SCALE);
     speedometer->set_display_speed(displaySpeed);
     speedometer->set_numbers_inside(numbersInside);
     speedometer->set_numbers_on_ticks(numberTicks);
@@ -1398,17 +1411,17 @@ Gtk::Box* createPositionIndicator(const std::string& title, int spacing,
 {
     auto text_box = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 2));
     container_box = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, spacing));
-    container_box->set_size_request(110, -1);
+    container_box->set_size_request(110 * GUI_SCALE, -1);
     
     left_indicator = Gtk::manage(new DrawingArea());
-    left_indicator->set_size_request(40, 180);
+    left_indicator->set_size_request(40 * GUI_SCALE, 180 * GUI_SCALE);
     left_indicator->set_hexpand(true);
     left_indicator->set_halign(Gtk::ALIGN_CENTER);
     container_box->add(*left_indicator);
     left_indicator->show();
     
     right_indicator = Gtk::manage(new DrawingArea());
-    right_indicator->set_size_request(40, 180);
+    right_indicator->set_size_request(40 * GUI_SCALE, 180 * GUI_SCALE);
     right_indicator->set_hexpand(true);
     right_indicator->set_halign(Gtk::ALIGN_CENTER);
     container_box->add(*right_indicator);
@@ -2160,6 +2173,8 @@ void create_config_editor_window(const std::string& config_file) {
 /*** Helper functions for creating GUI windows / binding events ***/
 std::string current_ip = "http://192.168.1.8";
 void send_servo_command(const std::string& direction) {
+    if(wsl)
+        return;
     CURL* curl = curl_easy_init();
     if (curl) {
         std::string url = current_ip + "/action?go=" + direction;
@@ -2175,11 +2190,16 @@ void send_servo_command(const std::string& direction) {
 bool on_key_release_event(GdkEventKey* key_event){
     switch (key_event->keyval) {
         case GDK_KEY_u:
-        case GDK_KEY_i:
         case GDK_KEY_o:
         case GDK_KEY_p:
             send_servo_command("stop");
             return false;
+            break;
+        case GDK_KEY_i:
+            if(!wsl){
+                send_servo_command("stop");
+                return false;
+            }
             break;
     }
     sendKeyboardEvent(key_event->keyval, 0); // 0 for key release
@@ -2193,8 +2213,10 @@ bool on_key_press_event(GdkEventKey* key_event){
             return false;
             break;
         case GDK_KEY_i:
-            send_servo_command("right");
-            return false;
+            if(!wsl){
+                send_servo_command("right");
+                return false;
+            }   
             break;
         case GDK_KEY_o:
             send_servo_command("up");
@@ -2231,17 +2253,17 @@ Gtk::EventBox* create_labeled_box(const Glib::ustring& label_text, CircleDrawing
     auto event_box = Gtk::manage(new Gtk::EventBox());
 
     auto box = Gtk::manage(new BorderedBox(Gtk::ORIENTATION_HORIZONTAL, 5));
-    box->set_size_request(300, 75);
+    box->set_size_request(300 * GUI_SCALE, 75 * GUI_SCALE);
 
     auto label = Gtk::manage(new Gtk::Label(label_text));
     label->set_hexpand(true);
 
     Pango::FontDescription font;
-    font.set_size(20 * Pango::SCALE);
+    font.set_size(20 * GUI_SCALE * Pango::SCALE);
     label->override_font(font);
 
     out_circle = Gtk::manage(new CircleDrawingArea());
-    out_circle->set_size_request(75, 75);
+    out_circle->set_size_request(75 * GUI_SCALE, 75 * GUI_SCALE);
     out_circle->set_hexpand(false);
     out_circle->set_halign(Gtk::ALIGN_CENTER);
 
@@ -2406,10 +2428,19 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
     if(ipAddressEntry) ipAddressEntry->set_text(useOrin ? ORIN_IP : NANO_IP);
     if(videoIPAddressEntry) videoIPAddressEntry->set_text(useOrin ? ORIN_IP : NANO_IP);
 
-    Gdk::RGBA red; red.set_rgba(1.0, 0, 0, 1.0);
-    if(connectionStatusLabel) connectionStatusLabel->override_background_color(red);
-    if(videoConnectionStatusLabel) videoConnectionStatusLabel->override_background_color(red);
-
+    if(connectionStatusLabel) {
+        Gdk::RGBA red;
+        red.set_rgba(1.0, 0, 0, 1.0);
+        connectionStatusLabel->override_background_color(red);
+        connectionStatusLabel->set_text("Not Connected");
+    }
+    if(videoConnectionStatusLabel) {
+        Gdk::RGBA red;
+        red.set_rgba(1.0, 0, 0, 1.0);
+        videoConnectionStatusLabel->override_background_color(red);
+        videoConnectionStatusLabel->set_text("Not Connected");
+    }
+    
     if (settingsButton) {
         try {
             auto pixbuf = Gdk::Pixbuf::create_from_file("../resources/SettingsIcon.png");
@@ -2457,6 +2488,24 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
     if (videoStreamButton) videoStreamButton->signal_clicked().connect([&](){ videoStream(video_server_ui); });
     if (videoAddressListBox) videoAddressListBox->signal_row_activated().connect([&](Gtk::ListBoxRow* row){ videoRowActivated(row, video_server_ui); });
 
+    if(connectButton) {
+        connectButton->set_can_focus(false);
+        connectButton->set_focus_on_click(false);
+    }
+    if(connectButton2){
+        connectButton2->set_can_focus(false);
+        connectButton2->set_focus_on_click(false);
+    }
+    if(silentRunButton) {
+        silentRunButton->set_can_focus(false);
+        silentRunButton->set_focus_on_click(false);
+    }
+    
+    if(videoConnectButton) {
+        videoConnectButton->set_can_focus(false);
+        videoConnectButton->set_focus_on_click(false);
+    }
+
     if (!noVideo) {
         sensorBox->set_visible(false);
 
@@ -2475,7 +2524,7 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
         Gtk::Box* pVideo = nullptr; builder->get_widget("placeholder_video_area", pVideo);
         if (pVideo) {
             videoArea = Gtk::manage(new VideoWidget());
-            videoArea->set_size_request(smallLaptop ? 800 : 1600, smallLaptop ? 500 : 1000);
+            videoArea->set_size_request(1600 * GUI_SCALE, 1000 * GUI_SCALE);
             pVideo->add(*videoArea);
         }
 
@@ -2501,7 +2550,7 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
         Gtk::Box* pSpeedLeft = nullptr; builder->get_widget("placeholder_speed_left", pSpeedLeft);
         if(pSpeedLeft) {
             leftSpeedometer = Gtk::manage(new Speedometer("Left Speedometer"));
-            leftSpeedometer->set_size_request(300, 175);
+            leftSpeedometer->set_size_request(300 * GUI_SCALE, 175 * GUI_SCALE);
             leftSpeedometer->set_display_speed(displaySpeed);
             leftSpeedometer->set_numbers_inside(numbersInside);
             leftSpeedometer->set_numbers_on_ticks(numberTicks);
@@ -2511,7 +2560,7 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
         Gtk::Box* pSpeedRight = nullptr; builder->get_widget("placeholder_speed_right", pSpeedRight);
         if(pSpeedRight) {
             rightSpeedometer = Gtk::manage(new Speedometer("Right Speedometer"));
-            rightSpeedometer->set_size_request(300, 175);
+            rightSpeedometer->set_size_request(300 * GUI_SCALE, 175 * GUI_SCALE);
             rightSpeedometer->set_display_speed(displaySpeed);
             rightSpeedometer->set_numbers_inside(numbersInside);
             rightSpeedometer->set_numbers_on_ticks(numberTicks);
@@ -2730,6 +2779,195 @@ void initArenaWindow() {
     arenaWindow->show_all();
 }
 
+void clear_sim_inputs() {
+    auto children = simContentBox->get_children();
+    for (auto* child : children) {
+        simContentBox->remove(*child);
+        delete child;
+    }
+    activeSimWidgets.clear();
+    activeSimTypes.clear();
+}
+
+void on_sim_type_changed() {
+    if (!simTypeCombo || !simContentBox) return;
+    
+    std::string label = simTypeCombo->get_active_text();
+    if (label.empty()) return;
+
+    clear_sim_inputs();
+
+    BinaryMessage dummy(label);
+    std::string prefix;
+    if (label.find("Talon") != std::string::npos) prefix = "TALON";
+    else if (label.find("Falcon") != std::string::npos) prefix = "FALCON";
+    else if (label.find("Linear") != std::string::npos) prefix = "LINEAR";
+    else if (label == "Zed") prefix = "ZED";
+    else if (label == "Power") prefix = "POWER";
+    else if (label == "Power2") prefix = "POWER2";
+    else if (label == "Drivetrain") prefix = "DRIVETRAIN";
+    else if (label == "Autonomy") prefix = "AUTONOMY";
+    else prefix = "COMMUNICATION";
+
+    populateBinaryMessage(label, prefix, dummy);
+
+    for (const auto& element : dummy.getObject().elementList) {
+        std::string key = element.label;
+        uint8_t type = element.type;
+        activeSimTypes[key] = type;
+
+        auto row = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 10));
+        row->set_margin_bottom(5);
+        
+        auto lbl = Gtk::manage(new Gtk::Label(key + ":"));
+        lbl->set_size_request(120, -1);
+        lbl->set_xalign(0.0);
+        row->add(*lbl);
+
+        Gtk::Widget* inputWidget = nullptr;
+
+        if (type == TYPE::BOOLEAN) {
+            auto check = Gtk::manage(new Gtk::CheckButton());
+            check->set_active(element.data.front().boolean);
+            inputWidget = check;
+        } 
+        else if (type == TYPE::STRING) {
+            auto entry = Gtk::manage(new Gtk::Entry());
+            std::string text;
+            for (const auto& c : element.data) text += c.character;
+            entry->set_text(text);
+            inputWidget = entry;
+        } 
+        else {
+            auto spin = Gtk::manage(new Gtk::SpinButton());
+            spin->set_range(-100000.0, 100000.0);
+            
+            if (type == TYPE::FLOAT32 || type == TYPE::FLOAT64) {
+                spin->set_digits(4);
+                spin->set_increments(0.1, 1.0);
+                float val = (type == TYPE::FLOAT32) ? element.data.front().float32 : (float)element.data.front().float64;
+                spin->set_value(val);
+            }
+            else {
+                spin->set_digits(0);
+                spin->set_increments(1, 10);
+                
+                int val = 0;
+                if (type == TYPE::UINT16) val = element.data.front().uint16;
+                else if (type == TYPE::INT32) val = element.data.front().int32;
+                else if (type == TYPE::INT8) val = element.data.front().int8;
+                else if (type == TYPE::UINT8) val = element.data.front().uint8;
+                
+                spin->set_value(val);
+            }
+            inputWidget = spin;
+        }
+
+        row->add(*inputWidget);
+        activeSimWidgets[key] = inputWidget;
+        simContentBox->add(*row);
+    }
+    
+    simContentBox->show_all();
+}
+
+void on_simulate_send() {
+    if (!simTypeCombo) return;
+    std::string label = simTypeCombo->get_active_text();
+    if (label.empty()) return;
+
+    BinaryMessage message(label);
+    
+    for (auto const& [key, widget] : activeSimWidgets) {
+        uint8_t type = activeSimTypes[key];
+
+        if (type == TYPE::BOOLEAN) {
+            Gtk::CheckButton* check = dynamic_cast<Gtk::CheckButton*>(widget);
+            if(check) message.addElementBoolean(key, check->get_active());
+        } 
+        else if (type == TYPE::STRING) {
+            Gtk::Entry* entry = dynamic_cast<Gtk::Entry*>(widget);
+            if(entry) message.addElementString(key, entry->get_text());
+        } 
+        else if (type == TYPE::FLOAT32) {
+            Gtk::SpinButton* spin = dynamic_cast<Gtk::SpinButton*>(widget);
+            if(spin) message.addElementFloat32(key, (float)spin->get_value());
+        }
+        else if (type == TYPE::FLOAT64) {
+            Gtk::SpinButton* spin = dynamic_cast<Gtk::SpinButton*>(widget);
+            if(spin) message.addElementFloat64(key, (double)spin->get_value());
+        }
+        else if (type == TYPE::UINT16) {
+            Gtk::SpinButton* spin = dynamic_cast<Gtk::SpinButton*>(widget);
+            if(key == "Bus Voltage" || key == "Output Current"){
+                if(spin) message.addElementUInt16(key, (uint16_t)(spin->get_value_as_int() * 100.0));
+            }
+            else{
+                if(spin) message.addElementUInt16(key, (uint16_t)spin->get_value_as_int());
+            }
+        }
+        else if (type == TYPE::INT32) {
+            Gtk::SpinButton* spin = dynamic_cast<Gtk::SpinButton*>(widget);
+            if(spin) message.addElementInt32(key, (int32_t)spin->get_value_as_int());
+        }
+        else if (type == TYPE::UINT8) {
+            Gtk::SpinButton* spin = dynamic_cast<Gtk::SpinButton*>(widget);
+            if(spin) message.addElementUInt8(key, (uint8_t)spin->get_value_as_int());
+        }
+        else if (type == TYPE::INT8) {
+            Gtk::SpinButton* spin = dynamic_cast<Gtk::SpinButton*>(widget);
+            if(spin) message.addElementInt8(key, (int8_t)spin->get_value_as_int());
+        }
+        else {
+            Gtk::SpinButton* spin = dynamic_cast<Gtk::SpinButton*>(widget);
+            if(spin) message.addElementInt32(key, (int)spin->get_value_as_int());
+        }
+    }
+
+    updateGUI(message);
+}
+
+void initSimulatorWindow() {
+    simulatorWindow = new Gtk::Window();
+    simulatorWindow->set_title("Network Simulator");
+    simulatorWindow->set_default_size(400, 600);
+    simulatorWindow->set_keep_above(true);
+
+    auto mainVBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 10));
+    mainVBox->set_border_width(10);
+
+    mainVBox->add(*Gtk::manage(new Gtk::Label("Select Message Type:")));
+    simTypeCombo = Gtk::manage(new Gtk::ComboBoxText());
+    
+    std::vector<std::string> targets = {
+        "Talon 1", "Talon 2", "Talon 3", "Talon 4",
+        "Falcon 1", "Falcon 2", "Falcon 3", "Falcon 4",
+        "Linear 1", "Linear 2", "Zed", "Drivetrain", 
+        "Power", "Communication", "Autonomy"
+    };
+    for(const auto& t : targets) simTypeCombo->append(t);
+    
+    simTypeCombo->signal_changed().connect(sigc::ptr_fun(&on_sim_type_changed));
+    mainVBox->add(*simTypeCombo);
+
+    auto scrolled = Gtk::manage(new Gtk::ScrolledWindow());
+    scrolled->set_policy(Gtk::POLICY_NEVER, Gtk::POLICY_AUTOMATIC);
+    scrolled->set_vexpand(true);
+    
+    simContentBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
+    scrolled->add(*simContentBox);
+    mainVBox->add(*scrolled);
+
+    auto btnSend = Gtk::manage(new Gtk::Button("Send Message"));
+    btnSend->signal_clicked().connect(sigc::ptr_fun(&on_simulate_send));
+    mainVBox->add(*btnSend);
+
+    simulatorWindow->add(*mainVBox);
+    simulatorWindow->show_all();
+    
+    simTypeCombo->set_active_text("Talon 1");
+}
+
 int key = 0x2C;
 int checksum_decode(std::list<uint8_t>& byteList){
     //Checks last byte of data for the checksum
@@ -2897,7 +3135,15 @@ void processArguments(int argc, char** argv){
                 mapUsed = argv[i+1];
             }
             else if(!strcmp("--wsl", argv[i])){
+<<<<<<< HEAD
+                wsl = true;
+=======
                 smallLaptop = true;
+>>>>>>> 3801b90 (Working on dynamic resize for widgets to support better WSL integration)
+                ORIN_IP = "127.0.0.1";
+                NANO_IP = "127.0.0.1";
+                
+                std::cout << "WSL Mode: defaulting to Localhost (" << ORIN_IP << ")" << std::endl;
             }
             else if(!strcmp("--config_file", argv[i])){
                 parseConfigFile(argv[i+1]);
@@ -2913,6 +3159,10 @@ void processArguments(int argc, char** argv){
             }
             else if(!strcmp("--alt_layout", argv[i])){
                 useAltLayout = true;
+            }
+            else if(!strcmp("--simulate", argv[i])){
+                simulateNetwork = true;
+                initVals = true; 
             }
         }
     }
@@ -2930,8 +3180,14 @@ void checkSize(){
         int x = geometry.get_x();
         int y = geometry.get_y();
         int width = geometry.get_width();
-        int height = geometry.get_height();
-        std::cout << "Height: " << height << std::endl << "Width: " << width << std::endl;
+        
+        // Calculate scale relative to the target 2560px display
+        GUI_SCALE = (double)width / 2560.0;
+
+        if(GUI_SCALE < 0.5) GUI_SCALE = 0.5;
+        
+        std::cout << "Detected Width: " << width << " | Applying GUI Scale: " << GUI_SCALE << std::endl;
+
         if(width < 1920){
             smallLaptop = true;
         }
@@ -3018,6 +3274,9 @@ int main(int argc, char** argv) {
         initArenaWindow();
     if(!noVideo)
         initSensorsWindow();
+    if(simulateNetwork) {
+        initSimulatorWindow();
+    }
     moveWindows();
     initGUI();
     
@@ -3126,7 +3385,7 @@ int main(int argc, char** argv) {
             newFrameAvailable = false;
         }
 
-        if(!testInput && !isServerInitialized()) {
+        if(!testInput && !isServerInitialized() && !isServerInitialized2() && !isVideoStreamActive()) {
             std::this_thread::sleep_for(std::chrono::milliseconds(100)); // Don't busy-wait
             continue;
         }
@@ -3215,7 +3474,9 @@ int main(int argc, char** argv) {
                     break;
             }
         }
-
+        // Two ways we might be able to decrease bandwidth usage here:
+        // 1. Introduce delta threshold and only send values over certain delta
+        // 2. Send all axes together, not individually
         now = std::chrono::high_resolution_clock::now();
         time_span = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastTransmitTime);
         deltaTime = time_span.count();

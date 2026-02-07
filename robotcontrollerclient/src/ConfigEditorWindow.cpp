@@ -1,3 +1,23 @@
+/**
+ * @file ConfigEditorWindow.cpp
+ * @brief Implementation of the GUI-based configuration editor.
+ *
+ * @details
+ * This file implements the logic for the Configuration Editor, which allows users to:
+ * 1. Toggle visibility of specific telemetry data points.
+ * 2. Reorder data points using drag-and-drop.
+ * 3. Modify global application settings (background colors, speedometer options).
+ *
+ * @architecture
+ * The editor relies on a "Subsystem" map approach. Rather than hardcoding widgets
+ * for every sensor, it iterates through defined subsystems (TALON, ZED, etc.)
+ * and generates generic "Preview" frames and "Option" lists. These subsystems will
+ * configure the appearance of all frames that are of the same type, ie the Talon
+ * configuration will change the apparance of all Talon frames.
+ *
+ * Configuration persistence is handled via a plain text key-value pair file
+ * (default: config.txt).
+ */
 #include "ConfigEditorWindow.hpp"
 #include "Speedometer.hpp"
 #include <fstream>
@@ -5,9 +25,19 @@
 #include <vector>
 #include <string>
 
+/**
+ * @brief Global flag to prevent multiple instances of the Config Editor.
+ */
 bool allowConfig = true;
 
-// --- Constructor ---
+/**
+ * @brief Constructs the Configuration Editor Window.
+ *
+ * Initializes the subsystem mappings, sets up the GTK user interface,
+ * and loads the initial configuration from disk.
+ *
+ * @param config_file The path to the configuration file (e.g., "config.txt").
+ */
 ConfigEditorWindow::ConfigEditorWindow(const std::string& config_file) {
     set_title("Configuration Editor");
     set_default_size(1000, 700);
@@ -47,7 +77,15 @@ ConfigEditorWindow::ConfigEditorWindow(const std::string& config_file) {
 ConfigEditorWindow::~ConfigEditorWindow() {}
 
 
-// --- UI Setup ---
+/**
+ * @brief Orchestrates the creation of the window layout.
+ *
+ * Creates a ScrolledWindow to handle overflowing content on smaller screens.
+ * Divides the UI into three main sections:
+ * 1. General Settings (File I/O, Colors).
+ * 2. Subsystem Editors (The drag-and-drop lists).
+ * 3. Action Buttons (Save/Reset).
+ */
 void ConfigEditorWindow::setup_ui() {
     auto scrolled_window = Gtk::make_managed<Gtk::ScrolledWindow>();
     scrolled_window->set_policy(Gtk::POLICY_AUTOMATIC, Gtk::POLICY_AUTOMATIC);
@@ -135,7 +173,17 @@ void ConfigEditorWindow::setup_action_buttons(Gtk::Box* parent_box) {
 }
 
 // --- Core Logic ---
-
+/**
+ * @brief Parses the configuration file to populate the editor state.
+ *
+ * Reads the file line-by-line using a key=value format.
+ * - Colors: Parsed into Gdk::RGBA.
+ * - Order: Keys starting with "ORDER_" are parsed as comma-separated lists
+ * to reconstruct the display order of telemetry items.
+ * - Visibility: All other keys are treated as boolean visibility toggles.
+ *
+ * @param config_file The filename to load.
+ */
 void ConfigEditorWindow::load_config(const std::string& config_file) {
     m_file_entry->set_text(config_file);
     m_item_visibility.clear();
@@ -169,6 +217,13 @@ void ConfigEditorWindow::load_config(const std::string& config_file) {
     }
 }
 
+/**
+ * @brief Synchronization routine between internal data and UI widgets.
+ *
+ * Clears and repopulates the Gtk::ListStore for every subsystem.
+ * This ensures that if the "Reset" button is clicked or a file is loaded,
+ * the visual lists match the internal vectors.
+ */
 void ConfigEditorWindow::sync_ui_lists_with_state() {
     for (auto& subsystem_pair : m_subsystems) {
         const std::string& prefix = subsystem_pair.first;
@@ -193,6 +248,17 @@ void ConfigEditorWindow::sync_ui_lists_with_state() {
     }
 }
 
+/**
+ * @brief Creates a drag-and-drop enabled list view for a subsystem.
+ *
+ * Configures a Gtk::TreeView with:
+ * - A toggle column for visibility (connected to on_list_item_toggled).
+ * - A text column for the data key.
+ * - Drag-and-drop enabled via set_reorderable(true).
+ *
+ * @param prefix The subsystem identifier (e.g., "TALON").
+ * @return Gtk::Widget* A pointer to the ScrolledWindow containing the list.
+ */
 Gtk::Widget* ConfigEditorWindow::create_reorderable_list(const std::string& prefix) {
     auto scrolled_window = Gtk::make_managed<Gtk::ScrolledWindow>();
     scrolled_window->set_policy(Gtk::POLICY_NEVER, Gtk::POLICY_AUTOMATIC);
@@ -220,6 +286,15 @@ Gtk::Widget* ConfigEditorWindow::create_reorderable_list(const std::string& pref
     return scrolled_window;
 }
 
+/**
+ * @brief Updates the "Preview" frame to reflect current settings.
+ *
+ * Generates a dummy BinaryMessage populated with default values (0, false, 0.0)
+ * to simulate incoming robot data. This allows the user to see exactly how
+ * the InfoFrame will look without being connected to the robot.
+ *
+ * @param prefix The subsystem to update.
+ */
 void ConfigEditorWindow::update_preview_frame(const std::string& prefix) {
     auto subsystem_it = m_subsystems.find(prefix);
     if (subsystem_it == m_subsystems.end()) return;
@@ -277,6 +352,15 @@ void ConfigEditorWindow::on_save_button_clicked() {
     hide();
 }
 
+/**
+ * @brief Serializes the current editor state to the configuration file.
+ *
+ * Performs three specific actions:
+ * 1. Saves the Order: Iterates through local_keys to save the "ORDER_" lines.
+ * 2. Saves Visibility: Dumps the m_item_visibility map.
+ * 3. Updates Global State: Pushes changes to global variables (e.g., lightBackgroundColor)
+ * and triggers a GUI refresh in control.cpp via updateGUI().
+ */
 void ConfigEditorWindow::save_config() {
     std::ofstream outfile("../resources/" + m_file_entry->get_text());
 
@@ -348,6 +432,15 @@ void ConfigEditorWindow::on_reset_button_clicked() {
     sync_ui_lists_with_state();
 }
 
+/**
+ * @brief Handler for the "Active" checkbox toggle in the list.
+ *
+ * Updates the visibility map (m_item_visibility) and immediately
+ * adds or removes the item from the preview frame.
+ *
+ * @param prefix The subsystem identifier.
+ * @param path The TreePath string indicating which row was toggled.
+ */
 void ConfigEditorWindow::on_list_item_toggled(const std::string& prefix, const Glib::ustring& path) {
     auto store = m_list_stores.at(prefix);
     auto iter = store->get_iter(path);
@@ -371,6 +464,15 @@ void ConfigEditorWindow::on_list_item_toggled(const std::string& prefix, const G
     }
 }
 
+/**
+ * @brief Handler for drag-and-drop completion events.
+ *
+ * Triggered when the user finishes dragging a row in the TreeView.
+ * It iterates through the new order of the ListStore and updates the
+ * internal `local_keys` vector to match, ensuring the save order is correct.
+ *
+ * @param prefix The subsystem where the drag event occurred.
+ */
 void ConfigEditorWindow::on_list_drag_end(const std::string& prefix) {
     auto& editor = m_subsystems.at(prefix);
     auto model = m_list_stores.at(prefix);

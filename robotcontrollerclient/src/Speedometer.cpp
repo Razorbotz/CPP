@@ -1,5 +1,28 @@
+/**
+ * @file Speedometer.cpp
+ * @brief Implementation of the custom Speedometer widget using Cairo.
+ *
+ * @details
+ * This file implements a custom GTK widget that draws a circular gauge.
+ * It uses the Cairo 2D graphics library for high-quality, anti-aliased rendering.
+ *
+ * Key Features:
+ * - Dynamic scaling: The gauge resizes itself based on the widget allocation.
+ * - Configurable Range: Min/Max speed and zero-angle are adjustable.
+ * - Warning Zones: Draws red arcs for low/high value warnings (useful for voltage/temp).
+ * - Dual Mode: Can display a raw value (speed) or a custom text label.
+ */
+
 #include "Speedometer.hpp"
 
+/**
+ * @brief Constructs a new Speedometer widget.
+ *
+ * Initializes all gauge parameters (colors, ranges, angles) to their defaults.
+ * Sets a default size request to ensure the widget is visible in the layout.
+ *
+ * @param label The default text label displayed at the bottom of the gauge.
+ */
 Speedometer::Speedometer(const std::string& label)
     : label_(label),
       speed_(0.0),
@@ -23,6 +46,15 @@ Speedometer::Speedometer(const std::string& label)
     set_size_request(250, 250);
 }
 
+/**
+ * @brief Sets the current value to display on the gauge.
+ *
+ * Clamps the input speed to the defined [min, max] range.
+ * If the speed is negative and lower than the minimum, it sets the 'reverse' flag,
+ * which changes the text color to indicate reverse operation.
+ *
+ * @param speed The value to display.
+ */
 void Speedometer::set_speed(double speed) {
     if (speed < min_speed_) {
         set_reverse(true);
@@ -39,12 +71,28 @@ void Speedometer::set_reverse(bool reverse) {
     queue_draw();
 }
 
+/**
+ * @brief Updates the minimum value of the gauge scale.
+ *
+ * If the current speed is now below the new minimum, it is clamped.
+ * Triggers a redraw of the widget.
+ *
+ * @param speed The new minimum value.
+ */
 void Speedometer::set_min_speed(double speed) {
     min_speed_ = speed;
     speed_ = std::clamp(speed_, min_speed_, max_speed_);
     queue_draw();
 }
 
+/**
+ * @brief Updates the maximum value of the gauge scale.
+ *
+ * Ensure max_speed is never less than min_speed.
+ * Triggers a redraw of the widget.
+ *
+ * @param speed The new maximum value.
+ */
 void Speedometer::set_max_speed(double speed) {
     if (speed < min_speed_) {
         max_speed_ = min_speed_;
@@ -55,6 +103,14 @@ void Speedometer::set_max_speed(double speed) {
     queue_draw();
 }
 
+/**
+ * @brief Configures the major tick divisions.
+ *
+ * Defines how many primary segments divide the gauge face.
+ * For example, a value of 10 creates 10 segments (and 11 major tick marks).
+ *
+ * @param divisions The number of major segments.
+ */
 void Speedometer::set_num_major_divisions(int divisions) {
     if (divisions > 0) {
         num_major_divisions_ = divisions;
@@ -81,18 +137,45 @@ void Speedometer::set_numbers_on_ticks(bool numbers_on_ticks) {
     numbers_on_ticks_ = numbers_on_ticks;
 }
 
+/**
+ * @brief Configures the start angle of the gauge.
+ *
+ * @param angle_for_zero The angle in degrees where the minimum value starts.
+ * Standard orientation: 0 is East, 90 is South, 180 is West, 270 is North.
+ * Default is typically around 135 degrees (South-East).
+ */
 void Speedometer::set_angle_for_zero(double angle_for_zero) {
     angle_for_zero_ = angle_for_zero;
 }
 
+/**
+ * @brief Configures the total angular span of the gauge.
+ *
+ * @param angle_for_sweep The total sweep in degrees.
+ * For example, 270 degrees creates a standard "3/4 circle" gauge.
+ */
 void Speedometer::set_angle_for_sweep(double angle_for_sweep) {
     angle_for_sweep_ = angle_for_sweep;
 }
 
+/**
+ * @brief Enables or disables the low-value warning arc.
+ *
+ * When enabled, a red arc is drawn from the minimum value up to the threshold.
+ * This is useful for monitoring battery voltage (e.g., warning below 12V).
+ *
+ * @param warning True to enable the warning arc.
+ */
 void Speedometer::set_low_warning(bool warning) {
     low_warning_ = warning;
 }
 
+/**
+ * @brief Sets the threshold percentage for the low warning.
+ *
+ * @param thresh A value between 0.0 and 1.0 representing the percentage
+ * of the total range covered by the warning arc.
+ */
 void Speedometer::set_low_warning_thresh(double thresh) {
     low_warning_thresh_ = thresh;
 }
@@ -114,6 +197,22 @@ void Speedometer::set_text_label(std::string label) {
 }
 
 
+/**
+ * @brief The main drawing function called by the GTK runtime.
+ *
+ * Performs the following rendering steps using Cairo:
+ * 1. **Setup:** Calculates the center point and radius based on the widget size.
+ * 2. **Bezel & Background:** Draws the outer ring and the dark dial face.
+ * 3. **Warning Zones:** Draws red arcs for low/high warnings if enabled.
+ * 4. **Ticks & Labels:** Iterates through major/minor divisions to draw lines and text.
+ * - Calculates the angle for each tick.
+ * - Transforms polar coordinates (angle, radius) to Cartesian (x, y).
+ * 5. **Needle:** Draws the red indicator needle pointing to the current value.
+ * 6. **Text:** Draws the digital readout (speed or custom label) and the bottom label.
+ *
+ * @param cr The Cairo Context used for drawing operations.
+ * @return true to propagate the event.
+ */
 bool Speedometer::on_draw(const Cairo::RefPtr<Cairo::Context>& cr) {
     Gtk::Allocation alloc = get_allocation();
     const int w = alloc.get_width() - 15;

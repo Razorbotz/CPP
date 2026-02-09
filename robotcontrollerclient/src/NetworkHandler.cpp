@@ -20,6 +20,7 @@ extern double GUI_SCALE;
 // --- Main Robot Server Globals & Implementation ---
 
 int sock = 0;
+int sock2 = 0;
 bool connected = false;
 bool silentRunning = true;
 bool initialized = false;
@@ -28,8 +29,11 @@ bool silentRunning2 = true;
 bool initialized2 = false;
 
 struct sockaddr_in serv_addr;
+struct sockaddr_in serv_addr2;
 socklen_t addr_len = sizeof(serv_addr);
+socklen_t addr_len2 = sizeof(serv_addr2);
 std::chrono::high_resolution_clock::time_point lastHeartbeatTime;
+std::chrono::high_resolution_clock::time_point lastHeartbeatTime2;
 
 struct RemoteRobot {
     std::string tag;
@@ -50,6 +54,15 @@ bool isSilentRunning() { return silentRunning; }
 bool isServerConnected2() { return connected2; }
 bool isServerInitialized2() { return initialized2; }
 bool isSilentRunning2() { return silentRunning2; }
+
+static inline void send_to_both(const uint8_t* buf, size_t len) {
+    if (connected) {
+        sendto(sock, buf, len, 0, (struct sockaddr *)&serv_addr, addr_len);
+    }
+    if (connected2) {
+        sendto(sock2, buf, len, 0, (struct sockaddr *)&serv_addr2, addr_len2);
+    }
+}
 
 void setDisconnectedState(ServerUI& ui) {
     ui.connectButton->set_label("Connect");
@@ -107,9 +120,9 @@ void setDisconnectedState2(ServerUI& ui) {
     ui.ipAddressEntry2->set_editable(true);
     
     if (connected2) {
-        if (sock > 0) {
-            close(sock);
-            sock = 0;
+        if (sock2 > 0) {
+            close(sock2);
+            sock2 = 0;
         }
     }
     connected2 = false;
@@ -146,49 +159,68 @@ std::atomic<ConnStatus> connection_status = ConnStatus::PENDING;
 std::atomic<ConnStatus> connection_status2 = ConnStatus::PENDING;
 
 void connectToServer(ServerUI& ui, bool useOrin, Glib::Dispatcher& dispatcher) {
-    if (connected) return;
+    const bool is_orin = useOrin;
 
-    memset(&serv_addr, 0, sizeof(serv_addr));
-    serv_addr.sin_family = AF_INET;
-    serv_addr.sin_port = htons(PORT);
+    int& sock_ref = is_orin ? sock : sock2;
+    sockaddr_in& addr_ref = is_orin ? serv_addr : serv_addr2;
+    socklen_t& addr_len_ref = is_orin ? addr_len : addr_len2;
+    Gtk::Entry* ip_entry = is_orin ? ui.ipAddressEntry : ui.ipAddressEntry2;
 
-    const char* ip = useOrin ? ORIN_IP : NANO_IP;
-    // Use the IP from the entry box for user flexibility
-    if (inet_pton(AF_INET, ui.ipAddressEntry->get_text().c_str(), &serv_addr.sin_addr) <= 0) {
+    if (!ip_entry) {
+        if (is_orin) connection_status = ConnStatus::FAILURE;
+        else         connection_status2 = ConnStatus::FAILURE;
+        dispatcher.emit();
+        return;
+    }
+
+    memset(&addr_ref, 0, sizeof(addr_ref));
+    addr_ref.sin_family = AF_INET;
+    addr_ref.sin_port = htons(PORT);
+
+    // Use the IP from the appropriate entry box
+    if (inet_pton(AF_INET, ip_entry->get_text().c_str(), &addr_ref.sin_addr) <= 0) {
         std::cerr << "Invalid IP Address" << std::endl;
+        if (is_orin) connection_status = ConnStatus::FAILURE;
+        else         connection_status2 = ConnStatus::FAILURE;
+        dispatcher.emit();
         return;
     }
 
-    if ((sock = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
+    if ((sock_ref = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
         perror("Socket creation error");
+        if (is_orin) connection_status = ConnStatus::FAILURE;
+        else         connection_status2 = ConnStatus::FAILURE;
+        dispatcher.emit();
         return;
     }
-    fcntl(sock, F_SETFL, O_NONBLOCK);
-    
+    fcntl(sock_ref, F_SETFL, O_NONBLOCK);
+
     std::string hello("Hello Robot");
-    sendto(sock, hello.c_str(), hello.length(), 0, (struct sockaddr *)&serv_addr, addr_len);
+    sendto(sock_ref, hello.c_str(), hello.length(), 0, (struct sockaddr *)&addr_ref, addr_len_ref);
 
     auto startTime = std::chrono::steady_clock::now();
     char buffer[1024];
-    while (std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - startTime).count() < 2) {
-        if (recvfrom(sock, buffer, sizeof(buffer), 0, (struct sockaddr *)&serv_addr, &addr_len) > 0) {
+
+    while (std::chrono::duration_cast<std::chrono::seconds>(
+               std::chrono::steady_clock::now() - startTime).count() < 2) {
+
+        if (recvfrom(sock_ref, buffer, sizeof(buffer), 0, (struct sockaddr *)&addr_ref, &addr_len_ref) > 0) {
             std::cout << "Received reply from server. Connection established." << std::endl;
-            if(useOrin)
-                connection_status = ConnStatus::SUCCESS;
-            else
-                connection_status2 = ConnStatus::SUCCESS;
+            if (is_orin) connection_status = ConnStatus::SUCCESS;
+            else         connection_status2 = ConnStatus::SUCCESS;
+
             dispatcher.emit();
-            lastHeartbeatTime = std::chrono::high_resolution_clock::now();
+
+            if (is_orin) lastHeartbeatTime = std::chrono::high_resolution_clock::now();
+            else         lastHeartbeatTime2 = std::chrono::high_resolution_clock::now();
             return;
         }
-        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
 
-    std::cout << "Connection to server failed (timeout)." << std::endl;
-    if(useOrin)
-        connection_status = ConnStatus::FAILURE;
-    else
-        connection_status2 = ConnStatus::FAILURE;
+    std::cerr << "Connection timed out." << std::endl;
+    if (is_orin) connection_status = ConnStatus::FAILURE;
+    else         connection_status2 = ConnStatus::FAILURE;
     dispatcher.emit();
 }
 
@@ -220,29 +252,28 @@ void update_connection_status2(ServerUI& ui) {
 
 
 void connectOrDisconnect(ServerUI& ui, bool useOrin, Glib::Dispatcher& dispatcher) {
-     if (ui.connectButton->get_label() == "Connect") {
-        ui.connectButton->set_sensitive(false);
-        ui.connectionStatusLabel->set_text("Connecting...");
-        
-        std::thread conn_thread(connectToServer, std::ref(ui), useOrin, std::ref(dispatcher));
+    const bool is_orin = useOrin;
+
+    Gtk::Button* btn = is_orin ? ui.connectButton : ui.connectButton2;
+    Gtk::Label*  lbl = is_orin ? ui.connectionStatusLabel : ui.connectionStatusLabel2;
+
+    if (!btn || !lbl) return;
+
+    if (btn->get_label() == "Connect") {
+        btn->set_sensitive(false);
+        lbl->set_text("Connecting...");
+
+        std::thread conn_thread(connectToServer, std::ref(ui), is_orin, std::ref(dispatcher));
         conn_thread.detach();
     }
     else {
-        disconnectFromServer(ui);
+        if (is_orin) disconnectFromServer(ui);
+        else        disconnectFromServer2(ui);
     }
 }
 
 void connectOrDisconnect2(ServerUI& ui, bool useOrin, Glib::Dispatcher& dispatcher) {
-     if (ui.connectButton2->get_label() == "Connect") {
-        ui.connectButton2->set_sensitive(false);
-        ui.connectionStatusLabel2->set_text("Connecting...");
-        
-        std::thread conn_thread(connectToServer, std::ref(ui), useOrin, std::ref(dispatcher));
-        conn_thread.detach();
-    }
-    else {
-        disconnectFromServer2(ui);
-    }
+    connectOrDisconnect(ui, useOrin, dispatcher);
 }
 
 namespace {
@@ -272,10 +303,12 @@ namespace {
     }
 }
 
+
 void silentRun(ServerUI& ui) {
-    if (!connected) return;
-    
+    if (!connected || !ui.silentRunButton) return;
+
     std::string currentButtonState = ui.silentRunButton->get_label();
+
     uint8_t message[3];
     message[0] = 3;  // messageSize
     message[1] = 7;  // command (silence)
@@ -285,7 +318,8 @@ void silentRun(ServerUI& ui) {
         sendto(sock, message, sizeof(message), 0, (struct sockaddr *)&serv_addr, addr_len);
         ui.silentRunButton->set_label("Not Silent Running");
         silentRunning = false;
-    } else {
+    }
+    else {
         message[2] = 1; // Silent
         sendto(sock, message, sizeof(message), 0, (struct sockaddr *)&serv_addr, addr_len);
         ui.silentRunButton->set_label("Silent Running");
@@ -294,23 +328,25 @@ void silentRun(ServerUI& ui) {
 }
 
 void silentRun2(ServerUI& ui) {
-    if (!connected) return;
-    
+    if (!connected2 || !ui.silentRunButton2) return;
+
     std::string currentButtonState = ui.silentRunButton2->get_label();
+
     uint8_t message[3];
     message[0] = 3;  // messageSize
     message[1] = 7;  // command (silence)
 
     if (currentButtonState == "Silent Running") {
         message[2] = 0; // Not silent
-        sendto(sock, message, sizeof(message), 0, (struct sockaddr *)&serv_addr, addr_len);
+        sendto(sock2, message, sizeof(message), 0, (struct sockaddr *)&serv_addr2, addr_len2);
         ui.silentRunButton2->set_label("Not Silent Running");
-        silentRunning = false;
-    } else {
+        silentRunning2 = false;
+    }
+    else {
         message[2] = 1; // Silent
-        sendto(sock, message, sizeof(message), 0, (struct sockaddr *)&serv_addr, addr_len);
+        sendto(sock2, message, sizeof(message), 0, (struct sockaddr *)&serv_addr2, addr_len2);
         ui.silentRunButton2->set_label("Silent Running");
-        silentRunning = true;
+        silentRunning2 = true;
     }
 }
 
@@ -329,7 +365,7 @@ static void shutdownRobot() {
     uint8_t message[2];
     message[0] = 2; // messageSize
     message[1] = 8; // command (shutdown)
-    sendto(sock, message, sizeof(message), 0, (struct sockaddr *)&serv_addr, addr_len);
+    send_to_both(message, sizeof(message));
 }
 
 void shutdownDialog(Gtk::Window* parentWindow) {
@@ -780,10 +816,12 @@ void videoMain(cv::Mat& latestFrame, std::mutex& frameMutex, std::atomic<bool>& 
         }
 
         ssize_t bytesRead = recvfrom(videoSock, frameDataBuffer.data(), frameDataBuffer.size(), 0, NULL, NULL);
+        if (bytesRead > 0) {
+            // Any packet (including small heartbeat packets) counts as liveness.
+            last_packet_time = std::chrono::steady_clock::now();
+        }
         if (bytesRead < (ssize_t)sizeof(FrameChunkHeader))
             continue;
-
-        last_packet_time = std::chrono::steady_clock::now();
 
         FrameChunkHeader hdr;
         memcpy(&hdr, frameDataBuffer.data(), sizeof(hdr));
@@ -888,7 +926,7 @@ void insert_float(float value, uint8_t* array) {
 }
 
 void sendJoystickAxis(uint8_t which, uint8_t axis, float value) {
-    if (!connected) return;
+   if (!connected && !connected2) return;
     uint8_t command = 1;
     int length = 8;
     uint8_t message[length];
@@ -897,34 +935,54 @@ void sendJoystickAxis(uint8_t which, uint8_t axis, float value) {
     message[2] = which;
     message[3] = axis;
     insert_float(value, &message[4]);
-    sendto(sock, message, length, 0, (struct sockaddr *)&serv_addr, addr_len);
+    send_to_both(message, length);
 }
 
 int receiveRobotData(std::vector<uint8_t>& buffer) {
-    if (!connected && !initialized) return -1;
-    char recv_buffer[16384] = {0};
-    int bytesRead = recvfrom(sock, recv_buffer, 16384, 0, (struct sockaddr *)&serv_addr, &addr_len);
-    
-    if (bytesRead > 0) {
-        buffer.assign(recv_buffer, recv_buffer + bytesRead);
+    if (!connected && !connected2) return -1;
+
+    char recv_buffer[16384];
+
+    auto try_recv = [&](int fd, int& outBytes) -> bool {
+        sockaddr_in from{};
+        socklen_t from_len = sizeof(from);
+
+        int n = recvfrom(fd, recv_buffer, sizeof(recv_buffer), 0,
+                         (struct sockaddr*)&from, &from_len);
+        if (n > 0) {
+            buffer.assign(recv_buffer, recv_buffer + n);
+            outBytes = n;
+            return true;
+        }
+        return false;
+    };
+
+    int bytesRead = -1;
+
+    if (connected && sock > 0) {
+        if (try_recv(sock, bytesRead)) return bytesRead;
     }
-    
-    return bytesRead;
+    if (connected2 && sock2 > 0) {
+        if (try_recv(sock2, bytesRead)) return bytesRead;
+    }
+
+    return -1;
 }
 
+
 void sendKeyboardEvent(uint32_t keyval, uint8_t state) {
-    if (!connected) return;
+    if (!connected && !connected2) return;
     uint8_t message[5];
     message[0] = 5;       // messageSize
     message[1] = 2;       // command (keyboard)
     message[2] = (uint8_t)((keyval >> 8) & 0xff);
     message[3] = (uint8_t)((keyval >> 0) & 0xff);
     message[4] = state;   // 1 for press, 0 for release
-    sendto(sock, message, sizeof(message), 0, (struct sockaddr *)&serv_addr, addr_len);
+    send_to_both(message, sizeof(message));
 }
 
 void sendJoystickButton(uint8_t which, uint8_t button, uint8_t state) {
-    if (!connected) return;
+    if (!connected && !connected2) return;
     uint8_t command = 5;
     int length = 5;
     uint8_t message[length];
@@ -933,11 +991,11 @@ void sendJoystickButton(uint8_t which, uint8_t button, uint8_t state) {
     message[2] = which;
     message[3] = button;
     message[4] = state;
-    sendto(sock, message, length, 0, (struct sockaddr *)&serv_addr, addr_len);
+    send_to_both(message, length);
 }
 
 void sendJoystickHat(uint8_t which, uint8_t hat, uint8_t value) {
-    if (!connected) return;
+    if (!connected && !connected2) return;
     uint8_t command = 6;
     int length = 5;
     uint8_t message[length];
@@ -946,17 +1004,17 @@ void sendJoystickHat(uint8_t which, uint8_t hat, uint8_t value) {
     message[2] = which;
     message[3] = hat;
     message[4] = value;
-    sendto(sock, message, length, 0, (struct sockaddr *)&serv_addr, addr_len);
+    send_to_both(message, length);
 }
 
 void sendHeartbeat() {
-    if (!connected) return;
+    if (!connected && !connected2) return;
     
     lastHeartbeatTime = std::chrono::high_resolution_clock::now();
     uint8_t message[2];
     message[0] = 2; // length
     message[1] = 0; // command (heartbeat)
-    sendto(sock, message, sizeof(message), 0, (struct sockaddr *)&serv_addr, addr_len);
+    send_to_both(message, sizeof(message));
 }
 
 void sendVideoHeartbeat() {

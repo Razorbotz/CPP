@@ -2425,14 +2425,21 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
         topLevelBox->add(*sensorBox);
     }
 
-    if(ipAddressEntry) ipAddressEntry->set_text(useOrin ? ORIN_IP : NANO_IP);
-    if(videoIPAddressEntry) videoIPAddressEntry->set_text(useOrin ? ORIN_IP : NANO_IP);
+    if(ipAddressEntry) ipAddressEntry->set_text(ORIN_IP);
+    if(ipAddressEntry2) ipAddressEntry2->set_text(NANO_IP);
+    if(videoIPAddressEntry) videoIPAddressEntry->set_text(ORIN_IP);
 
     if(connectionStatusLabel) {
         Gdk::RGBA red;
         red.set_rgba(1.0, 0, 0, 1.0);
         connectionStatusLabel->override_background_color(red);
         connectionStatusLabel->set_text("Not Connected");
+    }
+    if(connectionStatusLabel2) {
+        Gdk::RGBA red;
+        red.set_rgba(1.0, 0, 0, 1.0);
+        connectionStatusLabel2->override_background_color(red);
+        connectionStatusLabel2->set_text("Not Connected");
     }
     if(videoConnectionStatusLabel) {
         Gdk::RGBA red;
@@ -3137,7 +3144,7 @@ void processArguments(int argc, char** argv){
             else if(!strcmp("--wsl", argv[i])){
                 wsl = true;
                 ORIN_IP = "127.0.0.1";
-                NANO_IP = "127.0.0.1";
+                NANO_IP = "127.0.0.2";
                 
                 std::cout << "WSL Mode: defaulting to Localhost (" << ORIN_IP << ")" << std::endl;
             }
@@ -3382,7 +3389,7 @@ int main(int argc, char** argv) {
         }
 
         if(!testInput && !isServerInitialized() && !isServerInitialized2() && !isVideoStreamActive()) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(100)); // Don't busy-wait
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
             continue;
         }
 
@@ -3427,7 +3434,7 @@ int main(int argc, char** argv) {
         now = std::chrono::high_resolution_clock::now();
         time_span = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastHeartbeatTime);
         deltaTime = time_span.count();
-        if(deltaTime > 1.0 && isServerConnected()){
+        if(deltaTime > 1.0 && (isServerConnected() || isServerConnected2())){
             lastHeartbeatTime = now;
             sendHeartbeat();
         }

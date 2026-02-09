@@ -96,4 +96,11 @@ bool isSilentRunning2();
 bool isVideoStreamActive();
 bool isVideoConnected();
 
+
+extern std::atomic<std::chrono::high_resolution_clock::time_point> last_rx_orin_ms;
+extern std::atomic<std::chrono::high_resolution_clock::time_point> last_rx_nano_ms;
+
+std::chrono::high_resolution_clock::time_point lastPacketOrinMs();
+std::chrono::high_resolution_clock::time_point lastPacketNanoMs();
+
 #endif

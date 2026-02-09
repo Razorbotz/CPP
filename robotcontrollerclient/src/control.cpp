@@ -3363,7 +3363,8 @@ int main(int argc, char** argv) {
 
     std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
     std::chrono::high_resolution_clock::time_point lastTransmitTime = std::chrono::high_resolution_clock::now();
-    std::chrono::high_resolution_clock::time_point lastReceiveTime = std::chrono::high_resolution_clock::now();
+    std::chrono::high_resolution_clock::time_point lastReceiveOrin = std::chrono::high_resolution_clock::now();
+    std::chrono::high_resolution_clock::time_point lastReceiveNano = std::chrono::high_resolution_clock::now();
     std::chrono::high_resolution_clock::time_point lastHeartbeatTime = std::chrono::high_resolution_clock::now();
     std::chrono::high_resolution_clock::time_point lastVideoHeartbeatTime = std::chrono::high_resolution_clock::now();
     now = std::chrono::high_resolution_clock::now();
@@ -3396,23 +3397,39 @@ int main(int argc, char** argv) {
         std::vector<uint8_t> data_buffer;
         bytesRead = receiveRobotData(data_buffer);
         if(isSilentRunning())
-            lastReceiveTime = std::chrono::high_resolution_clock::now();
+            lastReceiveOrin = std::chrono::high_resolution_clock::now();
+        else{
+            lastReceiveOrin = lastPacketOrinMs();
+        }
+        if(isSilentRunning2())
+            lastReceiveNano = std::chrono::high_resolution_clock::now();
+        else{
+            lastReceiveNano = lastPacketNanoMs();
+        }
         if (bytesRead > 0) {
             std::vector<uint8_t> processed_buffer;
+            now = std::chrono::high_resolution_clock::now();
             if (process_payload(data_buffer, processed_buffer)) { 
                 for(uint8_t byte : processed_buffer) {
                     messageBytesList.push_back(byte);
                 }
-                lastReceiveTime = std::chrono::high_resolution_clock::now();
             }
         }
-        else if (bytesRead < 0 && isServerConnected()) {
-            now = std::chrono::high_resolution_clock::now();
-            time_span = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastReceiveTime);
-            deltaTime = time_span.count();
-            if(deltaTime > 5.0){
-                std::cout << "Connection timed out." << std::endl;
+        now = std::chrono::high_resolution_clock::now();
+        if (isServerConnected()) {
+            double dt = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastReceiveOrin).count();
+            if (dt > 5.0) {
+                std::cout << "Orin connection timed out.\n";
                 setDisconnectedState(server_ui);
+                resetUIOnDisconnect();
+            }
+        }
+
+        if (isServerConnected2()) {
+            double dt = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastReceiveNano).count();
+            if (dt > 5.0) {
+                std::cout << "Nano connection timed out.\n";
+                setDisconnectedState2(server_ui);
                 resetUIOnDisconnect();
             }
         }

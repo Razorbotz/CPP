@@ -322,6 +322,7 @@ class ImageOverlay : public Gtk::DrawingArea {
         if(mapUsed == "NASA"){
             height = ARENA_HEIGHT_P;
         }
+        // use UCF for the top half, UCF_flip for the bottom half
         else if(mapUsed == "UCF" || mapUsed == "UCF_flip"){
             height = UCF_HEIGHT_P;
         }
@@ -369,7 +370,7 @@ class ImageOverlay : public Gtk::DrawingArea {
 
         cr->rotate(rotation_angle);
 
-        double cam_pixel_x = overlay->get_width() * 0.4;
+        double cam_pixel_x = overlay->get_width() * 0.73;
         double cam_pixel_y = overlay->get_height() * 0.5;
 
         cr->translate(-cam_pixel_x, -cam_pixel_y);

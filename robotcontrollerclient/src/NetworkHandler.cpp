@@ -52,6 +52,11 @@ static inline void close_udp_socket(int& fd) {
 std::atomic<std::chrono::high_resolution_clock::time_point> last_rx_orin_ms{};
 std::atomic<std::chrono::high_resolution_clock::time_point> last_rx_nano_ms{};
 
+std::atomic<bool> orin_ip_known{false};
+std::atomic<bool> nano_ip_known{false};
+in_addr orin_ip{};
+in_addr nano_ip{};
+
 std::chrono::high_resolution_clock::time_point lastPacketOrinMs() {
     return last_rx_orin_ms.load(std::memory_order_relaxed);
 }
@@ -187,59 +192,87 @@ void connectToServer(ServerUI& ui, bool useOrin, Glib::Dispatcher& dispatcher) {
     socklen_t& addr_len_ref = is_orin ? addr_len : addr_len2;
     Gtk::Entry* ip_entry = is_orin ? ui.ipAddressEntry : ui.ipAddressEntry2;
 
+    auto fail = [&]() {
+        close_udp_socket(sock_ref);
+        if (is_orin) connection_status = ConnStatus::FAILURE;
+        else         connection_status2 = ConnStatus::FAILURE;
+        dispatcher.emit();
+    };
+
     if (!ip_entry) {
-        if (is_orin) connection_status = ConnStatus::FAILURE;
-        else         connection_status2 = ConnStatus::FAILURE;
-        dispatcher.emit();
+        fail();
         return;
     }
 
-    memset(&addr_ref, 0, sizeof(addr_ref));
+    std::memset(&addr_ref, 0, sizeof(addr_ref));
     addr_ref.sin_family = AF_INET;
-    addr_ref.sin_port = htons(PORT);
+    addr_ref.sin_port   = htons(PORT);
 
-    // Use the IP from the appropriate entry box
-    if (inet_pton(AF_INET, ip_entry->get_text().c_str(), &addr_ref.sin_addr) <= 0) {
-        std::cerr << "Invalid IP Address" << std::endl;
-        if (is_orin) connection_status = ConnStatus::FAILURE;
-        else         connection_status2 = ConnStatus::FAILURE;
-        dispatcher.emit();
+    const std::string ip_str = ip_entry->get_text();
+    if (::inet_pton(AF_INET, ip_str.c_str(), &addr_ref.sin_addr) != 1) {
+        std::cerr << "Invalid IP Address: " << ip_str << "\n";
+        fail();
         return;
     }
+
+    if (is_orin) {
+        orin_ip = addr_ref.sin_addr;
+        orin_ip_known.store(true, std::memory_order_relaxed);
+    }
+    else {
+        nano_ip = addr_ref.sin_addr;
+        nano_ip_known.store(true, std::memory_order_relaxed);
+    }
+
+    addr_len_ref = sizeof(addr_ref);
 
     close_udp_socket(sock_ref);
 
-    if ((sock_ref = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
+    sock_ref = ::socket(AF_INET, SOCK_DGRAM, 0);
+    if (sock_ref < 0) {
         perror("Socket creation error");
-        if (is_orin) connection_status = ConnStatus::FAILURE;
-        else         connection_status2 = ConnStatus::FAILURE;
-        dispatcher.emit();
+        fail();
         return;
     }
 
     set_nonblocking(sock_ref);
 
-    std::string hello("Hello Robot");
-    sendto(sock_ref, hello.c_str(), hello.length(), 0, (struct sockaddr *)&addr_ref, addr_len_ref);
+    // Send hello to the destination
+    const char* hello = "Hello Robot";
+    (void)::sendto(sock_ref, hello, std::strlen(hello), 0,
+                   (struct sockaddr*)&addr_ref, addr_len_ref);
 
-    auto startTime = std::chrono::steady_clock::now();
+    // --- Wait up to 2 seconds for a reply ---
+    const auto start = std::chrono::high_resolution_clock::now();
     char buffer[1024];
 
-    while (std::chrono::duration_cast<std::chrono::seconds>(
-               std::chrono::steady_clock::now() - startTime).count() < 2) {
+    while (std::chrono::high_resolution_clock::now() - start < std::chrono::seconds(2)) {
+        sockaddr_in from{};
+        socklen_t from_len = sizeof(from);
 
-        int n = recvfrom(sock_ref, buffer, sizeof(buffer), 0, (struct sockaddr *)&addr_ref, &addr_len_ref);
+        int n = ::recvfrom(sock_ref, buffer, sizeof(buffer), 0,
+                           (struct sockaddr*)&from, &from_len);
+
         if (n > 0) {
-            std::cout << "Received reply from server. Connection established." << std::endl;
+            if (from.sin_addr.s_addr != addr_ref.sin_addr.s_addr) {
+                char from_ip[INET_ADDRSTRLEN]{};
+                ::inet_ntop(AF_INET, &from.sin_addr, from_ip, sizeof(from_ip));
+                std::cerr << "Warning: reply from unexpected IP: " << from_ip << "\n";
+            }
+
+            std::cout << "Received reply from server. Connection established.\n";
+
+            const auto now = std::chrono::high_resolution_clock::now();
+
             if (is_orin) {
                 connection_status = ConnStatus::SUCCESS;
-                lastHeartbeatTime = std::chrono::high_resolution_clock::now();
-                last_rx_orin_ms =  std::chrono::high_resolution_clock::now();
+                lastHeartbeatTime = now;                    // change type if needed
+                last_rx_orin_ms    = now;                   // ideally steady_clock too
             }
             else {
                 connection_status2 = ConnStatus::SUCCESS;
-                lastHeartbeatTime2 = std::chrono::high_resolution_clock::now();
-                last_rx_nano_ms =  std::chrono::high_resolution_clock::now();
+                lastHeartbeatTime2 = now;
+                last_rx_nano_ms    = now;
             }
 
             dispatcher.emit();
@@ -247,21 +280,15 @@ void connectToServer(ServerUI& ui, bool useOrin, Glib::Dispatcher& dispatcher) {
         }
 
         if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
-            std::cerr << "recvfrom(connect) error: " << strerror(errno) << "\n";
+            std::cerr << "recvfrom(connect) error: " << std::strerror(errno) << "\n";
             break;
         }
 
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
 
-    std::cerr << "Connection timed out." << std::endl;
-
-    close_udp_socket(sock_ref); // prevent fd leak on failure
-
-    if (is_orin) connection_status = ConnStatus::FAILURE;
-    else         connection_status2 = ConnStatus::FAILURE;
-
-    dispatcher.emit();
+    std::cerr << "Connection timed out.\n";
+    fail();
 }
 
 void update_connection_status(ServerUI& ui) {
@@ -521,7 +548,7 @@ bool videoConnected = false;
 bool isStreamingActive = false;
 struct sockaddr_in video_serv_addr;
 socklen_t video_addr_len = sizeof(video_serv_addr);
-std::chrono::steady_clock::time_point last_packet_time;
+std::chrono::high_resolution_clock::time_point last_packet_time;
 
 std::vector<RemoteRobot> videoRobotList;
 std::mutex videoRobotListMutex;
@@ -592,11 +619,11 @@ static void connectToVideoServer(VideoServerUI& ui, Glib::Dispatcher& dispatcher
     std::string hello("Hello Robot");
     sendto(videoSock, hello.c_str(), hello.length(), 0, (struct sockaddr *)&video_serv_addr, video_addr_len);
 
-    auto startTime = std::chrono::steady_clock::now();
+    auto startTime = std::chrono::high_resolution_clock::now();
     char buffer[1024];
 
     while (std::chrono::duration_cast<std::chrono::seconds>(
-               std::chrono::steady_clock::now() - startTime).count() < 4) {
+               std::chrono::high_resolution_clock::now() - startTime).count() < 4) {
 
         socklen_t from_len = video_addr_len;
         ssize_t n = recvfrom(videoSock, buffer, sizeof(buffer), 0, (struct sockaddr *)&video_serv_addr, &from_len);
@@ -667,7 +694,7 @@ void videoStream(VideoServerUI& ui) {
         message[2] = 1;
         ui.streamButton->set_label("Video Streaming");
         isStreamingActive = true;
-        last_packet_time = std::chrono::steady_clock::now();
+        last_packet_time = std::chrono::high_resolution_clock::now();
     }
     else {
         message[2] = 0;
@@ -842,7 +869,7 @@ void videoMain(cv::Mat& latestFrame, std::mutex& frameMutex, std::atomic<bool>& 
             continue;
         }
 
-        auto now = std::chrono::steady_clock::now();
+        auto now = std::chrono::high_resolution_clock::now();
         if (std::chrono::duration_cast<std::chrono::seconds>(now - last_packet_time).count() >= 3) {
             std::cerr << "Video stream timed out." << std::endl;
             isStreamingActive = false;
@@ -853,7 +880,7 @@ void videoMain(cv::Mat& latestFrame, std::mutex& frameMutex, std::atomic<bool>& 
 
         ssize_t bytesRead = recvfrom(videoSock, frameDataBuffer.data(), frameDataBuffer.size(), 0, NULL, NULL);
         if (bytesRead > 0) {
-            last_packet_time = std::chrono::steady_clock::now();
+            last_packet_time = std::chrono::high_resolution_clock::now();
         }
         if (bytesRead < (ssize_t)sizeof(FrameChunkHeader))
             continue;
@@ -971,57 +998,47 @@ int receiveRobotData(std::vector<uint8_t>& buffer) {
     struct pollfd fds[2];
     int nfds = 0;
 
-    if (connected && sock > 0) {
-        fds[nfds].fd = sock;
+    auto add_fd = [&](int fd){
+        fds[nfds].fd = fd;
         fds[nfds].events = POLLIN;
         fds[nfds].revents = 0;
         nfds++;
-    }
-    if (connected2 && sock2 > 0) {
-        fds[nfds].fd = sock2;
-        fds[nfds].events = POLLIN;
-        fds[nfds].revents = 0;
-        nfds++;
-    }
+    };
 
+    if (connected && sock > 0)  add_fd(sock);
+    if (connected2 && sock2 > 0) add_fd(sock2);
     if (nfds == 0) return -1;
 
-    int pr = ::poll(fds, nfds, 0);
-    if (pr <= 0) {
-        return 0;
-    }
+    int pr = ::poll(fds, nfds, 1);
+    if (pr <= 0) return 0;
 
-    auto recv_one = [&](int fd) -> int {
+    bool got_any = false;
+    int got_n = 0;
+
+    auto recv_and_stamp = [&](int fd) {
         sockaddr_in from{};
         socklen_t from_len = sizeof(from);
 
         int n = ::recvfrom(fd, recv_buffer, sizeof(recv_buffer), 0,
                            (struct sockaddr*)&from, &from_len);
-        if (n > 0) {
-            buffer.assign(recv_buffer, recv_buffer + n);
-            return n;
-        }
-        if (n < 0) {
-            if (errno == EAGAIN || errno == EWOULDBLOCK) return 0;
-            std::cerr << "recvfrom(" << fd << ") error: " << std::strerror(errno) << "\n";
-        }
-        return 0;
+        if (n <= 0) return;
+
+        std::chrono::high_resolution_clock::time_point t = std::chrono::high_resolution_clock::now();
+        if (from.sin_addr.s_addr == orin_ip.s_addr) last_rx_orin_ms.store(t, std::memory_order_relaxed);
+        else if (from.sin_addr.s_addr == nano_ip.s_addr) last_rx_nano_ms.store(t, std::memory_order_relaxed);
+
+        buffer.assign(recv_buffer, recv_buffer + n);
+        got_any = true;
+        got_n = n;
     };
 
     for (int i = 0; i < nfds; ++i) {
-        if (fds[i].fd == sock && (fds[i].revents & POLLIN)) {
-            int n = recv_one(sock);
-            if (n > 0) { last_rx_orin_ms =  std::chrono::high_resolution_clock::now();; return n; }
-        }
-    }
-    for (int i = 0; i < nfds; ++i) {
-        if (fds[i].fd == sock2 && (fds[i].revents & POLLIN)) {
-            int n = recv_one(sock2);
-            if (n > 0) { last_rx_nano_ms =  std::chrono::high_resolution_clock::now();; return n; }
+        if (fds[i].revents & POLLIN) {
+            recv_and_stamp(fds[i].fd);
         }
     }
 
-    return 0;
+    return got_any ? got_n : 0;
 }
 
 void sendKeyboardEvent(uint32_t keyval, uint8_t state) {

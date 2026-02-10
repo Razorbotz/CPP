@@ -3421,7 +3421,6 @@ int main(int argc, char** argv) {
             if (dt > 5.0) {
                 std::cout << "Orin connection timed out.\n";
                 setDisconnectedState(server_ui);
-                resetUIOnDisconnect();
             }
         }
 
@@ -3430,7 +3429,6 @@ int main(int argc, char** argv) {
             if (dt > 5.0) {
                 std::cout << "Nano connection timed out.\n";
                 setDisconnectedState2(server_ui);
-                resetUIOnDisconnect();
             }
         }
         

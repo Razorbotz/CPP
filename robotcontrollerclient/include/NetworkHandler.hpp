@@ -5,6 +5,7 @@
 #include <vector>
 #include <mutex>
 #include <atomic>
+#include <netinet/in.h>
 #include <opencv2/opencv.hpp>
 #include <sys/socket.h>
 
@@ -103,4 +104,8 @@ extern std::atomic<std::chrono::high_resolution_clock::time_point> last_rx_nano_
 std::chrono::high_resolution_clock::time_point lastPacketOrinMs();
 std::chrono::high_resolution_clock::time_point lastPacketNanoMs();
 
+extern std::atomic<bool> orin_ip_known;
+extern std::atomic<bool> nano_ip_known;
+extern in_addr orin_ip;
+extern in_addr nano_ip;
 #endif

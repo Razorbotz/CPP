@@ -1211,7 +1211,7 @@ void updateBackgroundColor(Gtk::Box* box, bool synced){
     }
 }
 
-const std::set<std::string> talonLabels = {"Talon 1", "Talon 3"};
+const std::set<std::string> talonLabels = {"Talon 1", "Talon 2", "Talon 3", "Talon 4"};
 const std::set<std::string> falconLabels = {"Falcon 1", "Falcon 2", "Falcon 3", "Falcon 4"};
 
 
@@ -1614,9 +1614,17 @@ void handleTalonElements(const std::string& label, const std::vector<Element>& e
                 left_arm_pos = pos;
                 left_arm->set_height_ratio((920 - pos) / 920.0);
             }
+            if(label == "Talon 2") {
+                right_arm_pos = pos;
+                right_arm->set_height_ratio((920 - pos) / 920.0);
+            }
             else if (label == "Talon 3") {
                 left_bucket_pos = pos;
                 left_bucket->set_height_ratio((700 - pos) / 700.0);
+            }
+            else if (label == "Talon 4") {
+                right_bucket_pos = pos;
+                right_bucket->set_height_ratio((700 - pos) / 700.0);
             }
 
             bool synced = std::abs(left_arm_pos - right_arm_pos) > 50;
@@ -1807,7 +1815,7 @@ void updateGUI(BinaryMessage& message) {
     Gtk::EventBox* frameBox = Gtk::manage(new Gtk::EventBox());
     frameBox->add(*infoFrame);
     frameBox->show_all();
-    if(label == "Talon 1" || label == "Talon 3" ||
+    if(label == "Talon 1" || label == "Talon 2" || label == "Talon 3" || label == "Talon 4" || 
        label == "Falcon 1" || label == "Falcon 2" || label == "Falcon 3" || label == "Falcon 4"){
         frameBox->signal_button_press_event().connect(
             [label](GdkEventButton* event) -> bool {

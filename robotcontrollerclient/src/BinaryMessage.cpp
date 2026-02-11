@@ -1050,77 +1050,80 @@ uint64_t BinaryMessage::decodeSizeBytes(std::list<uint8_t>::iterator& currentByt
 }
 
 //Lookup table
-static const char* FieldNames[256] =
-{
-    [DeviceID] = "Device ID",
-    [BusVoltage] = "Bus Voltage",
-    [OutputCurrent] = "Output Current",
-    [OutputPercent] = "Output Percent",
-    [Temperature] = "Temperature",
-    [SensorPosition] = "Sensor Position",
-    [SensorVelocity] = "Sensor Velocity",
-    [MaxCurrent] = "Max Current",
-    [TempDisable] = "Temp Disable",
-    [Error] = "Error",
-    [Voltage] = "Voltage",
-    [MotorNumber] = "Motor Number",
-    [Speed] = "Speed",
-    [Potentiometer] = "Potentiometer",
-    [TimeWithoutChange] = "Time Without Change",
-    [Max] = "Max",
-    [Min] = "Min",
-    [AtMin] = "At Min",
-    [AtMax] = "At Max",
-    [Distance] = "Distance",
-    [Sensorless] = "Sensorless",
-    [RobotState] = "Robot State",
-    [ExcavationState] = "Excavation State",
-    [ErrorState] = "Error State",
-    [DiagnosticsState] = "Diagnostics State",
-    [TiltState] = "Tilt State",
-    [DumpState] = "Dump State",
-    [LevelBucket] = "Level Bucket",
-    [LevelArms] = "Level Arms",
-    [DestX] = "Dest X",
-    [DestZ] = "Dest Z",
-    [X] = "X",
-    [Y] = "Y",
-    [Z] = "Z",
-    [Roll] = "roll",
-    [Pitch] = "pitch",
-    [Yaw] = "yaw",
-    [Aruco] = "aruco",
-    [RSSI] = "RSSI",
-    [WiFi] = "Wi-Fi",
-    [CANBus] = "CAN Bus",
-    [UsingCan1] = "Using Can1",
-    [RXPackets] = "RX Packets",
-    [TXPackets] = "TX Packets",
-    [CANBus2] = "CAN Bus2",
-    [RX2Packets] = "RX2 Packets",
-    [TX2Packets] = "TX2 Packets",
-    [FirstMotor] = "First Motor",
-    [SecondMotor] = "Second Motor",
-    [NumBreaks] = "Num Breaks",
-    [F1Vel] = "F1 Vel",
-    [F1RPM] = "F1 RPM",
-    [F1Speed] = "F1 Speed",
-    [F2Vel] = "F2 Vel",
-    [F2RPM] = "F2 RPM",
-    [F2Speed] = "F2 Speed",
-    [F3Vel] = "F3 Vel",
-    [F3RPM] = "F3 RPM",
-    [F3Speed] = "F3 Speed",
-    [F4Vel] = "F4 Vel",
-    [F4RPM] = "F4 RPM",
-    [F4Speed] = "F4 Speed",
-    [Temp] = "Temp"
+static const char* FieldNames[64] = {
+    "",                 // 0
+    "Device ID",        // 1
+    "Bus Voltage",      // 2
+    "Output Current",   // 3
+    "Output Percent",   // 4
+    "Temperature",      // 5
+    "Sensor Position",  // 6
+    "Sensor Velocity",  // 7
+    "Max Current",      // 8
+    "Temp Disable",     // 9
+    "Error",            // 10
+    "Voltage",          // 11
+    "Motor Number",     // 12
+    "Speed",            // 13
+    "Potentiometer",    // 14
+    "Time Without Change", // 15
+    "Max",              // 16
+    "Min",              // 17
+    "At Min",           // 18
+    "At Max",           // 19
+    "Distance",         // 20
+    "Sensorless",       // 21
+    "Robot State",      // 22
+    "Excavation State", // 23
+    "Error State",      // 24
+    "Diagnostics State",// 25
+    "Tilt State",       // 26
+    "Dump State",       // 27
+    "Level Bucket",     // 28
+    "Level Arms",       // 29
+    "Dest X",           // 30
+    "Dest Z",           // 31
+    "X",                // 32
+    "Y",                // 33
+    "Z",                // 34
+    "roll",             // 35
+    "pitch",            // 36
+    "yaw",              // 37
+    "aruco",            // 38
+    "RSSI",             // 39
+    "Wi-Fi",            // 40
+    "CAN Bus",          // 41
+    "Using Can1",       // 42
+    "RX Packets",       // 43
+    "TX Packets",       // 44
+    "CAN Bus2",         // 45
+    "RX2 Packets",      // 46
+    "TX2 Packets",      // 47
+    "First Motor",      // 48
+    "Second Motor",     // 49
+    "Num Breaks",       // 50
+    "F1 Vel",           // 51
+    "F1 RPM",           // 52
+    "F1 Speed",         // 53
+    "F2 Vel",           // 54
+    "F2 RPM",           // 55
+    "F2 Speed",         // 56
+    "F3 Vel",           // 57
+    "F3 RPM",           // 58
+    "F3 Speed",         // 59
+    "F4 Vel",           // 60
+    "F4 RPM",           // 61
+    "F4 Speed",         // 62
+    "Temp"              // 63
 };
 
 std::string BinaryMessage::decodeFieldValue(Field_Strings field)
 {
-    return FieldNames[static_cast<uint8_t>(field)];
+    const uint8_t idx = static_cast<uint8_t>(field);
+    if (idx < 64) return FieldNames[idx];
+    return "Unknown";
 }
+
 
 
 void BinaryMessage::addElementBoolean(std::string label, bool boolean){

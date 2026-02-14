@@ -1609,7 +1609,7 @@ void handleDrivetrainElements(const std::vector<Element>& elements) {
 void handleTalonElements(const std::string& label, const std::vector<Element>& elements) {
     for (const auto& element : elements) {
         if (element.label == "Sensor Position") {
-            int pos = element.data.front().uint16;
+            int pos = element.data.front().float32;
             if (label == "Talon 1") {
                 left_arm_pos = pos;
                 left_arm->set_height_ratio((920 - pos) / 920.0);
@@ -1627,12 +1627,14 @@ void handleTalonElements(const std::string& label, const std::vector<Element>& e
                 right_bucket->set_height_ratio((700 - pos) / 700.0);
             }
 
-            bool synced = std::abs(left_arm_pos - right_arm_pos) > 50;
-            if (label == "Talon 1" || label == "Talon 2")
+            if (label == "Talon 1" || label == "Talon 2"){
+                bool synced = std::abs(left_arm_pos - right_arm_pos) > 50;
                 updateBackgroundColor(armBox, synced);
-            else
+            }
+            else{
+                bool synced = std::abs(left_bucket_pos - right_bucket_pos) > 50;
                 updateBackgroundColor(bucketBox, synced);
-
+            }
             if (!noVideo) talonPositionGraph->update_data(label, pos);
         }
         else if (element.label == "Bus Voltage") {

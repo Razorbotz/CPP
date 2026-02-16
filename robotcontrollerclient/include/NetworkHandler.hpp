@@ -8,6 +8,7 @@
 #include <netinet/in.h>
 #include <opencv2/opencv.hpp>
 #include <sys/socket.h>
+#include <cstdint>
 
 // Forward declare GTK types to avoid including heavy headers
 namespace Gtk {
@@ -29,6 +30,15 @@ extern "C" {
 #include <libswscale/swscale.h>
 #include <libavutil/imgutils.h>
 }
+
+struct CapturedUdpPacket {
+    uint64_t t_ms = 0;
+    bool from_orin = false;
+    std::vector<uint8_t> bytes;
+};
+
+bool getLatestCapturedUdpPacket(CapturedUdpPacket& out);
+std::vector<CapturedUdpPacket> getCapturedUdpPacketsSnapshot();
 
 // Struct to hold pointers to the UI elements the server functions need
 struct ServerUI {

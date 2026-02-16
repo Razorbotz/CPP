@@ -8,6 +8,7 @@
 #include <mutex>
 #include <algorithm>
 #include <unordered_map>
+#include <deque>
 #include <cstring>
 #include <cerrno>
 #include <poll.h>
@@ -32,6 +33,40 @@ extern "C" {
 }
 
 extern double GUI_SCALE;
+
+static std::mutex g_cap_mtx;
+static std::deque<CapturedUdpPacket> g_cap_q;
+static constexpr size_t g_cap_max = 50;
+
+static inline uint64_t steady_now_ms() {
+    using namespace std::chrono;
+    return (uint64_t)duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count();
+}
+
+static void capture_udp_payload(const uint8_t* data, size_t len, bool from_orin) {
+    if (!data || len == 0) return;
+    CapturedUdpPacket p;
+    p.t_ms = steady_now_ms();
+    p.from_orin = from_orin;
+    p.bytes.assign(data, data + len);
+    std::lock_guard<std::mutex> lk(g_cap_mtx);
+    g_cap_q.push_back(std::move(p));
+    while (g_cap_q.size() > g_cap_max) g_cap_q.pop_front();
+}
+
+// Accessors used by the --encode_tool window (declare these in NetworkHandler.hpp)
+bool getLatestCapturedUdpPacket(CapturedUdpPacket& out) {
+    std::lock_guard<std::mutex> lk(g_cap_mtx);
+    if (g_cap_q.empty()) return false;
+    out = g_cap_q.back();
+    return true;
+}
+
+std::vector<CapturedUdpPacket> getCapturedUdpPacketsSnapshot() {
+    std::lock_guard<std::mutex> lk(g_cap_mtx);
+    return std::vector<CapturedUdpPacket>(g_cap_q.begin(), g_cap_q.end());
+}
+
 
 // --- Helpers ---
 static inline void set_nonblocking(int fd) {
@@ -1028,6 +1063,12 @@ int receiveRobotData(std::vector<uint8_t>& buffer) {
         else if (from.sin_addr.s_addr == nano_ip.s_addr) last_rx_nano_ms.store(t, std::memory_order_relaxed);
 
         buffer.assign(recv_buffer, recv_buffer + n);
+        // Capture raw UDP payload for encode-tool inspection
+        bool from_orin = false;
+        if (orin_ip_known.load(std::memory_order_relaxed) && from.sin_addr.s_addr == orin_ip.s_addr) from_orin = true;
+        else if (nano_ip_known.load(std::memory_order_relaxed) && from.sin_addr.s_addr == nano_ip.s_addr) from_orin = false;
+        else from_orin = (fd == sock);
+        capture_udp_payload(reinterpret_cast<const uint8_t*>(recv_buffer), (size_t)n, from_orin);
         got_any = true;
         got_n = n;
     };

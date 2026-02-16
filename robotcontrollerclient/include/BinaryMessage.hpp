@@ -117,12 +117,83 @@ enum Field_Strings{
     Temp = 63
 };
 
+//Lookup table
+static const char* FieldNames[64] = {
+    "",                 // 0
+    "Device ID",        // 1
+    "Bus Voltage",      // 2
+    "Output Current",   // 3
+    "Output Percent",   // 4
+    "Temperature",      // 5
+    "Sensor Position",  // 6
+    "Sensor Velocity",  // 7
+    "Max Current",      // 8
+    "Temp Disable",     // 9
+    "Error",            // 10
+    "Voltage",          // 11
+    "Motor Number",     // 12
+    "Speed",            // 13
+    "Potentiometer",    // 14
+    "Time Without Change", // 15
+    "Max",              // 16
+    "Min",              // 17
+    "At Min",           // 18
+    "At Max",           // 19
+    "Distance",         // 20
+    "Sensorless",       // 21
+    "Robot State",      // 22
+    "Excavation State", // 23
+    "Error State",      // 24
+    "Diagnostics State",// 25
+    "Tilt State",       // 26
+    "Dump State",       // 27
+    "Level Bucket",     // 28
+    "Level Arms",       // 29
+    "Dest X",           // 30
+    "Dest Z",           // 31
+    "X",                // 32
+    "Y",                // 33
+    "Z",                // 34
+    "roll",             // 35
+    "pitch",            // 36
+    "yaw",              // 37
+    "aruco",            // 38
+    "RSSI",             // 39
+    "Wi-Fi",            // 40
+    "CAN Bus",          // 41
+    "Using Can1",       // 42
+    "RX Packets",       // 43
+    "TX Packets",       // 44
+    "CAN Bus2",         // 45
+    "RX2 Packets",      // 46
+    "TX2 Packets",      // 47
+    "First Motor",      // 48
+    "Second Motor",     // 49
+    "Num Breaks",       // 50
+    "F1 Vel",           // 51
+    "F1 RPM",           // 52
+    "F1 Speed",         // 53
+    "F2 Vel",           // 54
+    "F2 RPM",           // 55
+    "F2 Speed",         // 56
+    "F3 Vel",           // 57
+    "F3 RPM",           // 58
+    "F3 Speed",         // 59
+    "F4 Vel",           // 60
+    "F4 RPM",           // 61
+    "F4 Speed",         // 62
+    "Temp"              // 63
+};
+
 struct Element{
 
     Element(std::string label, std::list<Data> data, uint8_t type);
     Element(std::string label, std::list<Data> data, uint8_t type, size_t dimensionCount, ...);
     Element(std::string label, std::list<Data> data, uint8_t type, size_t dimensionCount, std::vector<size_t> sizeList);
-    Element() = default;
+
+    Element(Field_Strings field, std::list<Data> data, uint8_t type);
+    Element(Field_Strings field, std::list<Data> data, uint8_t type, size_t dimensionCount, ...);
+    Element(Field_Strings field, std::list<Data> data, uint8_t type, size_t dimensionCount, std::vector<size_t> sizeList);
     //    Element(std::string label, std::list<Data> data, uint8_t type){
 //        this->label = std::move(label);
 //        this->type = type;
@@ -151,6 +222,8 @@ struct Element{
 //        this->dimensionCount = dimensionCount;
 //        this->sizeList = std::move(sizeList);
 //    }
+    bool label_is_field = false;
+    uint8_t label_field_id = 0;
     std::string label;
     uint8_t type;
     size_t dimensionCount;
@@ -223,30 +296,55 @@ public:
     void addChild(Object childObject);
 
     void addElementBoolean(Object& object, std::string label, bool boolean);
+    void addElementBoolean(Object& object, Field_Strings field, bool boolean);
     void addElementCharacter(Object& object, std::string label, char character);
+    void addElementCharacter(Object& object, Field_Strings field, char character);
     void addElementInt8(Object& object, std::string label, int8_t int8);
+    void addElementInt8(Object& object, Field_Strings field, int8_t int8);
     void addElementInt16(Object& object, std::string label, int16_t int16);
+    void addElementInt16(Object& object, Field_Strings field, int16_t int16);
     void addElementInt32(Object& object, std::string label, int32_t int32);
+    void addElementInt32(Object& object, Field_Strings field, int32_t int32);
     void addElementInt64(Object& object, std::string label, int64_t int64);
+    void addElementInt64(Object& object, Field_Strings field, int64_t int64);
     void addElementUInt8(Object& object, std::string label, uint8_t uint8);
+    void addElementUInt8(Object& object, Field_Strings field, uint8_t uint8);
     void addElementUInt16(Object& object, std::string label, uint16_t uint16);
+    void addElementUInt16(Object& object, Field_Strings field, uint16_t uint16);
     void addElementUInt32(Object& object, std::string label, uint32_t uint32);
+    void addElementUInt32(Object& object, Field_Strings field, uint32_t uint32);
     void addElementUInt64(Object& object, std::string label, uint64_t uint64);
+    void addElementUInt64(Object& object, Field_Strings field, uint64_t uint64);
     void addElementFloat32(Object& object, std::string label, float float32);
+    void addElementFloat32(Object& object, Field_Strings field, float float32);
     void addElementFloat64(Object& object, std::string label, double float64);
+    void addElementFloat64(Object& object, Field_Strings field, double float64);
     void addElementString(Object& object, std::string label, std::string string);
+    void addElementString(Object& object, Field_Strings field, std::string string);
     void addElementBooleanArray(Object& object, std::string label, std::vector<bool> booleanList, size_t dimensionCount, std::vector<size_t> sizeList);
+    void addElementBooleanArray(Object& object, Field_Strings field, std::vector<bool> booleanList, size_t dimensionCount, std::vector<size_t> sizeList);
     void addElementCharacterArray(Object& object, std::string label, std::vector<char> booleanList, size_t dimensionCount, std::vector<size_t> sizeList);
+    void addElementCharacterArray(Object& object, Field_Strings field, std::vector<char> booleanList, size_t dimensionCount, std::vector<size_t> sizeList);
     void addElementInt8Array(Object& object, std::string label, std::vector<int8_t> int8List, size_t dimensionCount, std::vector<size_t> sizeList);
+    void addElementInt8Array(Object& object, Field_Strings field, std::vector<int8_t> int8List, size_t dimensionCount, std::vector<size_t> sizeList);
     void addElementInt16Array(Object& object, std::string label, std::vector<int16_t> int16List, size_t dimensionCount, std::vector<size_t> sizeList);
+    void addElementInt16Array(Object& object, Field_Strings field, std::vector<int16_t> int16List, size_t dimensionCount, std::vector<size_t> sizeList);
     void addElementInt32Array(Object& object, std::string label, std::vector<int32_t> int32List, size_t dimensionCount, std::vector<size_t> sizeList);
+    void addElementInt32Array(Object& object, Field_Strings field, std::vector<int32_t> int32List, size_t dimensionCount, std::vector<size_t> sizeList);
     void addElementInt64Array(Object& object, std::string label, std::vector<int64_t> int64List, size_t dimensionCount, std::vector<size_t> sizeList);
+    void addElementInt64Array(Object& object, Field_Strings field, std::vector<int64_t> int64List, size_t dimensionCount, std::vector<size_t> sizeList);
     void addElementUInt8Array(Object& object, std::string label, std::vector<uint8_t> uint8List, size_t dimensionCount, std::vector<size_t> sizeList);
+    void addElementUInt8Array(Object& object, Field_Strings field, std::vector<uint8_t> uint8List, size_t dimensionCount, std::vector<size_t> sizeList);
     void addElementUInt16Array(Object& object, std::string label, std::vector<uint16_t> uint16List, size_t dimensionCount, std::vector<size_t> sizeList);
+    void addElementUInt16Array(Object& object, Field_Strings field, std::vector<uint16_t> uint16List, size_t dimensionCount, std::vector<size_t> sizeList);
     void addElementUInt32Array(Object& object, std::string label, std::vector<uint32_t> uint32List, size_t dimensionCount, std::vector<size_t> sizeList);
+    void addElementUInt32Array(Object& object, Field_Strings field, std::vector<uint32_t> uint32List, size_t dimensionCount, std::vector<size_t> sizeList);
     void addElementUInt64Array(Object& object, std::string label, std::vector<uint64_t> uint64List, size_t dimensionCount, std::vector<size_t> sizeList);
+    void addElementUInt64Array(Object& object, Field_Strings field, std::vector<uint64_t> uint64List, size_t dimensionCount, std::vector<size_t> sizeList);
     void addElementFloat32Array(Object& object, std::string label, std::vector<float> floatList, size_t dimensionCount, std::vector<size_t> sizeList);
+    void addElementFloat32Array(Object& object, Field_Strings field, std::vector<float> floatList, size_t dimensionCount, std::vector<size_t> sizeList);
     void addElementFloat64Array(Object& object, std::string label, std::vector<double> doubleList, size_t dimensionCount, std::vector<size_t> sizeList);
+    void addElementFloat64Array(Object& object, Field_Strings field, std::vector<double> doubleList, size_t dimensionCount, std::vector<size_t> sizeList);
     void addChild(Object& object, Object childObject);
     
     //Encoded Elements
@@ -280,6 +378,7 @@ public:
     void encodeBytes(std::shared_ptr<std::list<uint8_t>> bytes, Object object);
     void encodeBytes(std::shared_ptr<std::list<uint8_t>> bytes, Element element);
     void encodeLabelBytes(std::shared_ptr<std::list<uint8_t>> bytes, std::string label);
+    void encodeLabelBytes(std::shared_ptr<std::list<uint8_t>> bytes, Field_Strings field);
     void addSizeBytes(std::shared_ptr<std::list<uint8_t>> bytes, uint64_t size);
 
     std::shared_ptr<std::list<uint8_t>> getBytes();

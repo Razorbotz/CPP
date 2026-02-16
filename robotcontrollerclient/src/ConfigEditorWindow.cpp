@@ -310,7 +310,7 @@ void ConfigEditorWindow::update_preview_frame(const std::string& prefix) {
 
     std::map<std::string, Element> element_map;
     for (const auto& el : message.getObject().elementList) {
-        element_map[el.label] = el;
+        element_map.emplace(el.label, el);
     }
     
     for (const auto& key : editor.local_keys) {

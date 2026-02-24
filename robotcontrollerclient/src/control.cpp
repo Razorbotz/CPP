@@ -209,8 +209,14 @@ ConfigEditorWindow* configWindow = nullptr;
 Gtk::Window* motorWindow;
 int monitor_count = 0;
 
+// For CSS backgrounds (transparent for video overlay)
+std::string darkBackgroundColorCSS = "rgba(11, 26, 33, 0.0)";
+std::string lightBackgroundColorCSS = "rgba(240, 250, 242, 0.0)";
+
+// For Cairo drawing and RGBA widgets (opaque)
 std::string darkBackgroundColor = "#0b1a21";
 std::string lightBackgroundColor = "#f0faf2";
+
 bool isLightMode = true;
 
 
@@ -621,12 +627,22 @@ class BorderedBox : public Gtk::Box {
     
     protected:
         bool on_draw(const Cairo::RefPtr<Cairo::Context>& cr) override {
-            Gtk::Box::on_draw(cr); 
-    
             auto allocation = get_allocation();
             double width = allocation.get_width();
             double height = allocation.get_height();
+            
+            // Fill with opaque background color so sensors are readable over video
+            if (isLightMode) {
+                set_source_hex_color(cr, lightBackgroundColor);
+            } else {
+                set_source_hex_color(cr, darkBackgroundColor);
+            }
+            cr->rectangle(0, 0, width, height);
+            cr->fill();
+            
+            Gtk::Box::on_draw(cr); 
     
+            // Draw border
             cr->set_line_width(1.0);
             cr->set_source_rgb(0, 0, 0);
     
@@ -1050,7 +1066,7 @@ protected:
         Gtk::Allocation allocation = get_allocation();
 
         if (!currentPixbuf) {
-            cr->set_source_rgb(0.1, 0.1, 0.1);
+            cr->set_source_rgb(0.5, 0.1, 0.1);
             cr->rectangle(0, 0, allocation.get_width(), allocation.get_height());
             cr->fill();
             return true;
@@ -1200,11 +1216,11 @@ void toggleMode() {
 
     auto css_provider = Gtk::CssProvider::create();
     if (isLightMode) {
-        css_provider->load_from_data(generateLightModeString(lightBackgroundColor));
+        css_provider->load_from_data(generateLightModeString(lightBackgroundColorCSS));
         background.set(lightBackgroundColor);    
     }
     else {
-        css_provider->load_from_data(generateDarkModeString(darkBackgroundColor));
+        css_provider->load_from_data(generateDarkModeString(darkBackgroundColorCSS));
         background.set(darkBackgroundColor);
     }
 
@@ -2424,6 +2440,26 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
     }
     window->maximize();
 
+    // Get the top level box and restructure to have video as window background
+    Gtk::Box* topLevelBox = nullptr;
+    builder->get_widget("topLevelBox", topLevelBox);
+    if (topLevelBox) {
+        // Remove from window
+        window->remove();
+        
+        // Create video widget
+        videoArea = Gtk::manage(new VideoWidget());
+        videoArea->set_size_request(1600 * GUI_SCALE, 1000 * GUI_SCALE);
+        
+        // Create overlay with video as background
+        Gtk::Overlay* mainOverlay = Gtk::manage(new Gtk::Overlay());
+        mainOverlay->add(*videoArea);  // Video as base
+        mainOverlay->add_overlay(*topLevelBox);  // UI on top
+        
+        // Add overlay to window
+        window->add(*mainOverlay);
+    }
+
     try {window->set_icon_from_file("../resources/razorbotz.png"); } catch (...) {}
 
     window->add_events(Gdk::KEY_PRESS_MASK | Gdk::KEY_RELEASE_MASK);
@@ -2449,8 +2485,7 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
     builder->get_widget("btn_toggle_mode", toggleModeButton);
     builder->get_widget("btn_settings", settingsButton);
 
-    Gtk::Box* topLevelBox = nullptr;
-    builder->get_widget("topLevelBox", topLevelBox);
+    // topLevelBox already declared earlier for video overlay setup
     
     sensorBox = Gtk::manage(new Gtk::FlowBox());
     sensorBox->set_orientation(Gtk::ORIENTATION_HORIZONTAL);
@@ -2492,7 +2527,7 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
     }
 
     auto css_provider = Gtk::CssProvider::create();
-    css_provider->load_from_data(generateLightModeString(lightBackgroundColor));
+    css_provider->load_from_data(generateLightModeString(lightBackgroundColorCSS));
     Gtk::StyleContext::add_provider_for_screen(Gdk::Screen::get_default(), css_provider, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
 
     try {
@@ -2560,13 +2595,6 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
             innerLeftBox = create_motor_column({{"Arm L", &talon1Circle}, {"Arm R", &talon2Circle}, {"Bucket L", &talon3Circle}, {"Bucket R", &talon4Circle}}, nullptr, {"Talon 1", "Talon 2", "Talon 3", "Talon 4"}, true);
             pLeft->add(*innerLeftBox);
             initArmPos();
-        }
-
-        Gtk::Box* pVideo = nullptr; builder->get_widget("placeholder_video_area", pVideo);
-        if (pVideo) {
-            videoArea = Gtk::manage(new VideoWidget());
-            videoArea->set_size_request(1600 * GUI_SCALE, 1000 * GUI_SCALE);
-            pVideo->add(*videoArea);
         }
 
         Gtk::Box* pRight = nullptr; builder->get_widget("placeholder_inner_right", pRight);

@@ -11,6 +11,7 @@ find_package(OpenCV REQUIRED)
 find_package(PkgConfig REQUIRED)
 find_package(CURL REQUIRED)
 find_package(ZLIB REQUIRED)
+find_package(OpenSSL REQUIRED)
 pkg_check_modules(GTKMM REQUIRED gtkmm-3.0)
 pkg_check_modules(CAIRO REQUIRED cairo)
 pkg_check_modules(WEBKITGTK REQUIRED webkit2gtk-4.0)
@@ -29,10 +30,8 @@ include_directories(
   /usr/include/glib-2.0
   /usr/lib/glib-2.0/include
   /usr/include/glibmm-2.4 
-  /usr/include/glibmm-2.4/glibmm
   /usr/lib/glibmm-2.4/include
   /usr/include/sigc++-2.0
-  /usr/include/sigc++-2.0/sigc++
   /usr/lib/sigc++-2.0/include
   /usr/include/giomm-2.4
   /usr/lib/giomm-2.4/include
@@ -82,6 +81,24 @@ include_directories(
   ${FFMPEG_INCLUDE_DIRS}
 )
 
+include(FetchContent)
+
+FetchContent_Declare(
+  foxglove_websocket
+  GIT_REPOSITORY https://github.com/foxglove/ws-protocol.git
+  GIT_TAG main
+)
+
+FetchContent_GetProperties(foxglove_websocket)
+if(NOT foxglove_websocket_POPULATED)
+  FetchContent_Populate(foxglove_websocket)
+  
+  set(FOXGLOVE_WEBSOCKET_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+  set(FOXGLOVE_WEBSOCKET_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+  
+  add_subdirectory(${foxglove_websocket_SOURCE_DIR}/cpp/foxglove-websocket ${foxglove_websocket_BINARY_DIR}/cpp/foxglove-websocket)
+endif()
+
 link_directories(
   include/
   ${GTKMM_LIBRARY_DIRS}
@@ -127,5 +144,8 @@ target_link_libraries(control
   pthread
   CURL::libcurl
   PkgConfig::FFMPEG
+  foxglove_websocket
+  OpenSSL::SSL
+  OpenSSL::Crypto
 )
 

@@ -41,6 +41,9 @@
 #include <mutex>
 #include <atomic>
 #include <zlib.h>
+#include <foxglove/websocket/websocket_notls.hpp>
+#include <foxglove/websocket/websocket_server.hpp>
+#include <nlohmann/json.hpp>
 
 extern "C" {
 #include <libavcodec/avcodec.h>
@@ -61,8 +64,6 @@ TODO:
 Map Issues:
 Cosmic map isn't drawing robot in correct location
 Robot isn't drawing in correct location, need to offset for camera position
-
-Convert video stream from TCP to UDP
 
 */
 
@@ -173,6 +174,10 @@ Gtk::Box* simContentBox = nullptr;
 
 std::map<std::string, Gtk::Widget*> activeSimWidgets;
 
+// --- Foxglove Globals ---
+std::unique_ptr<foxglove::Server<foxglove::WebSocketNoTls>> foxglove_server;
+foxglove::ChannelId arena_mesh_channel;
+std::chrono::high_resolution_clock::time_point lastFoxgloveTransmit = std::chrono::high_resolution_clock::now();
 
 // --- Encode Tool Globals ---
 bool start_encode_tool = false;
@@ -2876,6 +2881,116 @@ void initArenaWindow() {
     arenaWindow->show_all();
 }
 
+void initFoxgloveServer() {
+    // Simple log handler so we can see connections in the terminal
+    auto logHandler = [](foxglove::WebSocketLogLevel, char const* msg) {
+        std::cout << "Foxglove: " << msg << std::endl;
+    };
+
+    foxglove::ServerOptions serverOptions;
+    
+    // Instantiate the server
+    foxglove_server = std::make_unique<foxglove::Server<foxglove::WebSocketNoTls>>(
+        "Razorbotz_Control", logHandler, serverOptions
+    );
+
+    // Define the channel
+    foxglove::ChannelWithoutId mesh_channel;
+    mesh_channel.topic = "/arena/mesh";
+    mesh_channel.encoding = "json";
+    mesh_channel.schemaName = "foxglove.SceneUpdate";
+    mesh_channel.schema = "";
+
+    auto channelIds = foxglove_server->addChannels({mesh_channel});
+    arena_mesh_channel = channelIds.front();
+
+    foxglove::ServerHandlers<foxglove::ConnHandle> handlers;
+    
+    handlers.subscribeHandler = [](foxglove::ChannelId chanId, foxglove::ConnHandle clientHandle) {
+        std::cout << "Foxglove client subscribed to channel: " << chanId << std::endl;
+    };
+
+    handlers.unsubscribeHandler = [](foxglove::ChannelId chanId, foxglove::ConnHandle clientHandle) {
+        std::cout << "Foxglove client unsubscribed from channel: " << chanId << std::endl;
+    };
+
+    foxglove_server->setHandlers(std::move(handlers));
+
+    // Start the server on all network interfaces (0.0.0.0), port 8765
+    foxglove_server->start("0.0.0.0", 8765);
+    std::cout << "Foxglove WebSocket Server started on ws://0.0.0.0:8765" << std::endl;
+}
+
+#include <glib.h>
+#include <fstream>
+#include <vector>
+
+std::string getGLBBase64(const std::string& filepath) {
+    std::ifstream file(filepath, std::ios::binary | std::ios::ate);
+    if (!file.is_open()) {
+        std::cerr << "Failed to open mesh: " << filepath << std::endl;
+        return "";
+    }
+    std::streamsize size = file.tellg();
+    file.seekg(0, std::ios::beg);
+    
+    std::vector<guchar> buffer(size);
+    if (file.read(reinterpret_cast<char*>(buffer.data()), size)) {
+        gchar* encoded = g_base64_encode(buffer.data(), size);
+        std::string result(encoded);
+        g_free(encoded); // Free the glib allocated memory
+        return result;
+    }
+    return "";
+}
+
+void publishArenaMesh() {
+    if (!foxglove_server) return;
+
+    // Cache the base64 string so we don't encode it 60 times a minute
+    static std::string glb_base64 = "";
+    if (glb_base64.empty()) {
+        // Use a relative path assuming you run the executable from your project root
+        glb_base64 = getGLBBase64("resources/meshes/Test.glb"); 
+        if (glb_base64.empty()) return; // Abort if file not found
+    }
+
+    auto now = std::chrono::system_clock::now();
+    uint64_t timestamp_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count();
+    uint32_t sec = timestamp_ns / 1000000000;
+    uint32_t nsec = timestamp_ns % 1000000000;
+
+    nlohmann::json scene_update = {
+        {"deletions", nlohmann::json::array()},
+        {"entities", {
+            {
+                {"id", "arena_mesh"},
+                {"timestamp", {{"sec", sec}, {"nsec", nsec}}},
+                {"frame_id", "map"},
+                {"models", {
+                    {
+                        {"pose", {
+                            {"position", {"x", 0.0, "y", 0.0, "z", 0.0}},
+                            {"orientation", {"x", 0, "y", 0, "z", 0, "w", 1}}
+                        }},
+                        {"scale", {"x", 1.0, "y", 1.0, "z", 1.0}},
+                        {"media_type", "model/gltf-binary"},
+                        {"data", glb_base64}
+                    }
+                }}
+            }
+        }}
+    };
+
+    std::string json_str = scene_update.dump();
+    foxglove_server->broadcastMessage(
+        arena_mesh_channel, 
+        timestamp_ns, 
+        reinterpret_cast<const uint8_t*>(json_str.data()), 
+        json_str.size()
+    );
+}
+
 void clear_sim_inputs() {
     auto children = simContentBox->get_children();
     for (auto* child : children) {
@@ -3970,6 +4085,7 @@ int main(int argc, char** argv) {
     }
     moveWindows();
     initGUI();
+    initFoxgloveServer();
     
     //Start a thread to listen to updates from the robot
     videoDisconnectDispatcher.connect([&]() {
@@ -4150,6 +4266,12 @@ int main(int argc, char** argv) {
         if (time_span.count() > 1.0 && isVideoConnected()) {
             lastVideoHeartbeatTime = now;
             sendVideoHeartbeat();
+        }
+
+        time_span = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastFoxgloveTransmit);
+        if (time_span.count() > 1.0) {
+            lastFoxgloveTransmit = now;
+            publishArenaMesh();
         }
 
 

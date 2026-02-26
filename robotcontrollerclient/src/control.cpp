@@ -1066,7 +1066,7 @@ protected:
         Gtk::Allocation allocation = get_allocation();
 
         if (!currentPixbuf) {
-            cr->set_source_rgb(0.5, 0.1, 0.1);
+            cr->set_source_rgb(0.1, 0.1, 0.1);
             cr->rectangle(0, 0, allocation.get_width(), allocation.get_height());
             cr->fill();
             return true;
@@ -1237,6 +1237,20 @@ void toggleMode() {
         for (const std::string& key : keys) {
             updateBackgroundColor(frame, key);
         }
+    }
+
+    if (arenaWindow) {
+        auto arena_css = Gtk::CssProvider::create();
+        std::string arena_bg_css = "window { background-color: " + (isLightMode ? lightBackgroundColor : darkBackgroundColor) + "; }";
+        arena_css->load_from_data(arena_bg_css);
+        arenaWindow->get_style_context()->add_provider(arena_css, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+    }
+    
+    if (sensorsWindow) {
+        auto sensors_css = Gtk::CssProvider::create();
+        std::string sensors_bg_css = "window { background-color: " + (isLightMode ? lightBackgroundColor : darkBackgroundColor) + "; }";
+        sensors_css->load_from_data(sensors_bg_css);
+        sensorsWindow->get_style_context()->add_provider(sensors_css, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
     }
 
     if(!noVideo) {
@@ -2695,6 +2709,11 @@ void initSensorsWindow() {
         return;
     }
 
+    auto sensors_css = Gtk::CssProvider::create();
+    std::string sensors_bg_css = "window { background-color: " + (isLightMode ? lightBackgroundColor : darkBackgroundColor) + "; }";
+    sensors_css->load_from_data(sensors_bg_css);
+    sensorsWindow->get_style_context()->add_provider(sensors_css, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+
     if (monitor_count == 3) {
         auto display = Gdk::Display::get_default();
         if (display) {
@@ -2770,6 +2789,11 @@ void initArenaWindow() {
         g_warning("Could not load 'arenaWindow' from arena.glade");
         return;
     }
+
+    auto arena_css = Gtk::CssProvider::create();
+    std::string arena_bg_css = "window { background-color: " + (isLightMode ? lightBackgroundColor : darkBackgroundColor) + "; }";
+    arena_css->load_from_data(arena_bg_css);
+    arenaWindow->get_style_context()->add_provider(arena_css, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
 
     if (monitor_count == 3) {
         auto display = Gdk::Display::get_default();

@@ -297,7 +297,6 @@
               <object class="GtkBox" id="box_bottom_inner">
                 <property name="visible">True</property>
                 <property name="can_focus">False</property>
-                <property name="halign">center</property>
                 <property name="spacing">5</property>
                 
                 <child>
@@ -307,6 +306,10 @@
                     <property name="orientation">vertical</property>
                     <property name="width_request">300</property>
                   </object>
+                  <packing>
+                    <property name="expand">False</property>
+                    <property name="fill">False</property>
+                  </packing>
                 </child>
                 
                 <child>
@@ -316,6 +319,10 @@
                     <property name="orientation">vertical</property>
                     <property name="spacing">5</property>
                     </object>
+                  <packing>
+                    <property name="expand">True</property>
+                    <property name="fill">True</property>
+                  </packing>
                 </child>
                 
                 <child>
@@ -325,6 +332,10 @@
                     <property name="orientation">vertical</property>
                     <property name="width_request">300</property>
                   </object>
+                  <packing>
+                    <property name="expand">False</property>
+                    <property name="fill">False</property>
+                  </packing>
                 </child>
               </object>
               <packing>
@@ -337,7 +348,6 @@
               <object class="GtkBox" id="box_bottom_lower">
                 <property name="visible">True</property>
                 <property name="can_focus">False</property>
-                <property name="halign">center</property>
                 <property name="spacing">5</property>
                 
                 <child>
@@ -345,6 +355,10 @@
                     <property name="visible">True</property>
                     <property name="can_focus">False</property>
                    </object>
+                   <packing>
+                    <property name="expand">False</property>
+                    <property name="fill">False</property>
+                   </packing>
                 </child>
 
                 <child>
@@ -354,6 +368,10 @@
                     <property name="orientation">vertical</property>
                     <property name="width_request">200</property>
                   </object>
+                  <packing>
+                    <property name="expand">False</property>
+                    <property name="fill">False</property>
+                  </packing>
                 </child>
                 
                 <child>
@@ -363,6 +381,10 @@
                     <property name="width_request">300</property>
                     <property name="height_request">175</property>
                   </object>
+                  <packing>
+                    <property name="expand">False</property>
+                    <property name="fill">False</property>
+                  </packing>
                 </child>
                 
                 <child>
@@ -370,6 +392,10 @@
                     <property name="visible">True</property>
                     <property name="can_focus">False</property>
                   </object>
+                  <packing>
+                    <property name="expand">True</property>
+                    <property name="fill">True</property>
+                  </packing>
                 </child>
                 
                 <child>
@@ -379,6 +405,10 @@
                     <property name="width_request">300</property>
                     <property name="height_request">175</property>
                   </object>
+                  <packing>
+                    <property name="expand">False</property>
+                    <property name="fill">False</property>
+                  </packing>
                 </child>
                 
                 <child>
@@ -388,6 +418,10 @@
                     <property name="orientation">vertical</property>
                     <property name="width_request">200</property>
                   </object>
+                  <packing>
+                    <property name="expand">False</property>
+                    <property name="fill">False</property>
+                  </packing>
                 </child>
 
                 <child>
@@ -395,6 +429,10 @@
                     <property name="visible">True</property>
                     <property name="can_focus">False</property>
                    </object>
+                   <packing>
+                    <property name="expand">False</property>
+                    <property name="fill">False</property>
+                   </packing>
                 </child>
 
               </object>

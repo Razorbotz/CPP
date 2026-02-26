@@ -128,6 +128,8 @@ Gtk::Button* connectButton2;
 Gtk::Button* toggleModeButton;
 Gtk::Button* settingsButton;
 
+Gtk::Box* topControlsBox;
+
 Gtk::ListBox* videoAddressListBox;
 Gtk::Entry* videoIPAddressEntry;
 Gtk::Label* videoConnectionStatusLabel;
@@ -631,7 +633,6 @@ class BorderedBox : public Gtk::Box {
             double width = allocation.get_width();
             double height = allocation.get_height();
             
-            // Fill with opaque background color so sensors are readable over video
             if (isLightMode) {
                 set_source_hex_color(cr, lightBackgroundColor);
             } else {
@@ -642,7 +643,6 @@ class BorderedBox : public Gtk::Box {
             
             Gtk::Box::on_draw(cr); 
     
-            // Draw border
             cr->set_line_width(1.0);
             cr->set_source_rgb(0, 0, 0);
     
@@ -1177,6 +1177,7 @@ std::string generateDarkModeString(const std::string& color) {
     return
         "* { font-family: 'Proxima Nova'; font-weight: bold; }\n"
         "window, notebook, box, flowbox { background-color: " + color + "; }\n"
+        "#topControlsBox { background-color: " + darkBackgroundColor + "; }\n"
         "#dark_text, #dark_text label { color: #000000; }\n"
         "label, button, entry { color: #edf6fa; }\n"
         "button { border: 1px solid #edf6fa; background-color: transparent; }\n"
@@ -1191,6 +1192,7 @@ std::string generateLightModeString(const std::string& color) {
     return
         "* { font-family: 'Proxima Nova'; font-weight: bold }\n"
         "window, notebook, box, flowbox { background-color: " + color + "; }\n"
+        "#topControlsBox { background-color: " + lightBackgroundColor + "; }\n"
         "label, button, entry { color: #000000; }\n"
         "button { border: 1px solid #000000; background-color: #f0f0f0; }\n"
         
@@ -2440,11 +2442,9 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
     }
     window->maximize();
 
-    // Get the top level box and restructure to have video as window background
     Gtk::Box* topLevelBox = nullptr;
     builder->get_widget("topLevelBox", topLevelBox);
     if (topLevelBox) {
-        // Remove from window
         window->remove();
         
         // Create video widget
@@ -2458,6 +2458,12 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
         
         // Add overlay to window
         window->add(*mainOverlay);
+    }
+    
+    // Get topControlsBox and set its CSS name for styling
+    builder->get_widget("topControlsBox", topControlsBox);
+    if (topControlsBox) {
+        topControlsBox->set_name("topControlsBox");
     }
 
     try {window->set_icon_from_file("../resources/razorbotz.png"); } catch (...) {}
@@ -2484,14 +2490,12 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
     
     builder->get_widget("btn_toggle_mode", toggleModeButton);
     builder->get_widget("btn_settings", settingsButton);
-
-    // topLevelBox already declared earlier for video overlay setup
     
     sensorBox = Gtk::manage(new Gtk::FlowBox());
     sensorBox->set_orientation(Gtk::ORIENTATION_HORIZONTAL);
     
     if (topLevelBox) {
-        topLevelBox->add(*sensorBox);
+        topLevelBox->pack_end(*sensorBox, Gtk::PACK_SHRINK);
     }
 
     if(ipAddressEntry) ipAddressEntry->set_text(ORIN_IP);
@@ -2589,6 +2593,16 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
         builder->get_widget("box_bottom_inner", bottomInnerBox); 
         
         builder->get_widget("box_bottom_lower", bottomLowerBox);
+        
+        // Restructure: move bottomLowerBox to be directly at the bottom of topLevelBox
+        Gtk::Box* boxMainContent = nullptr;
+        builder->get_widget("box_main_content", boxMainContent);
+        if (boxMainContent && bottomLowerBox && topLevelBox) {
+            // Remove from current parent
+            boxMainContent->remove(*bottomLowerBox);
+            // Add to topLevelBox at the bottom
+            topLevelBox->pack_end(*bottomLowerBox, Gtk::PACK_SHRINK);
+        }
 
         Gtk::Box* pLeft = nullptr; builder->get_widget("placeholder_inner_left", pLeft);
         if (pLeft) {

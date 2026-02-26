@@ -2593,16 +2593,6 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
         builder->get_widget("box_bottom_inner", bottomInnerBox); 
         
         builder->get_widget("box_bottom_lower", bottomLowerBox);
-        
-        // Restructure: move bottomLowerBox to be directly at the bottom of topLevelBox
-        Gtk::Box* boxMainContent = nullptr;
-        builder->get_widget("box_main_content", boxMainContent);
-        if (boxMainContent && bottomLowerBox && topLevelBox) {
-            // Remove from current parent
-            boxMainContent->remove(*bottomLowerBox);
-            // Add to topLevelBox at the bottom
-            topLevelBox->pack_end(*bottomLowerBox, Gtk::PACK_SHRINK);
-        }
 
         Gtk::Box* pLeft = nullptr; builder->get_widget("placeholder_inner_left", pLeft);
         if (pLeft) {

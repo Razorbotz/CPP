@@ -1279,20 +1279,12 @@ void updateBackgroundColor(Gtk::Box* box, bool synced){
 const std::set<std::string> talonLabels = {"Talon 1", "Talon 2", "Talon 3", "Talon 4"};
 const std::set<std::string> falconLabels = {"Falcon 1", "Falcon 2", "Falcon 3", "Falcon 4"};
 
+
 CircleDrawingArea* getTalonCircle(const std::string& label) {
     if (label == "Talon 1") return talon1Circle;
     if (label == "Talon 2") return talon2Circle;
     if (label == "Talon 3") return talon3Circle;
     if (label == "Talon 4") return talon4Circle;
-    return nullptr;
-}
-
-
-CircleDrawingArea* getFalconCircle(const std::string& label) {
-    if (label == "Falcon 1") return falcon1Circle;
-    if (label == "Falcon 2") return falcon2Circle;
-    if (label == "Falcon 3") return falcon3Circle;
-    if (label == "Falcon 4") return falcon4Circle;
     return nullptr;
 }
 
@@ -1305,12 +1297,14 @@ CircleDrawingArea* getLowerFalconCircle(const std::string& label) {
 }
 
 
-void updateCircleColor(CircleDrawingArea* circle, bool lowVoltage) {
+void updateCircleColor(CircleDrawingArea* circle, bool lowVoltage, bool error) {
     if (!circle || noVideo) return;
 
     Gdk::RGBA color;
-    if (lowVoltage)
+    if (error)
         color.set_rgba(1.0, 0.0, 0.0, 1.0); // Red
+    else if (lowVoltage)
+        color.set_rgba(1.0, 1.0, 0.0, 1.0); // Yellow
     else
         color.set_rgba(0.0, 1.0, 0.0, 1.0); // Green
 
@@ -1704,7 +1698,7 @@ void handleTalonElements(const std::string& label, const std::vector<Element>& e
         else if (element.label == "Bus Voltage") {
             float voltage = element.data.front().uint16 / 100.0f;
             if (!noVideo) talonVoltageGraph->update_data(label, voltage);
-            updateCircleColor(getTalonCircle(label), voltage < LOW_VOLTAGE);
+            updateCircleColor(getTalonCircle(label), false, voltage < LOW_VOLTAGE);
         }
         else if (element.label == "Output Current") {
             float current = element.data.front().uint16 / 100.0f;
@@ -1717,12 +1711,20 @@ void handleTalonElements(const std::string& label, const std::vector<Element>& e
     }
 }
 
+struct FalconState {
+    bool error = false;
+    bool lowVoltage = false;
+};
+
+std::map<std::string, FalconState> falconStates;
+
 void handleFalconElements(const std::string& label, const std::vector<Element>& elements) {
     for (const auto& element : elements) {
         if (element.label == "Bus Voltage") {
             float voltage = element.data.front().uint16 / 100.0f;
             if (!noVideo) falconVoltageGraph->update_data(label, voltage);
-            updateCircleColor(getFalconCircle(label), voltage < LOW_VOLTAGE);
+            bool lowVoltage = voltage < LOW_VOLTAGE;
+            falconStates[label].lowVoltage = lowVoltage;
         }
         else if (element.label == "Output Current") {
             float current = element.data.front().uint16 / 100.0f;
@@ -1740,8 +1742,9 @@ void handleFalconElements(const std::string& label, const std::vector<Element>& 
         }
         else if (element.label == "Error"){
             bool error = element.data.front().boolean;
-            updateCircleColor(getLowerFalconCircle(label), error);
+            falconStates[label].error = error;
         }
+        updateCircleColor(getLowerFalconCircle(label), falconStates[label].lowVoltage, falconStates[label].error);
     }
 }
 
@@ -2062,10 +2065,10 @@ void resetUIOnDisconnect() {
         updateCircleColor(talon2Circle, black);
         updateCircleColor(talon3Circle, black);
         updateCircleColor(talon4Circle, black);
-        updateCircleColor(falcon1Circle, black);
-        updateCircleColor(falcon2Circle, black);
-        updateCircleColor(falcon3Circle, black);
-        updateCircleColor(falcon4Circle, black);
+        // updateCircleColor(falcon1Circle, black);
+        // updateCircleColor(falcon2Circle, black);
+        // updateCircleColor(falcon3Circle, black);
+        // updateCircleColor(falcon4Circle, black);
         updateCircleColor(lowerFalcon1Circle, black);
         updateCircleColor(lowerFalcon2Circle, black);
         updateCircleColor(lowerFalcon3Circle, black);
@@ -2623,7 +2626,7 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
         Gtk::Box* pRight = nullptr; builder->get_widget("placeholder_inner_right", pRight);
         if (pRight) {
             innerRightBox = create_motor_column({{"Falcon 1", &falcon1Circle}, {"Falcon 2", &falcon2Circle}, {"Falcon 3", &falcon3Circle}, {"Falcon 4", &falcon4Circle}}, nullptr, {"Falcon 1", "Falcon 2", "Falcon 3", "Falcon 4"}, false);
-            pRight->add(*innerRightBox);
+            //pRight->add(*innerRightBox);
             initBucketPos();
         }
 

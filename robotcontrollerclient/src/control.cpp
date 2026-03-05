@@ -1719,7 +1719,7 @@ void handleTalonElements(const std::string& label, const std::vector<Element>& e
 
                 bucket_rotation_angle = (pos / 700.0) * 180.0;  // FIX PLACEHOLDER MATH!
                 if (bucketRot_init) {
-                    bucket_rot_image->set(rotate_image(bucket_rot_pixbuf, -bucket_rotation_angle, 200, 200));
+                    bucket_rot_image->set(rotate_image(bucket_rot_pixbuf, bucket_rotation_angle, 200, 200));
                 }
             }
             else if (label == "Talon 4") {

@@ -559,7 +559,7 @@ bool set_source_hex_color(const Cairo::RefPtr<Cairo::Context>& cr, const std::st
     return true;
 }
 
-Glib::RefPtr<Gdk::Pixbuf> rotate_image(Glib::RefPtr<Gdk::Pixbuf> pixbuf, double angle_deg, int target_width, int target_height) {
+Glib::RefPtr<Gdk::Pixbuf> rotate_image(Glib::RefPtr<Gdk::Pixbuf> pixbuf, double angle_deg, int target_width, int target_height, int high_angle, int low_angle) {
     double angle_rad = angle_deg * M_PI / 180.0;
 
     int width = pixbuf->get_width();
@@ -573,7 +573,7 @@ Glib::RefPtr<Gdk::Pixbuf> rotate_image(Glib::RefPtr<Gdk::Pixbuf> pixbuf, double 
 
     // Fill background
     cr->set_source_rgb(1.0, 1.0, 1.0); // Default to white
-    if (angle_deg > 30 || angle_deg < -30) {
+    if (angle_deg > high_angle || angle_deg < low_angle) {
         cr->set_source_rgb(1.0, 0.0, 0.0); // Red for high angle warning
     }
     cr->paint();
@@ -1515,7 +1515,8 @@ Gtk::Box* createPositionIndicator(const std::string& title, int spacing,
  * Creates and initializes an image widget from a file.
  */
 bool createImageIndicator(Gtk::Image*& image_widget, Glib::RefPtr<Gdk::Pixbuf>& pixbuf, 
-                          const std::string& file_path, Gtk::Container* parent, double initial_rotation)
+                          const std::string& file_path, Gtk::Container* parent, double initial_rotation,
+                          int high_angle, int low_angle)
 {
     image_widget = Gtk::manage(new Gtk::Image());
     try {
@@ -1527,7 +1528,7 @@ bool createImageIndicator(Gtk::Image*& image_widget, Glib::RefPtr<Gdk::Pixbuf>& 
     
     parent->add(*image_widget);
 
-    Glib::RefPtr<Gdk::Pixbuf> new_pixbuf = rotate_image(pixbuf, initial_rotation, 200, 200);
+    Glib::RefPtr<Gdk::Pixbuf> new_pixbuf = rotate_image(pixbuf, initial_rotation, 200, 200, high_angle, low_angle);
     image_widget->set(new_pixbuf);
     return true;
 }
@@ -1537,7 +1538,7 @@ void initRoll() {
         Gtk::Container* parent = noVideo ? static_cast<Gtk::Container*>(sensorBox) : bottomLowerBox;
         
         bool success = createImageIndicator(roll_image, roll_pixbuf, 
-            "../resources/RobotSide.png", parent, roll_rotation_angle);
+            "../resources/RobotSide.png", parent, roll_rotation_angle, 30, -30);
 
         if (success) {
             if (!noVideo) {
@@ -1562,7 +1563,7 @@ void initPitch() {
         Gtk::Container* parent = noVideo ? static_cast<Gtk::Container*>(sensorBox) : bottomLowerBox;
         
         bool success = createImageIndicator(pitch_image, pitch_pixbuf, 
-            "../resources/RobotBack.png", parent, pitch_rotation_angle);
+            "../resources/RobotBack.png", parent, pitch_rotation_angle, 30, -30);
 
         if (success) {
             pitch_init = true;
@@ -1580,7 +1581,7 @@ void initBucketLvl() {
         }
 
         Gtk::Container* parent = noVideo ? static_cast<Gtk::Container*>(sensorBox) : bottomLowerBox;
-        if (createImageIndicator(lvl_image, lvl_pixbuf, "../resources/newbucket.png", parent, 0)) {
+        if (createImageIndicator(lvl_image, lvl_pixbuf, "../resources/newbucket.png", parent, 0, 30, -30)) {
             bucketLevel_init = true;
             window->show_all();
         }
@@ -1631,8 +1632,7 @@ void initBucketRot() {
         Gtk::Container* parent = noVideo ? static_cast<Gtk::Container*>(sensorBox) : innerLeftBox;
 
         bool success = createImageIndicator(bucket_rot_image, bucket_rot_pixbuf, "../resources/newbucket.png", parent,
-            bucket_rotation_angle
-        );
+            bucket_rotation_angle, 45, -90);
 
         if (success) {
             bucketRot_init = true;
@@ -1674,11 +1674,11 @@ void handleZedElements(const std::vector<Element>& elements) {
 
         if (element.label == "roll") {
             roll_rotation_angle = std::round(value);
-            roll_image->set(rotate_image(roll_pixbuf, -roll_rotation_angle, 200, 200));
+            roll_image->set(rotate_image(roll_pixbuf, -roll_rotation_angle, 200, 200, 30, -30));
         }
         else if (element.label == "yaw") {
             pitch_rotation_angle = std::round(value);
-            pitch_image->set(rotate_image(pitch_pixbuf, pitch_rotation_angle, 200, 200));
+            pitch_image->set(rotate_image(pitch_pixbuf, pitch_rotation_angle, 200, 200, 30, -30));
         }
         else if (element.label == "pitch" && !noArena) {
             overlay_area->update_image_rotation(value - 90);
@@ -1719,7 +1719,7 @@ void handleTalonElements(const std::string& label, const std::vector<Element>& e
 
                 bucket_rotation_angle = (pos / 700.0) * 180.0;  // FIX PLACEHOLDER MATH!
                 if (bucketRot_init) {
-                    bucket_rot_image->set(rotate_image(bucket_rot_pixbuf, bucket_rotation_angle, 200, 200));
+                    bucket_rot_image->set(rotate_image(bucket_rot_pixbuf, bucket_rotation_angle, 200, 200, 45, -90));
                 }
             }
             else if (label == "Talon 4") {
@@ -2717,13 +2717,13 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
         
         Gtk::Box* pRoll = nullptr; builder->get_widget("placeholder_roll_image", pRoll);
         if(pRoll) {
-            createImageIndicator(roll_image, roll_pixbuf, "../resources/RobotSide.png", pRoll, roll_rotation_angle);
+            createImageIndicator(roll_image, roll_pixbuf, "../resources/RobotSide.png", pRoll, roll_rotation_angle, 30, -30);
             roll_init = true;
         }
 
         Gtk::Box* pPitch = nullptr; builder->get_widget("placeholder_pitch_image", pPitch);
         if(pPitch) {
-            createImageIndicator(pitch_image, pitch_pixbuf, "../resources/RobotBack.png", pPitch, pitch_rotation_angle);
+            createImageIndicator(pitch_image, pitch_pixbuf, "../resources/RobotBack.png", pPitch, pitch_rotation_angle, 30, -30);
             pitch_init = true;
         }
 

@@ -1628,7 +1628,7 @@ void initBucketElevation() {
 void initBucketRot() {
     if (!bucketRot_init) {
 
-        Gtk::Container* parent = noVideo ? static_cast<Gtk::Container*>(sensorBox) : innerRightBox;
+        Gtk::Container* parent = noVideo ? static_cast<Gtk::Container*>(sensorBox) : innerLeftBox;
 
         bool success = createImageIndicator(bucket_rot_image, bucket_rot_pixbuf, "../resources/newbucket.png", parent,
             bucket_rotation_angle

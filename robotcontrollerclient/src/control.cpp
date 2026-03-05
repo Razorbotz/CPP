@@ -41,6 +41,9 @@
 #include <mutex>
 #include <atomic>
 #include <zlib.h>
+#include <foxglove/websocket/websocket_notls.hpp>
+#include <foxglove/websocket/websocket_server.hpp>
+#include <nlohmann/json.hpp>
 
 extern "C" {
 #include <libavcodec/avcodec.h>
@@ -61,8 +64,6 @@ TODO:
 Map Issues:
 Cosmic map isn't drawing robot in correct location
 Robot isn't drawing in correct location, need to offset for camera position
-
-Convert video stream from TCP to UDP
 
 */
 
@@ -128,6 +129,8 @@ Gtk::Button* connectButton2;
 Gtk::Button* toggleModeButton;
 Gtk::Button* settingsButton;
 
+Gtk::Box* topControlsBox;
+
 Gtk::ListBox* videoAddressListBox;
 Gtk::Entry* videoIPAddressEntry;
 Gtk::Label* videoConnectionStatusLabel;
@@ -170,6 +173,38 @@ Gtk::ComboBoxText* simTypeCombo = nullptr;
 Gtk::Box* simContentBox = nullptr;
 
 std::map<std::string, Gtk::Widget*> activeSimWidgets;
+
+// --- Foxglove Globals ---
+std::unique_ptr<foxglove::Server<foxglove::WebSocketNoTls>> foxglove_server;
+foxglove::ChannelId arena_mesh_channel;
+std::chrono::high_resolution_clock::time_point lastFoxgloveTransmit = std::chrono::high_resolution_clock::now();
+
+// --- Encode Tool Globals ---
+bool start_encode_tool = false;
+Gtk::Window* encodeToolWindow = nullptr;
+Gtk::ComboBoxText* encodeTypeCombo = nullptr;
+Gtk::Box* encodeContentBox = nullptr;
+
+Gtk::CheckButton* cbUseFieldStrings = nullptr;
+Gtk::CheckButton* cbIncludeChecksum = nullptr;
+Gtk::CheckButton* cbApplyEnvelope   = nullptr;
+
+Gtk::CheckButton* cbShowDecoded = nullptr;
+Gtk::ComboBoxText* decodeStageCombo = nullptr;   // Raw / After checksum / After envelope
+Gtk::CheckButton* cbValidateChecksum = nullptr;
+
+Gtk::TextView* txtHexStringLabels = nullptr;
+Gtk::TextView* txtHexFieldLabels  = nullptr;
+Gtk::TextView* txtDecodedStringLabels = nullptr;
+Gtk::TextView* txtDecodedFieldLabels  = nullptr;
+Gtk::Label* encodeSummaryLabel = nullptr;
+
+std::map<std::string, Gtk::Widget*> encodeWidgets;
+std::map<std::string, uint8_t> encodeTypes;
+std::map<std::string, Gtk::CheckButton*> encodeInclude;
+
+static std::map<std::string, Field_Strings> LABEL_TO_FIELD;
+
 std::map<std::string, uint8_t> activeSimTypes;
 
 ServerUI server_ui;
@@ -181,8 +216,14 @@ ConfigEditorWindow* configWindow = nullptr;
 Gtk::Window* motorWindow;
 int monitor_count = 0;
 
+// For CSS backgrounds (transparent for video overlay)
+std::string darkBackgroundColorCSS = "rgba(11, 26, 33, 0.0)";
+std::string lightBackgroundColorCSS = "rgba(240, 250, 242, 0.0)";
+
+// For Cairo drawing and RGBA widgets (opaque)
 std::string darkBackgroundColor = "#0b1a21";
 std::string lightBackgroundColor = "#f0faf2";
+
 bool isLightMode = true;
 
 
@@ -599,11 +640,19 @@ class BorderedBox : public Gtk::Box {
     
     protected:
         bool on_draw(const Cairo::RefPtr<Cairo::Context>& cr) override {
-            Gtk::Box::on_draw(cr); 
-    
             auto allocation = get_allocation();
             double width = allocation.get_width();
             double height = allocation.get_height();
+            
+            if (isLightMode) {
+                set_source_hex_color(cr, lightBackgroundColor);
+            } else {
+                set_source_hex_color(cr, darkBackgroundColor);
+            }
+            cr->rectangle(0, 0, width, height);
+            cr->fill();
+            
+            Gtk::Box::on_draw(cr); 
     
             cr->set_line_width(1.0);
             cr->set_source_rgb(0, 0, 0);
@@ -1139,6 +1188,7 @@ std::string generateDarkModeString(const std::string& color) {
     return
         "* { font-family: 'Proxima Nova'; font-weight: bold; }\n"
         "window, notebook, box, flowbox { background-color: " + color + "; }\n"
+        "#topControlsBox { background-color: " + darkBackgroundColor + "; }\n"
         "#dark_text, #dark_text label { color: #000000; }\n"
         "label, button, entry { color: #edf6fa; }\n"
         "button { border: 1px solid #edf6fa; background-color: transparent; }\n"
@@ -1153,6 +1203,7 @@ std::string generateLightModeString(const std::string& color) {
     return
         "* { font-family: 'Proxima Nova'; font-weight: bold }\n"
         "window, notebook, box, flowbox { background-color: " + color + "; }\n"
+        "#topControlsBox { background-color: " + lightBackgroundColor + "; }\n"
         "label, button, entry { color: #000000; }\n"
         "button { border: 1px solid #000000; background-color: #f0f0f0; }\n"
         
@@ -1178,11 +1229,11 @@ void toggleMode() {
 
     auto css_provider = Gtk::CssProvider::create();
     if (isLightMode) {
-        css_provider->load_from_data(generateLightModeString(lightBackgroundColor));
+        css_provider->load_from_data(generateLightModeString(lightBackgroundColorCSS));
         background.set(lightBackgroundColor);    
     }
     else {
-        css_provider->load_from_data(generateDarkModeString(darkBackgroundColor));
+        css_provider->load_from_data(generateDarkModeString(darkBackgroundColorCSS));
         background.set(darkBackgroundColor);
     }
 
@@ -1197,6 +1248,20 @@ void toggleMode() {
         for (const std::string& key : keys) {
             updateBackgroundColor(frame, key);
         }
+    }
+
+    if (arenaWindow) {
+        auto arena_css = Gtk::CssProvider::create();
+        std::string arena_bg_css = "window { background-color: " + (isLightMode ? lightBackgroundColor : darkBackgroundColor) + "; }";
+        arena_css->load_from_data(arena_bg_css);
+        arenaWindow->get_style_context()->add_provider(arena_css, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+    }
+    
+    if (sensorsWindow) {
+        auto sensors_css = Gtk::CssProvider::create();
+        std::string sensors_bg_css = "window { background-color: " + (isLightMode ? lightBackgroundColor : darkBackgroundColor) + "; }";
+        sensors_css->load_from_data(sensors_bg_css);
+        sensorsWindow->get_style_context()->add_provider(sensors_css, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
     }
 
     if(!noVideo) {
@@ -1217,7 +1282,7 @@ void updateBackgroundColor(Gtk::Box* box, bool synced){
     }
 }
 
-const std::set<std::string> talonLabels = {"Talon 1", "Talon 3"};
+const std::set<std::string> talonLabels = {"Talon 1", "Talon 2", "Talon 3", "Talon 4"};
 const std::set<std::string> falconLabels = {"Falcon 1", "Falcon 2", "Falcon 3", "Falcon 4"};
 
 
@@ -1226,15 +1291,6 @@ CircleDrawingArea* getTalonCircle(const std::string& label) {
     if (label == "Talon 2") return talon2Circle;
     if (label == "Talon 3") return talon3Circle;
     if (label == "Talon 4") return talon4Circle;
-    return nullptr;
-}
-
-
-CircleDrawingArea* getFalconCircle(const std::string& label) {
-    if (label == "Falcon 1") return falcon1Circle;
-    if (label == "Falcon 2") return falcon2Circle;
-    if (label == "Falcon 3") return falcon3Circle;
-    if (label == "Falcon 4") return falcon4Circle;
     return nullptr;
 }
 
@@ -1247,12 +1303,14 @@ CircleDrawingArea* getLowerFalconCircle(const std::string& label) {
 }
 
 
-void updateCircleColor(CircleDrawingArea* circle, bool lowVoltage) {
+void updateCircleColor(CircleDrawingArea* circle, bool lowVoltage, bool error) {
     if (!circle || noVideo) return;
 
     Gdk::RGBA color;
-    if (lowVoltage)
+    if (error)
         color.set_rgba(1.0, 0.0, 0.0, 1.0); // Red
+    else if (lowVoltage)
+        color.set_rgba(1.0, 1.0, 0.0, 1.0); // Yellow
     else
         color.set_rgba(0.0, 1.0, 0.0, 1.0); // Green
 
@@ -1641,7 +1699,7 @@ void handleDrivetrainElements(const std::vector<Element>& elements) {
 void handleTalonElements(const std::string& label, const std::vector<Element>& elements) {
     for (const auto& element : elements) {
         if (element.label == "Sensor Position") {
-            int pos = element.data.front().uint16;
+            int pos = element.data.front().float32;
             if (label == "Talon 1") {
                 left_arm_pos = pos;
                 left_arm->set_height_ratio((920 - pos) / 920.0);
@@ -1650,6 +1708,10 @@ void handleTalonElements(const std::string& label, const std::vector<Element>& e
                 bucket_elevation_height = pos; // MATH NEEDED
                 bucket_elevation->set_height_ratio((920 - pos) / 920.0) // ADJUST
                 */
+            }
+            if(label == "Talon 2") {
+                right_arm_pos = pos;
+                right_arm->set_height_ratio((920 - pos) / 920.0);
             }
             else if (label == "Talon 3") {
                 left_bucket_pos = pos;
@@ -1660,19 +1722,25 @@ void handleTalonElements(const std::string& label, const std::vector<Element>& e
                     bucket_rot_image->set(rotate_image(bucket_rot_pixbuf, -bucket_rotation_angle, 200, 200));
                 }
             }
+            else if (label == "Talon 4") {
+                right_bucket_pos = pos;
+                right_bucket->set_height_ratio((700 - pos) / 700.0);
+            }
 
-            bool synced = std::abs(left_arm_pos - right_arm_pos) > 50;
-            if (label == "Talon 1" || label == "Talon 2")
+            if (label == "Talon 1" || label == "Talon 2"){
+                bool synced = std::abs(left_arm_pos - right_arm_pos) > 50;
                 updateBackgroundColor(armBox, synced);
-            else
+            }
+            else{
+                bool synced = std::abs(left_bucket_pos - right_bucket_pos) > 50;
                 updateBackgroundColor(bucketBox, synced);
-
+            }
             if (!noVideo) talonPositionGraph->update_data(label, pos);
         }
         else if (element.label == "Bus Voltage") {
             float voltage = element.data.front().uint16 / 100.0f;
             if (!noVideo) talonVoltageGraph->update_data(label, voltage);
-            updateCircleColor(getTalonCircle(label), voltage < LOW_VOLTAGE);
+            updateCircleColor(getTalonCircle(label), false, voltage < LOW_VOLTAGE);
         }
         else if (element.label == "Output Current") {
             float current = element.data.front().uint16 / 100.0f;
@@ -1685,12 +1753,20 @@ void handleTalonElements(const std::string& label, const std::vector<Element>& e
     }
 }
 
+struct FalconState {
+    bool error = false;
+    bool lowVoltage = false;
+};
+
+std::map<std::string, FalconState> falconStates;
+
 void handleFalconElements(const std::string& label, const std::vector<Element>& elements) {
     for (const auto& element : elements) {
         if (element.label == "Bus Voltage") {
             float voltage = element.data.front().uint16 / 100.0f;
             if (!noVideo) falconVoltageGraph->update_data(label, voltage);
-            updateCircleColor(getFalconCircle(label), voltage < LOW_VOLTAGE);
+            bool lowVoltage = voltage < LOW_VOLTAGE;
+            falconStates[label].lowVoltage = lowVoltage;
         }
         else if (element.label == "Output Current") {
             float current = element.data.front().uint16 / 100.0f;
@@ -1708,8 +1784,9 @@ void handleFalconElements(const std::string& label, const std::vector<Element>& 
         }
         else if (element.label == "Error"){
             bool error = element.data.front().boolean;
-            updateCircleColor(getLowerFalconCircle(label), error);
+            falconStates[label].error = error;
         }
+        updateCircleColor(getLowerFalconCircle(label), falconStates[label].lowVoltage, falconStates[label].error);
     }
 }
 
@@ -1851,7 +1928,7 @@ void updateGUI(BinaryMessage& message) {
     Gtk::EventBox* frameBox = Gtk::manage(new Gtk::EventBox());
     frameBox->add(*infoFrame);
     frameBox->show_all();
-    if(label == "Talon 1" || label == "Talon 3" ||
+    if(label == "Talon 1" || label == "Talon 2" || label == "Talon 3" || label == "Talon 4" || 
        label == "Falcon 1" || label == "Falcon 2" || label == "Falcon 3" || label == "Falcon 4"){
         frameBox->signal_button_press_event().connect(
             [label](GdkEventButton* event) -> bool {
@@ -2034,10 +2111,10 @@ void resetUIOnDisconnect() {
         updateCircleColor(talon2Circle, black);
         updateCircleColor(talon3Circle, black);
         updateCircleColor(talon4Circle, black);
-        updateCircleColor(falcon1Circle, black);
-        updateCircleColor(falcon2Circle, black);
-        updateCircleColor(falcon3Circle, black);
-        updateCircleColor(falcon4Circle, black);
+        // updateCircleColor(falcon1Circle, black);
+        // updateCircleColor(falcon2Circle, black);
+        // updateCircleColor(falcon3Circle, black);
+        // updateCircleColor(falcon4Circle, black);
         updateCircleColor(lowerFalcon1Circle, black);
         updateCircleColor(lowerFalcon2Circle, black);
         updateCircleColor(lowerFalcon3Circle, black);
@@ -2067,6 +2144,7 @@ Gtk::Stack* create_gear_dial(const std::string& initial_gear,
         label->set_markup("<span size='20480' weight='bold' foreground='black'>" + gear + "</span>");
 
         gear_labels[gear] = label;
+        label->show();
 
         stack->add(*label, gear);  // gear string becomes child name
     }
@@ -2432,6 +2510,30 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
     }
     window->maximize();
 
+    Gtk::Box* topLevelBox = nullptr;
+    builder->get_widget("topLevelBox", topLevelBox);
+    if (topLevelBox) {
+        window->remove();
+        
+        // Create video widget
+        videoArea = Gtk::manage(new VideoWidget());
+        videoArea->set_size_request(1600 * GUI_SCALE, 1000 * GUI_SCALE);
+        
+        // Create overlay with video as background
+        Gtk::Overlay* mainOverlay = Gtk::manage(new Gtk::Overlay());
+        mainOverlay->add(*videoArea);  // Video as base
+        mainOverlay->add_overlay(*topLevelBox);  // UI on top
+        
+        // Add overlay to window
+        window->add(*mainOverlay);
+    }
+    
+    // Get topControlsBox and set its CSS name for styling
+    builder->get_widget("topControlsBox", topControlsBox);
+    if (topControlsBox) {
+        topControlsBox->set_name("topControlsBox");
+    }
+
     try {window->set_icon_from_file("../resources/razorbotz.png"); } catch (...) {}
 
     window->add_events(Gdk::KEY_PRESS_MASK | Gdk::KEY_RELEASE_MASK);
@@ -2456,15 +2558,12 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
     
     builder->get_widget("btn_toggle_mode", toggleModeButton);
     builder->get_widget("btn_settings", settingsButton);
-
-    Gtk::Box* topLevelBox = nullptr;
-    builder->get_widget("topLevelBox", topLevelBox);
     
     sensorBox = Gtk::manage(new Gtk::FlowBox());
     sensorBox->set_orientation(Gtk::ORIENTATION_HORIZONTAL);
     
     if (topLevelBox) {
-        topLevelBox->add(*sensorBox);
+        topLevelBox->pack_end(*sensorBox, Gtk::PACK_SHRINK);
     }
 
     if(ipAddressEntry) ipAddressEntry->set_text(ORIN_IP);
@@ -2500,7 +2599,7 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
     }
 
     auto css_provider = Gtk::CssProvider::create();
-    css_provider->load_from_data(generateLightModeString(lightBackgroundColor));
+    css_provider->load_from_data(generateLightModeString(lightBackgroundColorCSS));
     Gtk::StyleContext::add_provider_for_screen(Gdk::Screen::get_default(), css_provider, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
 
     try {
@@ -2570,17 +2669,10 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
             initArmPos();
         }
 
-        Gtk::Box* pVideo = nullptr; builder->get_widget("placeholder_video_area", pVideo);
-        if (pVideo) {
-            videoArea = Gtk::manage(new VideoWidget());
-            videoArea->set_size_request(1600 * GUI_SCALE, 1000 * GUI_SCALE);
-            pVideo->add(*videoArea);
-        }
-
         Gtk::Box* pRight = nullptr; builder->get_widget("placeholder_inner_right", pRight);
         if (pRight) {
             innerRightBox = create_motor_column({{"Falcon 1", &falcon1Circle}, {"Falcon 2", &falcon2Circle}, {"Falcon 3", &falcon3Circle}, {"Falcon 4", &falcon4Circle}}, nullptr, {"Falcon 1", "Falcon 2", "Falcon 3", "Falcon 4"}, false);
-            pRight->add(*innerRightBox);
+            //pRight->add(*innerRightBox);
             initBucketPos();
         }
 
@@ -2671,6 +2763,11 @@ void initSensorsWindow() {
         return;
     }
 
+    auto sensors_css = Gtk::CssProvider::create();
+    std::string sensors_bg_css = "window { background-color: " + (isLightMode ? lightBackgroundColor : darkBackgroundColor) + "; }";
+    sensors_css->load_from_data(sensors_bg_css);
+    sensorsWindow->get_style_context()->add_provider(sensors_css, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+
     if (monitor_count == 3) {
         auto display = Gdk::Display::get_default();
         if (display) {
@@ -2746,6 +2843,11 @@ void initArenaWindow() {
         g_warning("Could not load 'arenaWindow' from arena.glade");
         return;
     }
+
+    auto arena_css = Gtk::CssProvider::create();
+    std::string arena_bg_css = "window { background-color: " + (isLightMode ? lightBackgroundColor : darkBackgroundColor) + "; }";
+    arena_css->load_from_data(arena_bg_css);
+    arenaWindow->get_style_context()->add_provider(arena_css, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
 
     if (monitor_count == 3) {
         auto display = Gdk::Display::get_default();
@@ -2826,6 +2928,116 @@ void initArenaWindow() {
     }
 
     arenaWindow->show_all();
+}
+
+void initFoxgloveServer() {
+    // Simple log handler so we can see connections in the terminal
+    auto logHandler = [](foxglove::WebSocketLogLevel, char const* msg) {
+        std::cout << "Foxglove: " << msg << std::endl;
+    };
+
+    foxglove::ServerOptions serverOptions;
+    
+    // Instantiate the server
+    foxglove_server = std::make_unique<foxglove::Server<foxglove::WebSocketNoTls>>(
+        "Razorbotz_Control", logHandler, serverOptions
+    );
+
+    // Define the channel
+    foxglove::ChannelWithoutId mesh_channel;
+    mesh_channel.topic = "/arena/mesh";
+    mesh_channel.encoding = "json";
+    mesh_channel.schemaName = "foxglove.SceneUpdate";
+    mesh_channel.schema = "";
+
+    auto channelIds = foxglove_server->addChannels({mesh_channel});
+    arena_mesh_channel = channelIds.front();
+
+    foxglove::ServerHandlers<foxglove::ConnHandle> handlers;
+    
+    handlers.subscribeHandler = [](foxglove::ChannelId chanId, foxglove::ConnHandle clientHandle) {
+        std::cout << "Foxglove client subscribed to channel: " << chanId << std::endl;
+    };
+
+    handlers.unsubscribeHandler = [](foxglove::ChannelId chanId, foxglove::ConnHandle clientHandle) {
+        std::cout << "Foxglove client unsubscribed from channel: " << chanId << std::endl;
+    };
+
+    foxglove_server->setHandlers(std::move(handlers));
+
+    // Start the server on all network interfaces (0.0.0.0), port 8765
+    foxglove_server->start("0.0.0.0", 8765);
+    std::cout << "Foxglove WebSocket Server started on ws://0.0.0.0:8765" << std::endl;
+}
+
+#include <glib.h>
+#include <fstream>
+#include <vector>
+
+std::string getGLBBase64(const std::string& filepath) {
+    std::ifstream file(filepath, std::ios::binary | std::ios::ate);
+    if (!file.is_open()) {
+        std::cerr << "Failed to open mesh: " << filepath << std::endl;
+        return "";
+    }
+    std::streamsize size = file.tellg();
+    file.seekg(0, std::ios::beg);
+    
+    std::vector<guchar> buffer(size);
+    if (file.read(reinterpret_cast<char*>(buffer.data()), size)) {
+        gchar* encoded = g_base64_encode(buffer.data(), size);
+        std::string result(encoded);
+        g_free(encoded); // Free the glib allocated memory
+        return result;
+    }
+    return "";
+}
+
+void publishArenaMesh() {
+    if (!foxglove_server) return;
+
+    // Cache the base64 string so we don't encode it 60 times a minute
+    static std::string glb_base64 = "";
+    if (glb_base64.empty()) {
+        // Use a relative path assuming you run the executable from your project root
+        glb_base64 = getGLBBase64("resources/meshes/Test.glb"); 
+        if (glb_base64.empty()) return; // Abort if file not found
+    }
+
+    auto now = std::chrono::system_clock::now();
+    uint64_t timestamp_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count();
+    uint32_t sec = timestamp_ns / 1000000000;
+    uint32_t nsec = timestamp_ns % 1000000000;
+
+    nlohmann::json scene_update = {
+        {"deletions", nlohmann::json::array()},
+        {"entities", {
+            {
+                {"id", "arena_mesh"},
+                {"timestamp", {{"sec", sec}, {"nsec", nsec}}},
+                {"frame_id", "map"},
+                {"models", {
+                    {
+                        {"pose", {
+                            {"position", {"x", 0.0, "y", 0.0, "z", 0.0}},
+                            {"orientation", {"x", 0, "y", 0, "z", 0, "w", 1}}
+                        }},
+                        {"scale", {"x", 1.0, "y", 1.0, "z", 1.0}},
+                        {"media_type", "model/gltf-binary"},
+                        {"data", glb_base64}
+                    }
+                }}
+            }
+        }}
+    };
+
+    std::string json_str = scene_update.dump();
+    foxglove_server->broadcastMessage(
+        arena_mesh_channel, 
+        timestamp_ns, 
+        reinterpret_cast<const uint8_t*>(json_str.data()), 
+        json_str.size()
+    );
 }
 
 void clear_sim_inputs() {
@@ -2975,6 +3187,597 @@ void on_simulate_send() {
 
     updateGUI(message);
 }
+
+
+static void rebuild_encode_output();
+static void on_encode_type_changed();
+void initEncodeToolWindow();
+
+
+// ---------------- Encode Tool Helpers ----------------
+
+static void build_label_to_field_map_once() {
+    if (!LABEL_TO_FIELD.empty()) return;
+    // Build a reverse lookup using BinaryMessage::decodeFieldValue
+    BinaryMessage tmp("tmp");
+    for (int i = 1; i < 64; ++i) {
+        const Field_Strings f = (Field_Strings)i;
+        const std::string label = tmp.decodeFieldValue(f);
+        if (!label.empty() && label != "Unknown") {
+            LABEL_TO_FIELD[label] = f;
+        }
+    }
+}
+
+static std::string hexDump(const std::vector<uint8_t>& bytes) {
+    std::ostringstream oss;
+    oss << std::hex << std::setfill('0');
+    for (size_t i = 0; i < bytes.size(); ++i) {
+        oss << std::setw(2) << (int)bytes[i];
+        if ((i + 1) % 16 == 0) oss << "\n";
+        else oss << " ";
+    }
+    return oss.str();
+}
+
+static void set_textview(Gtk::TextView* tv, const std::string& s) {
+    if (!tv) return;
+    auto buf = tv->get_buffer();
+    if (!buf) return;
+    buf->set_text(s);
+}
+
+// communication_node-style checksum: append placeholder then compute sum%0x2C and write last byte
+static void checksum_encode_vec(std::vector<uint8_t>& bytes) {
+    uint32_t sum = 0;
+    bytes.push_back(0x00);
+    for (uint8_t b : bytes) sum += b;
+    bytes.back() = (uint8_t)(sum % 0x2C);
+}
+
+// Envelope: [flag][orig_size_be32][zlib_compressed...] where flag=1, or flag=0 + raw if no compression.
+// We'll mimic the same approach as your communication_node: always compress when envelope enabled.
+static std::vector<uint8_t> apply_server_envelope(const std::vector<uint8_t>& raw) {
+    uLongf compressed_buffer_size = compressBound((uLong)raw.size());
+    std::vector<uint8_t> compressed_bytes(compressed_buffer_size);
+
+    int rc = compress2(
+        compressed_bytes.data(), &compressed_buffer_size,
+        raw.data(), (uLong)raw.size(),
+        Z_BEST_SPEED
+    );
+
+    if (rc != Z_OK) {
+        // fall back to uncompressed envelope
+        std::vector<uint8_t> payload;
+        payload.reserve(1 + raw.size());
+        payload.push_back(0);
+        payload.insert(payload.end(), raw.begin(), raw.end());
+        return payload;
+    }
+
+    compressed_bytes.resize(compressed_buffer_size);
+
+    std::vector<uint8_t> payload;
+    payload.reserve(1 + 4 + compressed_bytes.size());
+    payload.push_back(1);
+
+    const uint32_t orig = (uint32_t)raw.size();
+    payload.push_back((orig >> 24) & 0xFF);
+    payload.push_back((orig >> 16) & 0xFF);
+    payload.push_back((orig >>  8) & 0xFF);
+    payload.push_back((orig >>  0) & 0xFF);
+
+    payload.insert(payload.end(), compressed_bytes.begin(), compressed_bytes.end());
+    return payload;
+}
+
+static bool unwrap_server_envelope_vec(const std::vector<uint8_t>& payload, std::vector<uint8_t>& out_raw) {
+    if (payload.empty()) return false;
+    const uint8_t flag = payload[0];
+    if (flag == 0) {
+        out_raw.assign(payload.begin() + 1, payload.end());
+        return true;
+    }
+    if (flag != 1) return false;
+    if (payload.size() < 1 + 4) return false;
+
+    const uint32_t orig_size =
+        (uint32_t(payload[1]) << 24) |
+        (uint32_t(payload[2]) << 16) |
+        (uint32_t(payload[3]) << 8)  |
+        (uint32_t(payload[4]) << 0);
+
+    const uint8_t* comp = payload.data() + 5;
+    const size_t comp_len = payload.size() - 5;
+
+    out_raw.resize(orig_size);
+    uLongf dest_len = (uLongf)orig_size;
+    const int rc = uncompress(out_raw.data(), &dest_len, comp, (uLong)comp_len);
+    if (rc != Z_OK || dest_len != (uLongf)orig_size) return false;
+    return true;
+}
+
+static bool validate_and_strip_checksum(std::vector<uint8_t>& bytes) {
+    if (bytes.size() < 2) return false;
+    const uint8_t stored = bytes.back();
+    bytes.back() = 0x00;
+    uint32_t sum = 0;
+    for (uint8_t b : bytes) sum += b;
+    const uint8_t computed = (uint8_t)(sum % 0x2C);
+    bytes.back() = stored;
+    if (computed != stored) return false;
+    bytes.pop_back();
+    return true;
+}
+
+// Add element helpers (reads encodeWidgets values)
+static void add_value_string_label(BinaryMessage& msg, const std::string& key, uint8_t type) {
+    auto it = encodeWidgets.find(key);
+    Gtk::Widget* w = (it == encodeWidgets.end()) ? nullptr : it->second;
+
+    switch (type) {
+        case TYPE::BOOLEAN: {
+            bool v = false;
+            if (auto* cb = dynamic_cast<Gtk::CheckButton*>(w)) v = cb->get_active();
+            msg.addElementBoolean(key, v);
+            break;
+        }
+        case TYPE::INT32: {
+            int v = 0;
+            if (auto* e = dynamic_cast<Gtk::Entry*>(w)) v = std::stoi(e->get_text());
+            msg.addElementInt32(key, v);
+            break;
+        }
+        case TYPE::FLOAT64: {
+            double v = 0.0;
+            if (auto* e = dynamic_cast<Gtk::Entry*>(w)) v = std::stod(e->get_text());
+            msg.addElementFloat64(key, v);
+            break;
+        }
+        case TYPE::STRING: {
+            std::string v;
+            if (auto* e = dynamic_cast<Gtk::Entry*>(w)) v = e->get_text();
+            msg.addElementString(key, v);
+            break;
+        }
+        default: {
+            // Fallback: treat entry text as string
+            std::string v;
+            if (auto* e = dynamic_cast<Gtk::Entry*>(w)) v = e->get_text();
+            msg.addElementString(key, v);
+            break;
+        }
+    }
+}
+
+static void add_value_field_label(BinaryMessage& msg, const std::string& key, uint8_t type) {
+    build_label_to_field_map_once();
+    auto fIt = LABEL_TO_FIELD.find(key);
+    if (fIt == LABEL_TO_FIELD.end()) {
+        // Unknown label -> send as string label
+        add_value_string_label(msg, key, type);
+        return;
+    }
+    const Field_Strings field = fIt->second;
+
+    auto it = encodeWidgets.find(key);
+    Gtk::Widget* w = (it == encodeWidgets.end()) ? nullptr : it->second;
+
+    switch (type) {
+        case TYPE::BOOLEAN: {
+            bool v = false;
+            if (auto* cb = dynamic_cast<Gtk::CheckButton*>(w)) v = cb->get_active();
+            msg.addElementBoolean(field, v);
+            break;
+        }
+        case TYPE::INT32: {
+            int v = 0;
+            if (auto* e = dynamic_cast<Gtk::Entry*>(w)) v = std::stoi(e->get_text());
+            msg.addElementInt32(field, v);
+            break;
+        }
+        case TYPE::FLOAT64: {
+            double v = 0.0;
+            if (auto* e = dynamic_cast<Gtk::Entry*>(w)) v = std::stod(e->get_text());
+            msg.addElementFloat64(field, v);
+            break;
+        }
+        case TYPE::STRING: {
+            std::string v;
+            if (auto* e = dynamic_cast<Gtk::Entry*>(w)) v = e->get_text();
+            msg.addElementString(field, v);
+            break;
+        }
+        default: {
+            std::string v;
+            if (auto* e = dynamic_cast<Gtk::Entry*>(w)) v = e->get_text();
+            msg.addElementString(field, v);
+            break;
+        }
+    }
+}
+
+static std::vector<uint8_t> build_variant_bytes(const std::string& name, bool useFieldVariant) {
+    BinaryMessage msg(name);
+
+    for (const auto& kv : encodeTypes) {
+        const std::string& key = kv.first;
+        const uint8_t type = kv.second;
+
+        auto incIt = encodeInclude.find(key);
+        if (incIt != encodeInclude.end() && incIt->second && !incIt->second->get_active()) continue;
+
+        if (useFieldVariant) add_value_field_label(msg, key, type);
+        else                 add_value_string_label(msg, key, type);
+    }
+
+    auto bytesList = msg.getBytes();
+    std::vector<uint8_t> raw(bytesList->begin(), bytesList->end());
+
+    if (cbIncludeChecksum && cbIncludeChecksum->get_active()) {
+        checksum_encode_vec(raw);
+    }
+    if (cbApplyEnvelope && cbApplyEnvelope->get_active()) {
+        return apply_server_envelope(raw);
+    }
+    return raw;
+}
+
+static std::string element_value_to_string(const Element& e) {
+    std::ostringstream oss;
+    if (e.data.empty()) return "(empty)";
+    switch (e.type) {
+        case TYPE::BOOLEAN:  oss << (e.data.front().boolean ? "true" : "false"); break;
+        case TYPE::CHARACTER: oss << "'" << e.data.front().character << "'"; break;
+        case TYPE::INT8:     oss << (int)e.data.front().int8; break;
+        case TYPE::INT16:    oss << e.data.front().int16; break;
+        case TYPE::INT32:    oss << e.data.front().int32; break;
+        case TYPE::INT64:    oss << e.data.front().int64; break;
+        case TYPE::UINT8:    oss << (unsigned)e.data.front().uint8; break;
+        case TYPE::UINT16:   oss << e.data.front().uint16; break;
+        case TYPE::UINT32:   oss << e.data.front().uint32; break;
+        case TYPE::UINT64:   oss << e.data.front().uint64; break;
+        case TYPE::FLOAT32:  oss << std::fixed << std::setprecision(4) << e.data.front().float32; break;
+        case TYPE::FLOAT64:  oss << std::fixed << std::setprecision(6) << e.data.front().float64; break;
+        case TYPE::STRING: {
+            std::string s;
+            s.reserve(e.data.size());
+            for (const auto& d : e.data) s.push_back(d.character);
+            oss << "\"" << s << "\"";
+            break;
+        }
+        default:
+            oss << "(type " << (int)e.type << ", count " << e.data.size() << ")";
+            break;
+    }
+    if (e.dimensionCount > 0) {
+        oss << " dims=" << (size_t)e.dimensionCount << " [";
+        for (size_t i = 0; i < e.sizeList.size(); ++i) {
+            if (i) oss << ",";
+            oss << e.sizeList[i];
+        }
+        oss << "]";
+    }
+    return oss.str();
+}
+
+static void dump_object_recursive(const Object& obj, std::ostringstream& out, int indent = 0) {
+    const std::string pad(indent, ' ');
+    out << pad << "Object: " << obj.label << "\n";
+    for (const auto& e : obj.elementList) {
+        out << pad << "  - " << e.label << " = " << element_value_to_string(e) << "\n";
+    }
+    // The BinaryMessage Object struct uses `children` (not `objectList`).
+    for (const auto& child : obj.children) {
+        dump_object_recursive(child, out, indent + 2);
+    }
+}
+
+static std::string decode_preview_from_payload(const std::vector<uint8_t>& payload,
+                                               bool stage_is_enveloped,
+                                               bool stage_has_checksum,
+                                               bool validate_checksum)
+{
+    std::vector<uint8_t> raw = payload;
+
+    if (stage_is_enveloped) {
+        std::vector<uint8_t> unwrapped;
+        if (!unwrap_server_envelope_vec(payload, unwrapped)) {
+            return "Decode failed: could not unwrap envelope\n";
+        }
+        raw.swap(unwrapped);
+    }
+
+    if (stage_has_checksum) {
+        if (validate_checksum) {
+            if (!validate_and_strip_checksum(raw)) {
+                return "Decode failed: checksum mismatch\n";
+            }
+        } else {
+            if (!raw.empty()) raw.pop_back();
+        }
+    }
+
+    try {
+        std::list<uint8_t> msgList(raw.begin(), raw.end());
+        BinaryMessage decoded(msgList);
+        std::ostringstream out;
+        dump_object_recursive(decoded.getObject(), out);
+        return out.str();
+    } catch (const std::exception& e) {
+        std::ostringstream out;
+        out << "Decode exception: " << e.what() << "\n";
+        return out.str();
+    } catch (...) {
+        return "Decode exception: unknown\n";
+    }
+}
+
+static void rebuild_encode_output() {
+    if (!encodeTypeCombo) return;
+    const std::string name = encodeTypeCombo->get_active_text();
+    if (name.empty()) return;
+
+    const std::vector<uint8_t> bytesString = build_variant_bytes(name, /*useFieldVariant=*/false);
+    const std::vector<uint8_t> bytesField  = build_variant_bytes(name, /*useFieldVariant=*/true);
+
+    set_textview(txtHexStringLabels, hexDump(bytesString));
+    set_textview(txtHexFieldLabels,  hexDump(bytesField));
+
+    // Savings summary
+    const size_t a = bytesString.size();
+    const size_t b = bytesField.size();
+    const long saved = (long)a - (long)b;
+    double pct = 0.0;
+    if (a > 0) pct = 100.0 * ((double)saved / (double)a);
+
+    const double hz = 33.0;
+    const double a_kbps = ((double)a * hz * 8.0) / 1000.0;
+    const double b_kbps = ((double)b * hz * 8.0) / 1000.0;
+
+    if (encodeSummaryLabel) {
+        std::ostringstream oss;
+        oss << "String labels: " << a << " B   |   FieldStrings: " << b << " B   |   Saved: "
+            << saved << " B (" << std::fixed << std::setprecision(1) << pct << "%)"
+            << "   @33Hz: " << std::setprecision(1) << a_kbps << " kbps → " << b_kbps << " kbps";
+        encodeSummaryLabel->set_text(oss.str());
+    }
+
+    // Decode preview
+    if (cbShowDecoded && cbShowDecoded->get_active()) {
+        // Decode whatever the tool is currently producing.
+        // (This matches what the client would receive on the wire.)
+        const bool stage_is_enveloped = (cbApplyEnvelope && cbApplyEnvelope->get_active());
+        const bool stage_has_checksum = (cbIncludeChecksum && cbIncludeChecksum->get_active());
+        const bool validate_checksum = (cbValidateChecksum && cbValidateChecksum->get_active());
+
+        set_textview(txtDecodedStringLabels,
+                     decode_preview_from_payload(bytesString, stage_is_enveloped, stage_has_checksum, validate_checksum));
+        set_textview(txtDecodedFieldLabels,
+                     decode_preview_from_payload(bytesField, stage_is_enveloped, stage_has_checksum, validate_checksum));
+    } else {
+        set_textview(txtDecodedStringLabels, "");
+        set_textview(txtDecodedFieldLabels, "");
+    }
+}
+
+static void clear_encode_inputs() {
+    if (!encodeContentBox) return;
+    auto children = encodeContentBox->get_children();
+    for (auto* child : children) {
+        encodeContentBox->remove(*child);
+        delete child;
+    }
+    encodeWidgets.clear();
+    encodeTypes.clear();
+    encodeInclude.clear();
+}
+
+static void rebuildEncodeToolFields(const std::string& name, const std::string& prefix) {
+    clear_encode_inputs();
+
+    BinaryMessage dummy(name);
+
+    // We reuse your existing simulator UI generator by calling populateBinaryMessage(dummy, prefix)
+    // which adds the canonical set of fields for this message type.
+    populateBinaryMessage(name, prefix, dummy);
+
+    // The dummy now contains elements; build UI rows from them.
+    // We only need label + type; default widget is an Entry for numeric/string, CheckButton for bool.
+    for (const auto& el : dummy.getObject().elementList) {
+        const std::string key = el.label;
+        const uint8_t type = el.type;
+
+        auto row = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 6));
+
+        auto inc = Gtk::manage(new Gtk::CheckButton());
+        inc->set_active(true);
+        inc->signal_toggled().connect(sigc::ptr_fun(&rebuild_encode_output));
+        encodeInclude[key] = inc;
+        row->pack_start(*inc, Gtk::PACK_SHRINK);
+
+        auto lbl = Gtk::manage(new Gtk::Label(key));
+        lbl->set_xalign(0.0);
+        lbl->set_size_request(180, -1);
+        row->pack_start(*lbl, Gtk::PACK_SHRINK);
+
+        Gtk::Widget* widget = nullptr;
+        if (type == TYPE::BOOLEAN) {
+            auto cb = Gtk::manage(new Gtk::CheckButton());
+            cb->set_active(false);
+            cb->signal_toggled().connect(sigc::ptr_fun(&rebuild_encode_output));
+            widget = cb;
+        } else {
+            auto entry = Gtk::manage(new Gtk::Entry());
+            entry->set_text("0");
+            entry->signal_changed().connect(sigc::ptr_fun(&rebuild_encode_output));
+            widget = entry;
+        }
+
+        encodeWidgets[key] = widget;
+        encodeTypes[key] = type;
+        row->pack_start(*widget, Gtk::PACK_EXPAND_WIDGET);
+
+        encodeContentBox->pack_start(*row, Gtk::PACK_SHRINK);
+    }
+
+    encodeContentBox->show_all();
+    rebuild_encode_output();
+}
+
+static void on_encode_type_changed() {
+    if (!encodeTypeCombo || !encodeContentBox) return;
+    std::string label = encodeTypeCombo->get_active_text();
+    if (label.empty()) return;
+
+    std::string prefix;
+    if (label.find("Talon") != std::string::npos) prefix = "TALON";
+    else if (label.find("Falcon") != std::string::npos) prefix = "FALCON";
+    else if (label.find("Linear") != std::string::npos) prefix = "LINEAR";
+    else if (label == "Zed") prefix = "ZED";
+    else if (label == "Power") prefix = "POWER";
+    else if (label == "Communication") prefix = "COMMS";
+    else if (label == "Autonomy") prefix = "AUTO";
+    else prefix = "GEN";
+
+    rebuildEncodeToolFields(label, prefix);
+}
+
+void initEncodeToolWindow() {
+    encodeToolWindow = new Gtk::Window();
+    encodeToolWindow->set_title("BinaryMessage Encode Tool");
+    encodeToolWindow->set_default_size(1100, 800);
+    encodeToolWindow->set_keep_above(true);
+
+    auto mainVBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 10));
+    mainVBox->set_border_width(10);
+
+    // Controls
+    auto ctrlRow = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 10));
+    cbUseFieldStrings = Gtk::manage(new Gtk::CheckButton("Use FieldStrings labels"));
+    cbIncludeChecksum = Gtk::manage(new Gtk::CheckButton("Include checksum"));
+    cbApplyEnvelope   = Gtk::manage(new Gtk::CheckButton("Apply server envelope (compression)"));
+
+    cbUseFieldStrings->set_active(true);
+    cbIncludeChecksum->set_active(true);
+    cbApplyEnvelope->set_active(true);
+
+    ctrlRow->pack_start(*cbUseFieldStrings, Gtk::PACK_SHRINK);
+    ctrlRow->pack_start(*cbIncludeChecksum, Gtk::PACK_SHRINK);
+    ctrlRow->pack_start(*cbApplyEnvelope, Gtk::PACK_SHRINK);
+
+    cbUseFieldStrings->signal_toggled().connect(sigc::ptr_fun(&rebuild_encode_output));
+    cbIncludeChecksum->signal_toggled().connect(sigc::ptr_fun(&rebuild_encode_output));
+    cbApplyEnvelope->signal_toggled().connect(sigc::ptr_fun(&rebuild_encode_output));
+
+    mainVBox->pack_start(*ctrlRow, Gtk::PACK_SHRINK);
+
+    encodeSummaryLabel = Gtk::manage(new Gtk::Label(""));
+    encodeSummaryLabel->set_xalign(0.0);
+    mainVBox->pack_start(*encodeSummaryLabel, Gtk::PACK_SHRINK);
+
+    // Decode preview controls
+    auto decodeCtrlRow = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 10));
+    cbShowDecoded = Gtk::manage(new Gtk::CheckButton("Show decoded values (client preview)"));
+    cbShowDecoded->set_active(false);
+    cbShowDecoded->signal_toggled().connect(sigc::ptr_fun(&rebuild_encode_output));
+    decodeCtrlRow->pack_start(*cbShowDecoded, Gtk::PACK_SHRINK);
+
+    decodeStageCombo = Gtk::manage(new Gtk::ComboBoxText());
+    decodeStageCombo->append("Raw BinaryMessage (no checksum, no envelope)");
+    decodeStageCombo->append("After checksum (raw + checksum)");
+    decodeStageCombo->append("After server envelope (compression)");
+    decodeStageCombo->set_active(2);
+    decodeStageCombo->signal_changed().connect(sigc::ptr_fun(&rebuild_encode_output));
+    decodeCtrlRow->pack_start(*Gtk::manage(new Gtk::Label("Decode input:")), Gtk::PACK_SHRINK);
+    decodeCtrlRow->pack_start(*decodeStageCombo, Gtk::PACK_SHRINK);
+
+    cbValidateChecksum = Gtk::manage(new Gtk::CheckButton("Validate checksum"));
+    cbValidateChecksum->set_active(true);
+    cbValidateChecksum->signal_toggled().connect(sigc::ptr_fun(&rebuild_encode_output));
+    decodeCtrlRow->pack_start(*cbValidateChecksum, Gtk::PACK_SHRINK);
+
+    mainVBox->pack_start(*decodeCtrlRow, Gtk::PACK_SHRINK);
+
+    // Type dropdown
+    mainVBox->pack_start(*Gtk::manage(new Gtk::Label("Select Message Type:")), Gtk::PACK_SHRINK);
+    encodeTypeCombo = Gtk::manage(new Gtk::ComboBoxText());
+    std::vector<std::string> targets = {
+        "Talon 1", "Talon 2", "Talon 3", "Talon 4",
+        "Falcon 1", "Falcon 2", "Falcon 3", "Falcon 4",
+        "Linear 1", "Linear 2", "Zed", "Drivetrain",
+        "Power", "Communication", "Autonomy"
+    };
+    for (const auto& t : targets) encodeTypeCombo->append(t);
+    encodeTypeCombo->signal_changed().connect(sigc::ptr_fun(&on_encode_type_changed));
+    encodeTypeCombo->signal_changed().connect(sigc::ptr_fun(&rebuild_encode_output));
+    mainVBox->pack_start(*encodeTypeCombo, Gtk::PACK_SHRINK);
+
+    // Scrollable fields
+    auto scrolled = Gtk::manage(new Gtk::ScrolledWindow());
+    scrolled->set_policy(Gtk::POLICY_NEVER, Gtk::POLICY_AUTOMATIC);
+    scrolled->set_vexpand(true);
+    encodeContentBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
+    scrolled->add(*encodeContentBox);
+    mainVBox->pack_start(*scrolled, Gtk::PACK_EXPAND_WIDGET);
+
+    // Output panes: hex
+    auto panes = Gtk::manage(new Gtk::Paned(Gtk::ORIENTATION_HORIZONTAL));
+    txtHexStringLabels = Gtk::manage(new Gtk::TextView());
+    txtHexFieldLabels  = Gtk::manage(new Gtk::TextView());
+    txtHexStringLabels->set_editable(false);
+    txtHexFieldLabels->set_editable(false);
+
+    auto leftScroll = Gtk::manage(new Gtk::ScrolledWindow());
+    auto rightScroll = Gtk::manage(new Gtk::ScrolledWindow());
+    leftScroll->set_policy(Gtk::POLICY_AUTOMATIC, Gtk::POLICY_AUTOMATIC);
+    rightScroll->set_policy(Gtk::POLICY_AUTOMATIC, Gtk::POLICY_AUTOMATIC);
+    leftScroll->add(*txtHexStringLabels);
+    rightScroll->add(*txtHexFieldLabels);
+
+    panes->add1(*leftScroll);
+    panes->add2(*rightScroll);
+    panes->set_position(550);
+    mainVBox->pack_start(*panes, Gtk::PACK_EXPAND_WIDGET);
+
+    // Output panes: decoded
+    auto decodedLabel = Gtk::manage(new Gtk::Label("Decoded (String labels)  |  Decoded (FieldStrings labels)"));
+    decodedLabel->set_xalign(0.0);
+    mainVBox->pack_start(*decodedLabel, Gtk::PACK_SHRINK);
+
+    auto decodedPanes = Gtk::manage(new Gtk::Paned(Gtk::ORIENTATION_HORIZONTAL));
+    txtDecodedStringLabels = Gtk::manage(new Gtk::TextView());
+    txtDecodedFieldLabels  = Gtk::manage(new Gtk::TextView());
+    txtDecodedStringLabels->set_editable(false);
+    txtDecodedFieldLabels->set_editable(false);
+
+    auto decLeftScroll = Gtk::manage(new Gtk::ScrolledWindow());
+    auto decRightScroll = Gtk::manage(new Gtk::ScrolledWindow());
+    decLeftScroll->set_policy(Gtk::POLICY_AUTOMATIC, Gtk::POLICY_AUTOMATIC);
+    decRightScroll->set_policy(Gtk::POLICY_AUTOMATIC, Gtk::POLICY_AUTOMATIC);
+    decLeftScroll->set_size_request(-1, 220);
+    decRightScroll->set_size_request(-1, 220);
+    decLeftScroll->add(*txtDecodedStringLabels);
+    decRightScroll->add(*txtDecodedFieldLabels);
+
+    decodedPanes->add1(*decLeftScroll);
+    decodedPanes->add2(*decRightScroll);
+    decodedPanes->set_position(550);
+    mainVBox->pack_start(*decodedPanes, Gtk::PACK_SHRINK);
+
+    auto btnRebuild = Gtk::manage(new Gtk::Button("Rebuild Hex Output"));
+    btnRebuild->signal_clicked().connect(sigc::ptr_fun(&rebuild_encode_output));
+    mainVBox->pack_start(*btnRebuild, Gtk::PACK_SHRINK);
+
+    encodeToolWindow->add(*mainVBox);
+    encodeToolWindow->show_all();
+
+    encodeTypeCombo->set_active_text("Talon 1");
+    rebuild_encode_output();
+}
+
+// ---------------- End Encode Tool Helpers ----------------
 
 void initSimulatorWindow() {
     simulatorWindow = new Gtk::Window();
@@ -3209,6 +4012,10 @@ void processArguments(int argc, char** argv){
                 simulateNetwork = true;
                 initVals = true; 
             }
+            else if(!strcmp("--encode_tool", argv[i])){
+                start_encode_tool = true;
+                initVals = true;
+            }
         }
     }
 }
@@ -3322,8 +4129,12 @@ int main(int argc, char** argv) {
     if(simulateNetwork) {
         initSimulatorWindow();
     }
+    if(start_encode_tool) {
+        initEncodeToolWindow();
+    }
     moveWindows();
     initGUI();
+    initFoxgloveServer();
     
     //Start a thread to listen to updates from the robot
     videoDisconnectDispatcher.connect([&]() {
@@ -3473,6 +4284,10 @@ int main(int argc, char** argv) {
                 setDisconnectedState2(server_ui);
             }
         }
+
+        if(!isServerConnected() && !isServerConnected2()){
+            resetUIOnDisconnect();
+        }
         
         while(BinaryMessage::hasMessage(messageBytesList)){
             if (checksum_decode(messageBytesList) == 1) {
@@ -3500,6 +4315,12 @@ int main(int argc, char** argv) {
         if (time_span.count() > 1.0 && isVideoConnected()) {
             lastVideoHeartbeatTime = now;
             sendVideoHeartbeat();
+        }
+
+        time_span = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastFoxgloveTransmit);
+        if (time_span.count() > 1.0) {
+            lastFoxgloveTransmit = now;
+            publishArenaMesh();
         }
 
 

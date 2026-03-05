@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<robot name="arena_mesh">
+  <link name="map">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="artemis_arena.glb"/>
+      </geometry>
+    </visual>
+  </link>
+</robot>

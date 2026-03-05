@@ -196,6 +196,10 @@ Glib::RefPtr<Gdk::Pixbuf> lvl_pixbuf;
 Gtk::Image* pitch_image;
 Gtk::Image* lvl_image;
 
+double bucket_rotation_angle = 0.0;
+Glib::RefPtr<Gdk::Pixbuf> bucket_rot_pixbuf;
+Gtk::Image* bucket_rot_image;
+
 
 double MULTIPLIER_X = 1100.0 / 6.88;
 double MULTIPLIER_Y = 800.0 / 5.0;
@@ -258,11 +262,13 @@ DrawingArea* right_arm;
 DrawingArea* left_arm;
 DrawingArea* right_bucket;
 DrawingArea* left_bucket;
+//DrawingArea* bucket_elevation
 Gtk::Box* armBox;
 Gtk::Box* bucketBox;
 bool arm_init = false, bucket_init = false, roll_init = false, pitch_init = false, bucketLevel_init = false;
+bool bucketRot_init = false, bucketElevation_init = false;
 
-int right_arm_pos = 0, left_arm_pos = 0, right_bucket_pos = 0, left_bucket_pos = 0;
+int right_arm_pos = 0, left_arm_pos = 0, right_bucket_pos = 0, left_bucket_pos = 0, bucket_elevation_height = 0;
 
 class ImageOverlay : public Gtk::DrawingArea {
     public:
@@ -1516,7 +1522,7 @@ void initBucketLvl() {
         }
 
         Gtk::Container* parent = noVideo ? static_cast<Gtk::Container*>(sensorBox) : bottomLowerBox;
-        if (createImageIndicator(lvl_image, lvl_pixbuf, "../resources/bucket.png", parent, 0)) {
+        if (createImageIndicator(lvl_image, lvl_pixbuf, "../resources/newbucket.png", parent, 0)) {
             bucketLevel_init = true;
             window->show_all();
         }
@@ -1548,6 +1554,32 @@ void initBucketPos() {
 
         bucket_init = true;
         window->show_all();
+    }
+}
+
+/*
+void initBucketElevation() {
+    if (!bucketElevation_init) {
+        . . .
+        bucketElevation_init = true;
+        window->show_all()
+    }
+}
+*/
+
+void initBucketRot() {
+    if (!bucketRot_init) {
+
+        Gtk::Container* parent = noVideo ? static_cast<Gtk::Container*>(sensorBox) : innerRightBox;
+
+        bool success = createImageIndicator(bucket_rot_image, bucket_rot_pixbuf, "../resources/newbucket.png", parent,
+            bucket_rotation_angle
+        );
+
+        if (success) {
+            bucketRot_init = true;
+            window->show_all();
+        }
     }
 }
 
@@ -1613,10 +1645,20 @@ void handleTalonElements(const std::string& label, const std::vector<Element>& e
             if (label == "Talon 1") {
                 left_arm_pos = pos;
                 left_arm->set_height_ratio((920 - pos) / 920.0);
+
+                /*
+                bucket_elevation_height = pos; // MATH NEEDED
+                bucket_elevation->set_height_ratio((920 - pos) / 920.0) // ADJUST
+                */
             }
             else if (label == "Talon 3") {
                 left_bucket_pos = pos;
                 left_bucket->set_height_ratio((700 - pos) / 700.0);
+
+                bucket_rotation_angle = (pos / 700.0) * 180.0;  // FIX PLACEHOLDER MATH!
+                if (bucketRot_init) {
+                    bucket_rot_image->set(rotate_image(bucket_rot_pixbuf, -bucket_rotation_angle, 200, 200));
+                }
             }
 
             bool synced = std::abs(left_arm_pos - right_arm_pos) > 50;
@@ -1790,8 +1832,10 @@ void updateGUI(BinaryMessage& message) {
 
     if ((label == "Talon 1" || label == "Talon 2") && !arm_init) 
         initArmPos();
-    if ((label == "Talon 3" || label == "Talon 4") && !bucket_init) 
+        //initBucketElevation();
+    if ((label == "Talon 3" || label == "Talon 4") && !bucket_init)
         initBucketPos();
+        initBucketRot();
     if (label == "Zed" && !roll_init) 
         initRoll();
     if(label == "Zed" && !pitch_init)
@@ -1933,6 +1977,8 @@ void initGUI() {
         initPitch();
         initArmPos();
         initBucketPos();
+        //initBucketElevation();
+        initBucketRot();
         
         createMessage("Communication", "COMMUNICATION");
         createMessage("Autonomy", "AUTONOMY");

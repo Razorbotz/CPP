@@ -111,8 +111,12 @@ void insert(int value,uint8_t* array){
     array[3]=uint8_t((uint32_t(*(static_cast<uint32_t*>(static_cast<void*>(&value))))>>0) & 0xff);
 }
 
-
+std::unique_ptr<foxglove::Server<foxglove::WebSocketNoTls>> foxglove_server;
 bool quit(GdkEventAny* event){
+    if (foxglove_server) {
+        foxglove_server->stop();
+    }
+    
     exit(0);
 }
 
@@ -175,8 +179,8 @@ Gtk::Box* simContentBox = nullptr;
 std::map<std::string, Gtk::Widget*> activeSimWidgets;
 
 // --- Foxglove Globals ---
-std::unique_ptr<foxglove::Server<foxglove::WebSocketNoTls>> foxglove_server;
 foxglove::ChannelId arena_mesh_channel;
+foxglove::ChannelId tf_channel;
 std::chrono::high_resolution_clock::time_point lastFoxgloveTransmit = std::chrono::high_resolution_clock::now();
 
 // --- Encode Tool Globals ---
@@ -2931,27 +2935,23 @@ void initArenaWindow() {
 }
 
 void initFoxgloveServer() {
-    // Simple log handler so we can see connections in the terminal
     auto logHandler = [](foxglove::WebSocketLogLevel, char const* msg) {
         std::cout << "Foxglove: " << msg << std::endl;
     };
 
     foxglove::ServerOptions serverOptions;
     
-    // Instantiate the server
     foxglove_server = std::make_unique<foxglove::Server<foxglove::WebSocketNoTls>>(
         "Razorbotz_Control", logHandler, serverOptions
     );
 
-    // Define the channel
-    foxglove::ChannelWithoutId mesh_channel;
-    mesh_channel.topic = "/arena/mesh";
-    mesh_channel.encoding = "json";
-    mesh_channel.schemaName = "foxglove.SceneUpdate";
-    mesh_channel.schema = "";
-
-    auto channelIds = foxglove_server->addChannels({mesh_channel});
-    arena_mesh_channel = channelIds.front();
+    foxglove::ChannelWithoutId tf_chan;
+    tf_chan.topic = "/tf";
+    tf_chan.encoding = "json";
+    tf_chan.schemaName = "foxglove.FrameTransforms"; 
+    
+    auto tfIds = foxglove_server->addChannels({tf_chan});
+    tf_channel = tfIds.front();
 
     foxglove::ServerHandlers<foxglove::ConnHandle> handlers;
     
@@ -2965,7 +2965,6 @@ void initFoxgloveServer() {
 
     foxglove_server->setHandlers(std::move(handlers));
 
-    // Start the server on all network interfaces (0.0.0.0), port 8765
     foxglove_server->start("0.0.0.0", 8765);
     std::cout << "Foxglove WebSocket Server started on ws://0.0.0.0:8765" << std::endl;
 }
@@ -2993,47 +2992,40 @@ std::string getGLBBase64(const std::string& filepath) {
     return "";
 }
 
-void publishArenaMesh() {
+void publishRobotTransform() {
     if (!foxglove_server) return;
-
-    // Cache the base64 string so we don't encode it 60 times a minute
-    static std::string glb_base64 = "";
-    if (glb_base64.empty()) {
-        // Use a relative path assuming you run the executable from your project root
-        glb_base64 = getGLBBase64("resources/meshes/Test.glb"); 
-        if (glb_base64.empty()) return; // Abort if file not found
-    }
 
     auto now = std::chrono::system_clock::now();
     uint64_t timestamp_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count();
     uint32_t sec = timestamp_ns / 1000000000;
     uint32_t nsec = timestamp_ns % 1000000000;
 
-    nlohmann::json scene_update = {
-        {"deletions", nlohmann::json::array()},
-        {"entities", {
-            {
-                {"id", "arena_mesh"},
-                {"timestamp", {{"sec", sec}, {"nsec", nsec}}},
-                {"frame_id", "map"},
-                {"models", {
-                    {
-                        {"pose", {
-                            {"position", {"x", 0.0, "y", 0.0, "z", 0.0}},
-                            {"orientation", {"x", 0, "y", 0, "z", 0, "w", 1}}
-                        }},
-                        {"scale", {"x", 1.0, "y", 1.0, "z", 1.0}},
-                        {"media_type", "model/gltf-binary"},
-                        {"data", glb_base64}
-                    }
-                }}
-            }
-        }}
-    };
+    // Explicitly declare the array
+    nlohmann::json tf_update;
+    tf_update["transforms"] = nlohmann::json::array();
+    
+    // Explicitly build the single transform object
+    nlohmann::json transform;
+    transform["timestamp"]["sec"] = sec;
+    transform["timestamp"]["nsec"] = nsec;
+    transform["parent_frame_id"] = "world";
+    transform["child_frame_id"] = "base_link";
+    
+    transform["transform"]["translation"]["x"] = 0.0;
+    transform["transform"]["translation"]["y"] = 0.0;
+    transform["transform"]["translation"]["z"] = 0.0;
+    
+    transform["transform"]["rotation"]["x"] = 0.0;
+    transform["transform"]["rotation"]["y"] = 0.0;
+    transform["transform"]["rotation"]["z"] = 0.7071068; // 90-degree yaw
+    transform["transform"]["rotation"]["w"] = 0.7071068;
+    
+    // Push the valid object into the array
+    tf_update["transforms"].push_back(transform);
 
-    std::string json_str = scene_update.dump();
+    std::string json_str = tf_update.dump();
     foxglove_server->broadcastMessage(
-        arena_mesh_channel, 
+        tf_channel, 
         timestamp_ns, 
         reinterpret_cast<const uint8_t*>(json_str.data()), 
         json_str.size()
@@ -4242,6 +4234,13 @@ int main(int argc, char** argv) {
             newFrameAvailable = false;
         }
 
+        now = std::chrono::high_resolution_clock::now();
+        time_span = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastFoxgloveTransmit);
+        if (time_span.count() > 1.0) {
+            lastFoxgloveTransmit = now;
+            publishRobotTransform();
+        }
+
         if(!testInput && !isServerInitialized() && !isServerInitialized2() && !isVideoStreamActive()) {
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
             continue;
@@ -4315,12 +4314,6 @@ int main(int argc, char** argv) {
         if (time_span.count() > 1.0 && isVideoConnected()) {
             lastVideoHeartbeatTime = now;
             sendVideoHeartbeat();
-        }
-
-        time_span = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastFoxgloveTransmit);
-        if (time_span.count() > 1.0) {
-            lastFoxgloveTransmit = now;
-            publishArenaMesh();
         }
 
 

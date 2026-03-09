@@ -245,6 +245,11 @@ double bucket_rotation_angle = 0.0;
 Glib::RefPtr<Gdk::Pixbuf> bucket_rot_pixbuf;
 Gtk::Image* bucket_rot_image;
 
+double robot_x_m = 0.0;
+double robot_y_m = 0.0;
+double robot_pitch_rad = 0.0;
+double arm_angle_deg = 0.0; 
+double bucket_angle_deg = 0.0;
 
 double MULTIPLIER_X = 1100.0 / 6.88;
 double MULTIPLIER_Y = 800.0 / 5.0;
@@ -1676,22 +1681,29 @@ void handleZedElements(const std::vector<Element>& elements) {
         if (element.type != TYPE::FLOAT32) continue;
         float value = element.data.front().float32;
 
-        if (element.label == "roll") {
-            roll_rotation_angle = std::round(value);
-            roll_image->set(rotate_image(roll_pixbuf, -roll_rotation_angle, 200, 200, 30, -30));
-        }
-        else if (element.label == "yaw") {
-            pitch_rotation_angle = std::round(value);
+        if (element.label == "yaw") {
+            pitch_rotation_angle = std::round(value); // Assuming mapped to yaw here
             pitch_image->set(rotate_image(pitch_pixbuf, pitch_rotation_angle, 200, 200, 30, -30));
-        }
-        else if (element.label == "pitch" && !noArena) {
-            overlay_area->update_image_rotation(value - 90);
+            
         }
         else if (element.label == "Z" && !noArena) {
             overlay_area->update_image_y(value * MULTIPLIER_Y);
+            // Capture live Y position
+            robot_y_m = -value; 
         }
         else if (element.label == "X" && !noArena) {
             overlay_area->update_image_x(value * MULTIPLIER_X);
+            // Capture live X position
+            robot_x_m = -value; 
+        }
+        else if (element.label == "pitch" && !noArena) {
+            overlay_area->update_image_rotation(value - 90);
+            // Capture live Yaw in radians
+            robot_pitch_rad = value * (M_PI / 180.0);
+        }
+        else if (element.label == "roll") {
+            roll_rotation_angle = std::round(value);
+            roll_image->set(rotate_image(roll_pixbuf, -roll_rotation_angle, 200, 200, 30, -30));
         }
     }
 }
@@ -1703,11 +1715,13 @@ void handleDrivetrainElements(const std::vector<Element>& elements) {
 void handleTalonElements(const std::string& label, const std::vector<Element>& elements) {
     for (const auto& element : elements) {
         if (element.label == "Sensor Position") {
-            int pos = element.data.front().float32;
+            int pos = element.data.front().uint16;
             if (label == "Talon 1") {
                 left_arm_pos = pos;
                 left_arm->set_height_ratio((920 - pos) / 920.0);
-
+                arm_angle_deg = ((pos - 20) / 900.0) * -57.2 + 17.1;
+                std::cout << "pos: " << pos << std::endl;
+                std::cout << "arm_angle_deg: " << arm_angle_deg << std::endl;
                 /*
                 bucket_elevation_height = pos; // MATH NEEDED
                 bucket_elevation->set_height_ratio((920 - pos) / 920.0) // ADJUST
@@ -1720,6 +1734,10 @@ void handleTalonElements(const std::string& label, const std::vector<Element>& e
             else if (label == "Talon 3") {
                 left_bucket_pos = pos;
                 left_bucket->set_height_ratio((700 - pos) / 700.0);
+
+                bucket_angle_deg = ((pos - 20) / 900.0) * 97.4 - 25.8;
+                std::cout << "pos: " << pos << std::endl;
+                std::cout << "bucket_angle_deg: " << bucket_angle_deg << std::endl;
 
                 bucket_rotation_angle = (pos / 700.0) * 180.0;  // FIX PLACEHOLDER MATH!
                 if (bucketRot_init) {
@@ -2992,6 +3010,22 @@ std::string getGLBBase64(const std::string& filepath) {
     return "";
 }
 
+nlohmann::json euler_to_quat(double roll, double pitch, double yaw) {
+    double cy = std::cos(yaw * 0.5);
+    double sy = std::sin(yaw * 0.5);
+    double cp = std::cos(pitch * 0.5);
+    double sp = std::sin(pitch * 0.5);
+    double cr = std::cos(roll * 0.5);
+    double sr = std::sin(roll * 0.5);
+
+    return {
+        {"x", sr * cp * cy - cr * sp * sy},
+        {"y", cr * sp * cy + sr * cp * sy},
+        {"z", cr * cp * sy - sr * sp * cy},
+        {"w", cr * cp * cy + sr * sp * sy}
+    };
+}
+
 void publishRobotTransform() {
     if (!foxglove_server) return;
 
@@ -3000,28 +3034,143 @@ void publishRobotTransform() {
     uint32_t sec = timestamp_ns / 1000000000;
     uint32_t nsec = timestamp_ns % 1000000000;
 
-    // Explicitly declare the array
+    // --- SENSOR OFFSET MATH ---
+    const double OFFSET_X = 0.762639;
+    const double OFFSET_Y = -0.100614;
+
+    double cos_yaw = std::cos(robot_pitch_rad);
+    double sin_yaw = std::sin(robot_pitch_rad);
+
+    // Subtract the rotated offset from the camera's world position 
+    // to find the true center of the chassis
+    double true_base_x = robot_x_m - (OFFSET_X * cos_yaw - OFFSET_Y * sin_yaw);
+    double true_base_y = robot_y_m - (OFFSET_X * sin_yaw + OFFSET_Y * cos_yaw);
+
+    // --- SIMULATED WHEEL SPIN MATH ---
+    static double prev_x = true_base_x;
+    static double prev_y = true_base_y;
+    static double global_wheel_angle_rad = 0.0;
+
+    double dx = true_base_x - prev_x;
+    double dy = true_base_y - prev_y;
+    double distance = std::sqrt(dx*dx + dy*dy);
+
+    if (distance > 0.001) {
+        double movement_angle = std::atan2(dy, dx);
+        double angle_diff = movement_angle - robot_pitch_rad;
+        
+        // Normalize angle difference
+        while (angle_diff > M_PI) angle_diff -= 2.0 * M_PI;
+        while (angle_diff < -M_PI) angle_diff += 2.0 * M_PI;
+
+        if (std::abs(angle_diff) > M_PI / 2.0) {
+            distance = -distance; 
+        }
+
+        global_wheel_angle_rad += (distance / 0.210439);
+        
+        prev_x = true_base_x;
+        prev_y = true_base_y;
+    }
+
+    // --------------------------
+
+    double safe_arm_deg = arm_angle_deg;
+    if (safe_arm_deg < -40.1) safe_arm_deg = -40.1;
+    if (safe_arm_deg > 17.1) safe_arm_deg = 17.1;
+    
+    double arm_pitch_rad = safe_arm_deg * (M_PI / 180.0);
+
     nlohmann::json tf_update;
     tf_update["transforms"] = nlohmann::json::array();
     
-    // Explicitly build the single transform object
     nlohmann::json transform;
     transform["timestamp"]["sec"] = sec;
     transform["timestamp"]["nsec"] = nsec;
     transform["parent_frame_id"] = "world";
     transform["child_frame_id"] = "base_link";
     
-    transform["transform"]["translation"]["x"] = 0.0;
-    transform["transform"]["translation"]["y"] = 0.0;
-    transform["transform"]["translation"]["z"] = 0.0;
+    transform["transform"]["translation"]["x"] = true_base_x;
+    transform["transform"]["translation"]["y"] = true_base_y;
+    transform["transform"]["translation"]["z"] = 0.0; 
     
-    transform["transform"]["rotation"]["x"] = 0.0;
-    transform["transform"]["rotation"]["y"] = 0.0;
-    transform["transform"]["rotation"]["z"] = 0.7071068; // 90-degree yaw
-    transform["transform"]["rotation"]["w"] = 0.7071068;
-    
-    // Push the valid object into the array
+    transform["transform"]["rotation"] = euler_to_quat(0.0, 0.0, robot_pitch_rad);
     tf_update["transforms"].push_back(transform);
+
+    nlohmann::json arm_tf;
+    arm_tf["timestamp"]["sec"] = sec;
+    arm_tf["timestamp"]["nsec"] = nsec;
+    arm_tf["parent_frame_id"] = "base_link";
+    arm_tf["child_frame_id"] = "Arm";
+    
+    arm_tf["transform"]["translation"]["x"] = 0.28468;
+    arm_tf["transform"]["translation"]["y"] = -0.22263;
+    arm_tf["transform"]["translation"]["z"] = 0.30621; 
+    
+    arm_tf["transform"]["rotation"] = euler_to_quat(0.0, arm_pitch_rad, 0.0);
+    
+    tf_update["transforms"].push_back(arm_tf);
+
+    double safe_bucket_deg = bucket_angle_deg;
+    if (safe_bucket_deg < -25.8) safe_bucket_deg = -25.8;
+    if (safe_bucket_deg > 71.6) safe_bucket_deg = 71.6;
+    
+    // Convert to radians for Foxglove
+    double bucket_pitch_rad = safe_bucket_deg * (M_PI / 180.0);
+
+    nlohmann::json bucket_tf;
+    bucket_tf["timestamp"]["sec"] = sec;
+    bucket_tf["timestamp"]["nsec"] = nsec;
+    
+    bucket_tf["parent_frame_id"] = "Arm";
+    bucket_tf["child_frame_id"] = "Bucket";
+    
+    bucket_tf["transform"]["translation"]["x"] = 0.82651;
+    bucket_tf["transform"]["translation"]["y"] = 0.070738;
+    bucket_tf["transform"]["translation"]["z"] = -0.052110; 
+    
+    bucket_tf["transform"]["rotation"] = euler_to_quat(0.0, bucket_pitch_rad, 0.0);
+    tf_update["transforms"].push_back(bucket_tf);
+
+    // Front Left
+    nlohmann::json fl_tf;
+    fl_tf["timestamp"]["sec"] = sec; fl_tf["timestamp"]["nsec"] = nsec;
+    fl_tf["parent_frame_id"] = "base_link"; fl_tf["child_frame_id"] = "FL_Wheel";
+    fl_tf["transform"]["translation"]["x"] = 0.8411;
+    fl_tf["transform"]["translation"]["y"] = -0.019814;
+    fl_tf["transform"]["translation"]["z"] = 0.235883; 
+    fl_tf["transform"]["rotation"] = euler_to_quat(0.0, global_wheel_angle_rad, 0.0);
+    tf_update["transforms"].push_back(fl_tf);
+
+    // Front Right
+    nlohmann::json fr_tf;
+    fr_tf["timestamp"]["sec"] = sec; fr_tf["timestamp"]["nsec"] = nsec;
+    fr_tf["parent_frame_id"] = "base_link"; fr_tf["child_frame_id"] = "FR_Wheel";
+    fr_tf["transform"]["translation"]["x"] = 0.8411;
+    fr_tf["transform"]["translation"]["y"] = -0.538167;
+    fr_tf["transform"]["translation"]["z"] = 0.235883; 
+    fr_tf["transform"]["rotation"] = euler_to_quat(0.0, global_wheel_angle_rad, 0.0);
+    tf_update["transforms"].push_back(fr_tf);
+
+    // Back Left
+    nlohmann::json bl_tf;
+    bl_tf["timestamp"]["sec"] = sec; bl_tf["timestamp"]["nsec"] = nsec;
+    bl_tf["parent_frame_id"] = "base_link"; bl_tf["child_frame_id"] = "BL_Wheel";
+    bl_tf["transform"]["translation"]["x"] = 0.18387;
+    bl_tf["transform"]["translation"]["y"] = 0.0;
+    bl_tf["transform"]["translation"]["z"] = 0.23588; 
+    bl_tf["transform"]["rotation"] = euler_to_quat(0.0, global_wheel_angle_rad, 0.0);
+    tf_update["transforms"].push_back(bl_tf);
+
+    // Back Right
+    nlohmann::json br_tf;
+    br_tf["timestamp"]["sec"] = sec; br_tf["timestamp"]["nsec"] = nsec;
+    br_tf["parent_frame_id"] = "base_link"; br_tf["child_frame_id"] = "BR_Wheel";
+    br_tf["transform"]["translation"]["x"] = 0.183875;
+    br_tf["transform"]["translation"]["y"] = -0.475667;
+    br_tf["transform"]["translation"]["z"] = 0.235883; 
+    br_tf["transform"]["rotation"] = euler_to_quat(0.0, global_wheel_angle_rad, -3.1415);
+    tf_update["transforms"].push_back(br_tf);
 
     std::string json_str = tf_update.dump();
     foxglove_server->broadcastMessage(
@@ -4236,7 +4385,7 @@ int main(int argc, char** argv) {
 
         now = std::chrono::high_resolution_clock::now();
         time_span = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastFoxgloveTransmit);
-        if (time_span.count() > 1.0) {
+        if (time_span.count() > 0.016) {
             lastFoxgloveTransmit = now;
             publishRobotTransform();
         }

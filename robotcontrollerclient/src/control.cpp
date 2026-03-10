@@ -237,6 +237,8 @@ Glib::RefPtr<Gdk::Pixbuf> lvl_pixbuf;
 Gtk::Image* pitch_image;
 Gtk::Image* lvl_image;
 
+double body_pitch_angle = 0.0;
+
 double bucket_rotation_angle = 0.0;
 Glib::RefPtr<Gdk::Pixbuf> bucket_rot_pixbuf;
 Gtk::Image* bucket_rot_image;
@@ -1681,6 +1683,7 @@ void handleZedElements(const std::vector<Element>& elements) {
             pitch_image->set(rotate_image(pitch_pixbuf, pitch_rotation_angle, 200, 200, 30, -30));
         }
         else if (element.label == "pitch" && !noArena) {
+            body_pitch_angle = value;
             overlay_area->update_image_rotation(value - 90);
         }
         else if (element.label == "Z" && !noArena) {
@@ -1717,7 +1720,20 @@ void handleTalonElements(const std::string& label, const std::vector<Element>& e
                 left_bucket_pos = pos;
                 left_bucket->set_height_ratio((700 - pos) / 700.0);
 
-                bucket_rotation_angle = (pos / 700.0) * 180.0;  // FIX PLACEHOLDER MATH!
+                double arm_max_pos = 920.0;
+                double arm_max_angle = 30.0;
+                double bucket_max_pos = 700.0;
+                double bucket_min_angle = 45.0;
+                double bucket_max_angle = -90.0;
+                double bucket_angle_range = bucket_max_angle - bucket_min_angle;
+
+                double arm_pos_used = (left_arm_pos + right_arm_pos) / 2.0;
+                double arm_angle = (arm_pos_used / arm_max_pos) * arm_max_angle;
+                double bucket_rel = bucket_min_angle + (left_bucket_pos / bucket_max_pos) * bucket_angle_range;
+                double abs_angle = arm_angle + bucket_rel + body_pitch_angle;
+
+                bucket_rotation_angle = abs_angle;
+
                 if (bucketRot_init) {
                     bucket_rot_image->set(rotate_image(bucket_rot_pixbuf, bucket_rotation_angle, 200, 200, 45, -90));
                 }
@@ -1725,6 +1741,24 @@ void handleTalonElements(const std::string& label, const std::vector<Element>& e
             else if (label == "Talon 4") {
                 right_bucket_pos = pos;
                 right_bucket->set_height_ratio((700 - pos) / 700.0);
+
+                double arm_max_pos = 920.0;
+                double arm_max_angle = 30.0;
+                double bucket_max_pos = 700.0;
+                double bucket_min_angle = 45.0;
+                double bucket_max_angle = -90.0;
+                double bucket_angle_range = bucket_max_angle - bucket_min_angle;
+
+                double arm_pos_used = (left_arm_pos + right_arm_pos) / 2.0;
+                double arm_angle = (arm_pos_used / arm_max_pos) * arm_max_angle;
+                double bucket_rel = bucket_min_angle + (right_bucket_pos / bucket_max_pos) * bucket_angle_range;
+                double abs_angle = arm_angle + bucket_rel + body_pitch_angle;
+
+                bucket_rotation_angle = abs_angle;
+
+                if (bucketRot_init) {
+                    bucket_rot_image->set(rotate_image(bucket_rot_pixbuf, bucket_rotation_angle, 200, 200, 45, -90));
+                }
             }
 
             if (label == "Talon 1" || label == "Talon 2"){

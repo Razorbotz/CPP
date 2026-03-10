@@ -45,6 +45,8 @@ ConfigEditorWindow::ConfigEditorWindow(const std::string& config_file) {
 
     m_subsystems["TALON"] = {"Talon", "TALON", nullptr, nullptr, get_talon_keys()};
     m_subsystems["FALCON"] = {"Falcon", "FALCON", nullptr, nullptr, get_falcon_keys()};
+    m_subsystems["NEO"] = {"Neo", "NEO", nullptr, nullptr, get_neo_keys()};
+    m_subsystems["KRAKEN"] = {"Kraken", "KRAKEN", nullptr, nullptr, get_kraken_keys()};
     m_subsystems["LINEAR"] = {"Linear", "LINEAR", nullptr, nullptr, get_linear_keys()};
     m_subsystems["AUTONOMY"] = {"Autonomy", "AUTONOMY", nullptr, nullptr, get_autonomy_keys()};
     m_subsystems["ZED"] = {"Zed", "ZED", nullptr, nullptr, get_zed_keys()};
@@ -375,6 +377,8 @@ void ConfigEditorWindow::save_config() {
 
         if (editor.prefix == "TALON") get_talon_keys() = editor.local_keys;
         else if (editor.prefix == "FALCON") get_falcon_keys() = editor.local_keys;
+        else if (editor.prefix == "NEO") get_neo_keys() = editor.local_keys;
+        else if (editor.prefix == "KRAKEN") get_kraken_keys() = editor.local_keys;
         else if (editor.prefix == "LINEAR") get_linear_keys() = editor.local_keys;
         else if (editor.prefix == "AUTONOMY") get_autonomy_keys() = editor.local_keys;
         else if (editor.prefix == "ZED") get_zed_keys() = editor.local_keys;
@@ -421,6 +425,10 @@ void ConfigEditorWindow::on_reset_button_clicked() {
         
         if (prefix == "TALON") editor.local_keys = get_reset_talon_keys();
         else if (prefix == "FALCON") editor.local_keys = get_reset_falcon_keys();
+        else if (prefix == "NEO") editor.local_keys = get_reset_neo_keys();
+        else if (prefix == "KRAKEN") editor.local_keys = get_reset_kraken_keys();
+        else if (prefix == "NEO") editor.local_keys = get_reset_neo_keys();
+        else if (prefix == "KRAKEN") editor.local_keys = get_reset_kraken_keys();
         else if (prefix == "LINEAR") editor.local_keys = get_reset_linear_keys();
         else if (prefix == "AUTONOMY") editor.local_keys = get_reset_autonomy_keys();
         else if (prefix == "ZED") editor.local_keys = get_reset_zed_keys();

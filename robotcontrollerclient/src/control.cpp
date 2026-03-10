@@ -170,6 +170,10 @@ bool testInput = false;
 bool useAltLayout = false;
 bool isController = false;
 bool twoJoysticks = false;
+bool primaryBot = true;
+bool backupBot = false;
+bool dumpBot = false;
+
 
 bool simulateNetwork = false;
 Gtk::Window* simulatorWindow = nullptr;
@@ -714,18 +718,30 @@ class CircleDrawingArea : public Gtk::DrawingArea{
         Gdk::RGBA background_color_;
     };
 
+// Circles for motor status indicators
+//Primary Bot - 3 Talons, 4 Falcons
+//Dump Bot - 4 Neos, 1 Falcon
+//Backup Bot - 4 Talons, 4 Falcons
 CircleDrawingArea* talon1Circle;
 CircleDrawingArea* talon2Circle;
 CircleDrawingArea* talon3Circle;
 CircleDrawingArea* talon4Circle;
-CircleDrawingArea* falcon1Circle;
-CircleDrawingArea* falcon2Circle;
-CircleDrawingArea* falcon3Circle;
-CircleDrawingArea* falcon4Circle;
+CircleDrawingArea* kraken1Circle;
+CircleDrawingArea* kraken2Circle;
+CircleDrawingArea* kraken3Circle;
+CircleDrawingArea* kraken4Circle;
+CircleDrawingArea* neo1Circle;
+CircleDrawingArea* neo2Circle;
+CircleDrawingArea* neo3Circle;
+CircleDrawingArea* neo4Circle;
 CircleDrawingArea* lowerFalcon1Circle;
 CircleDrawingArea* lowerFalcon2Circle;
 CircleDrawingArea* lowerFalcon3Circle;
 CircleDrawingArea* lowerFalcon4Circle;
+CircleDrawingArea* falcon1Circle;
+CircleDrawingArea* falcon2Circle;
+CircleDrawingArea* falcon3Circle;
+CircleDrawingArea* falcon4Circle;
 
 // TODO: Modify this to be more descriptive and make the graphs better
 // Not entirely sure what all that will entail
@@ -1139,14 +1155,22 @@ void setBackgroundColors(Gdk::RGBA color){
         talon3Circle->set_background_color(color);
     if(talon4Circle)
         talon4Circle->set_background_color(color);
-    if(falcon1Circle)
-        falcon1Circle->set_background_color(color);
-    if(falcon2Circle)
-        falcon2Circle->set_background_color(color);
-    if(falcon3Circle)
-        falcon3Circle->set_background_color(color);
-    if(falcon4Circle)
-        falcon4Circle->set_background_color(color);
+    if(neo1Circle)
+        neo1Circle->set_background_color(color);
+    if(neo2Circle)
+        neo2Circle->set_background_color(color);
+    if(neo3Circle)
+        neo3Circle->set_background_color(color);
+    if(neo4Circle)
+        neo4Circle->set_background_color(color);
+    if(kraken1Circle)
+        kraken1Circle->set_background_color(color);
+    if(kraken2Circle)
+        kraken2Circle->set_background_color(color);
+    if(kraken3Circle)
+        kraken3Circle->set_background_color(color);
+    if(kraken4Circle)
+        kraken4Circle->set_background_color(color);
     if(lowerFalcon1Circle)
         lowerFalcon1Circle->set_background_color(color);
     if(lowerFalcon2Circle)
@@ -1273,6 +1297,13 @@ void toggleMode() {
         sensorsWindow->get_style_context()->add_provider(sensors_css, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
     }
 
+    if (simulatorWindow) {
+        auto sim_css = Gtk::CssProvider::create();
+        std::string sim_bg_css = "window { background-color: " + lightBackgroundColor + "; }";
+        sim_css->load_from_data(sim_bg_css);
+        simulatorWindow->get_style_context()->add_provider(sim_css, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+    }
+
     if(!noVideo) {
         setBackgroundColors(background);
     }
@@ -1291,9 +1322,12 @@ void updateBackgroundColor(Gtk::Box* box, bool synced){
     }
 }
 
-const std::set<std::string> talonLabels = {"Talon 1", "Talon 2", "Talon 3", "Talon 4"};
-const std::set<std::string> falconLabels = {"Falcon 1", "Falcon 2", "Falcon 3", "Falcon 4"};
-
+const std::set<std::string> talonBackupLabels = {"Talon 1", "Talon 2", "Talon 3", "Talon 4"};
+const std::set<std::string> falconBackupLabels = {"Falcon 1", "Falcon 2", "Falcon 3", "Falcon 4"};
+const std::set<std::string> neoDumpLabels = {"Neo 1", "Neo 2", "Neo 3", "Neo 4"};
+const std::set<std::string> falconDumpLabels = {"Falcon 1"};
+const std::set<std::string> krakenMainLabels = {"Kraken 1", "Kraken 2", "Kraken 3", "Kraken 4"};
+const std::set<std::string> talonMainLabels = {"Talon 1", "Talon 2", "Talon 3"};
 
 CircleDrawingArea* getTalonCircle(const std::string& label) {
     if (label == "Talon 1") return talon1Circle;
@@ -1303,11 +1337,35 @@ CircleDrawingArea* getTalonCircle(const std::string& label) {
     return nullptr;
 }
 
+CircleDrawingArea* getFalconCircle(const std::string& label) {
+    if (label == "Falcon 1") return falcon1Circle;
+    if (label == "Falcon 2") return falcon2Circle;
+    if (label == "Falcon 3") return falcon3Circle;
+    if (label == "Falcon 4") return falcon4Circle;
+    return nullptr;
+}
+
 CircleDrawingArea* getLowerFalconCircle(const std::string& label) {
     if (label == "Falcon 1") return lowerFalcon1Circle;
     if (label == "Falcon 2") return lowerFalcon2Circle;
     if (label == "Falcon 3") return lowerFalcon3Circle;
     if (label == "Falcon 4") return lowerFalcon4Circle;
+    return nullptr;
+}
+
+CircleDrawingArea* getNeoCircle(const std::string& label) {
+    if (label == "Neo 1") return neo1Circle;
+    if (label == "Neo 2") return neo2Circle;
+    if (label == "Neo 3") return neo3Circle;
+    if (label == "Neo 4") return neo4Circle;
+    return nullptr;
+}
+
+CircleDrawingArea* getKrakenCircle(const std::string& label) {
+    if (label == "Kraken 1") return kraken1Circle;
+    if (label == "Kraken 2") return kraken2Circle;
+    if (label == "Kraken 3") return kraken3Circle;
+    if (label == "Kraken 4") return kraken4Circle;
     return nullptr;
 }
 
@@ -1655,6 +1713,8 @@ void initBucketRot() {
 const std::unordered_set<std::string> validLabels = {
     "Falcon 1", "Falcon 2", "Falcon 3", "Falcon 4",
     "Talon 1", "Talon 2", "Talon 3", "Talon 4",
+    "Neo 1", "Neo 2", "Neo 3", "Neo 4",
+    "Kraken 1", "Kraken 2", "Kraken 3", "Kraken 4",
     "Linear 1", "Linear 2", "Linear 3", "Linear 4",
     "Zed", "Autonomy", "Communication", "Power", "Power2", "Drivetrain"
 };
@@ -1713,6 +1773,7 @@ void handleDrivetrainElements(const std::vector<Element>& elements) {
 }
 
 void handleTalonElements(const std::string& label, const std::vector<Element>& elements) {
+    bool lowVoltage = false;
     for (const auto& element : elements) {
         if (element.label == "Sensor Position") {
             int pos = element.data.front().uint16;
@@ -1762,7 +1823,7 @@ void handleTalonElements(const std::string& label, const std::vector<Element>& e
         else if (element.label == "Bus Voltage") {
             float voltage = element.data.front().uint16 / 100.0f;
             if (!noVideo) talonVoltageGraph->update_data(label, voltage);
-            updateCircleColor(getTalonCircle(label), false, voltage < LOW_VOLTAGE);
+            lowVoltage = voltage < LOW_VOLTAGE;
         }
         else if (element.label == "Output Current") {
             float current = element.data.front().uint16 / 100.0f;
@@ -1773,14 +1834,15 @@ void handleTalonElements(const std::string& label, const std::vector<Element>& e
             if (!noVideo) talonOutputGraph->update_data(label, percent);
         }
     }
+    updateCircleColor(getTalonCircle(label), false, lowVoltage);
 }
 
-struct FalconState {
+struct MotorState {
     bool error = false;
     bool lowVoltage = false;
 };
 
-std::map<std::string, FalconState> falconStates;
+std::map<std::string, MotorState> motorStates;
 
 void handleFalconElements(const std::string& label, const std::vector<Element>& elements) {
     for (const auto& element : elements) {
@@ -1788,7 +1850,36 @@ void handleFalconElements(const std::string& label, const std::vector<Element>& 
             float voltage = element.data.front().uint16 / 100.0f;
             if (!noVideo) falconVoltageGraph->update_data(label, voltage);
             bool lowVoltage = voltage < LOW_VOLTAGE;
-            falconStates[label].lowVoltage = lowVoltage;
+            motorStates[label].lowVoltage = lowVoltage;
+        }
+        else if (element.label == "Output Current") {
+            float current = element.data.front().uint16 / 100.0f;
+            if (!noVideo) falconCurrentGraph->update_data(label, current);
+        }
+        else if (element.label == "Output Percent") {
+            float percent = element.data.front().float32;
+            if (!noVideo && falconOutputGraph) falconOutputGraph->update_data(label, percent);
+            if ((label == "Falcon 2" || label == "Falcon 4") && leftSpeedometer) {
+                leftSpeedometer->set_speed(percent * 100.0);
+            }
+            if ((label == "Falcon 1" || label == "Falcon 3") && rightSpeedometer) {
+                rightSpeedometer->set_speed(percent * 100.0);
+            }
+        }
+        else if (element.label == "Error"){
+            bool error = element.data.front().boolean;
+            motorStates[label].error = error;
+        }
+    }
+    updateCircleColor(getLowerFalconCircle(label), motorStates[label].lowVoltage, motorStates[label].error);
+}
+
+void handleNeoElements(const std::string& label, const std::vector<Element>& elements) {
+    for (const auto& element : elements) {
+        if (element.label == "Bus Voltage") {
+            float voltage = element.data.front().uint16 / 100.0f;
+            if (!noVideo) falconVoltageGraph->update_data(label, voltage);
+            motorStates[label].lowVoltage = voltage < LOW_VOLTAGE;
         }
         else if (element.label == "Output Current") {
             float current = element.data.front().uint16 / 100.0f;
@@ -1797,18 +1888,48 @@ void handleFalconElements(const std::string& label, const std::vector<Element>& 
         else if (element.label == "Output Percent") {
             float percent = element.data.front().float32;
             if (!noVideo) falconOutputGraph->update_data(label, percent);
-            if(label == "Falcon 2" || label == "Falcon 4"){
+            if(label == "Neo 2" || label == "Neo 4"){
                 leftSpeedometer->set_speed(percent * 100.0);
             }
-            if(label == "Falcon 1" || label == "Falcon 3"){
+            if(label == "Neo 1" || label == "Neo 3"){
                 rightSpeedometer->set_speed(percent * 100.0);
             }
         }
         else if (element.label == "Error"){
             bool error = element.data.front().boolean;
-            falconStates[label].error = error;
+            motorStates[label].error = error;
         }
-        updateCircleColor(getLowerFalconCircle(label), falconStates[label].lowVoltage, falconStates[label].error);
+    }
+    updateCircleColor(getNeoCircle(label), motorStates[label].lowVoltage, motorStates[label].error);
+}
+
+void handleKrakenElements(const std::string& label, const std::vector<Element>& elements) {
+    for (const auto& element : elements) {
+        if (element.label == "Bus Voltage") {
+            float voltage = element.data.front().uint16 / 100.0f;
+            if (!noVideo) falconVoltageGraph->update_data(label, voltage);
+            bool lowVoltage = voltage < LOW_VOLTAGE;
+            motorStates[label].lowVoltage = lowVoltage;
+        }
+        else if (element.label == "Output Current") {
+            float current = element.data.front().uint16 / 100.0f;
+            if (!noVideo) falconCurrentGraph->update_data(label, current);
+        }
+        else if (element.label == "Output Percent") {
+            float percent = element.data.front().float32;
+            if (!noVideo) falconOutputGraph->update_data(label, percent);
+            if(label == "Kraken 2" || label == "Kraken 4"){
+                leftSpeedometer->set_speed(percent * 100.0);
+            }
+            if(label == "Kraken 1" || label == "Kraken 3"){
+                rightSpeedometer->set_speed(percent * 100.0);
+            }
+        }
+        else if (element.label == "Error"){
+            bool error = element.data.front().boolean;
+            motorStates[label].error = error;
+        }
+        updateCircleColor(getKrakenCircle(label), motorStates[label].lowVoltage, motorStates[label].error);
     }
 }
 
@@ -1908,10 +2029,22 @@ void updateGUI(BinaryMessage& message) {
         else if (label == "Communication") {
             handleCommunicationElements(frame, elements);
         }
-        else if (talonLabels.count(label)) {
+        else if (talonMainLabels.count(label) && primaryBot) {
             handleTalonElements(label, elements);
         }
-        else if (falconLabels.count(label)) {
+        else if (krakenMainLabels.count(label) && primaryBot) {
+            handleKrakenElements(label, elements);
+        }
+        else if (neoDumpLabels.count(label) && dumpBot) {
+            handleNeoElements(label, elements);
+        }
+        else if (falconDumpLabels.count(label) && dumpBot) {
+            handleFalconElements(label, elements);
+        }
+        else if (talonBackupLabels.count(label) && backupBot) {
+            handleTalonElements(label, elements);
+        }
+        else if (falconBackupLabels.count(label) && backupBot) {
             handleFalconElements(label, elements);
         }
         else if(label == "Autonomy"){
@@ -1951,7 +2084,9 @@ void updateGUI(BinaryMessage& message) {
     frameBox->add(*infoFrame);
     frameBox->show_all();
     if(label == "Talon 1" || label == "Talon 2" || label == "Talon 3" || label == "Talon 4" || 
-       label == "Falcon 1" || label == "Falcon 2" || label == "Falcon 3" || label == "Falcon 4"){
+       label == "Falcon 1" || label == "Falcon 2" || label == "Falcon 3" || label == "Falcon 4"
+       || label == "Neo 1" || label == "Neo 2" || label == "Neo 3" || label == "Neo 4"
+       || label == "Kraken 1" || label == "Kraken 2" || label == "Kraken 3" || label == "Kraken 4") {
         frameBox->signal_button_press_event().connect(
             [label](GdkEventButton* event) -> bool {
                 return onMotorClick(event, label);
@@ -2058,14 +2193,30 @@ void createMessage(std::string name, std::string prefix){
 
 void initGUI() {
     if(initVals){
-        createMessage("Talon 1", "TALON");
-        createMessage("Talon 2", "TALON");
-        createMessage("Talon 3", "TALON");
-        createMessage("Talon 4", "TALON");
-        createMessage("Falcon 1", "FALCON");
-        createMessage("Falcon 2", "FALCON");
-        createMessage("Falcon 3", "FALCON");
-        createMessage("Falcon 4", "FALCON");
+        if(primaryBot){
+            createMessage("Talon 1", "TALON");
+            createMessage("Talon 2", "TALON");
+            createMessage("Talon 3", "TALON");
+            createMessage("Kraken 1", "KRAKEN");
+            createMessage("Kraken 2", "KRAKEN");
+            createMessage("Kraken 3", "KRAKEN");
+            createMessage("Kraken 4", "KRAKEN");
+        } else if(backupBot){
+            createMessage("Talon 1", "TALON");
+            createMessage("Talon 2", "TALON");
+            createMessage("Talon 3", "TALON");
+            createMessage("Talon 4", "TALON");
+            createMessage("Falcon 1", "FALCON");
+            createMessage("Falcon 2", "FALCON");
+            createMessage("Falcon 3", "FALCON");
+            createMessage("Falcon 4", "FALCON");
+        } else if(dumpBot){
+            createMessage("Neo 1", "NEO");
+            createMessage("Neo 2", "NEO");
+            createMessage("Neo 3", "NEO");
+            createMessage("Neo 4", "NEO");
+            createMessage("Falcon 1", "FALCON");
+        }
         
         createMessage("Linear 1", "LINEAR");
         createMessage("Linear 2", "LINEAR");
@@ -2129,18 +2280,30 @@ void resetUIOnDisconnect() {
     if(!noVideo) {
         Gdk::RGBA black;
         black.set_rgba(0.0, 0.0, 0.0, 1.0);
-        updateCircleColor(talon1Circle, black);
-        updateCircleColor(talon2Circle, black);
-        updateCircleColor(talon3Circle, black);
-        updateCircleColor(talon4Circle, black);
-        // updateCircleColor(falcon1Circle, black);
-        // updateCircleColor(falcon2Circle, black);
-        // updateCircleColor(falcon3Circle, black);
-        // updateCircleColor(falcon4Circle, black);
-        updateCircleColor(lowerFalcon1Circle, black);
-        updateCircleColor(lowerFalcon2Circle, black);
-        updateCircleColor(lowerFalcon3Circle, black);
-        updateCircleColor(lowerFalcon4Circle, black);
+        if(primaryBot){
+            updateCircleColor(kraken1Circle, black);
+            updateCircleColor(kraken2Circle, black);
+            updateCircleColor(kraken3Circle, black);
+            updateCircleColor(kraken4Circle, black);
+            updateCircleColor(talon1Circle, black);
+            updateCircleColor(talon2Circle, black);
+            updateCircleColor(talon3Circle, black);
+        } else if(backupBot){
+            updateCircleColor(talon1Circle, black);
+            updateCircleColor(talon2Circle, black);
+            updateCircleColor(talon3Circle, black);
+            updateCircleColor(talon4Circle, black);
+            updateCircleColor(lowerFalcon1Circle, black);
+            updateCircleColor(lowerFalcon2Circle, black);
+            updateCircleColor(lowerFalcon3Circle, black);
+            updateCircleColor(lowerFalcon4Circle, black);
+        } else if(dumpBot){
+            updateCircleColor(neo1Circle, black);
+            updateCircleColor(neo2Circle, black);
+            updateCircleColor(neo3Circle, black);
+            updateCircleColor(neo4Circle, black);
+            updateCircleColor(lowerFalcon1Circle, black);
+        }
     }
 }
 
@@ -2271,6 +2434,8 @@ void setup_frame_map() {
 std::map<std::string, Gtk::CheckButton*> bool_buttons;
 std::vector<std::string> local_talon_keys = get_talon_keys();
 std::vector<std::string> local_falcon_keys = get_falcon_keys();
+std::vector<std::string> local_neo_keys = get_neo_keys();
+std::vector<std::string> local_kraken_keys = get_kraken_keys();
 std::vector<std::string> local_linear_keys = get_linear_keys();
 std::vector<std::string> local_autonomy_keys = get_autonomy_keys();
 std::vector<std::string> local_communication_keys = get_communication_keys();
@@ -2279,17 +2444,48 @@ std::vector<std::string> local_power_keys = get_power_keys();
 std::vector<std::string> local_zed_keys = get_zed_keys();
 std::vector<std::string> local_drivetrain_keys = get_drivetrain_keys();
 
-std::map<std::string, std::vector<std::string>*> local_key_vectors = {
-    {"Talon", &local_talon_keys},
-    {"Falcon", &local_falcon_keys},
-    {"Linear", &local_linear_keys},
-    {"Autonomy", &local_autonomy_keys},
-    {"Communication", &local_communication_keys},
-    {"Power2", &local_power2_keys},
-    {"Power", &local_power_keys},
-    {"Zed", &local_zed_keys},
-    {"Drivetrain", &local_drivetrain_keys}
-};
+std::map<std::string, std::vector<std::string>*> local_key_vectors = {};
+
+void setup_local_key_vectors() {
+    if(primaryBot){
+        local_key_vectors = {
+            {"Talon", &local_talon_keys},
+            {"Kraken", &local_kraken_keys},
+            {"Linear", &local_linear_keys},
+            {"Autonomy", &local_autonomy_keys},
+            {"Communication", &local_communication_keys},
+            {"Power2", &local_power2_keys},
+            {"Power", &local_power_keys},
+            {"Zed", &local_zed_keys},
+            {"Drivetrain", &local_drivetrain_keys}
+        };
+    } else if(backupBot){
+        local_key_vectors = {
+            {"Talon", &local_talon_keys},
+            {"Falcon", &local_falcon_keys},
+            {"Linear", &local_linear_keys},
+            {"Autonomy", &local_autonomy_keys},
+            {"Communication", &local_communication_keys},
+            {"Power2", &local_power2_keys},
+            {"Power", &local_power_keys},
+            {"Zed", &local_zed_keys},
+            {"Drivetrain", &local_drivetrain_keys}
+        };
+    } else if(dumpBot){
+        local_key_vectors = {
+            {"Neo", &local_neo_keys},
+            {"Falcon", &local_falcon_keys},
+            {"Linear", &local_linear_keys},
+            {"Autonomy", &local_autonomy_keys},
+            {"Communication", &local_communication_keys},
+            {"Power2", &local_power2_keys},
+            {"Power", &local_power_keys},
+            {"Zed", &local_zed_keys},
+            {"Drivetrain", &local_drivetrain_keys}
+        };
+    }
+}
+
 
 void create_config_editor_window(const std::string& config_file) {
     if (configWindow) {
@@ -2686,13 +2882,22 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
 
         Gtk::Box* pLeft = nullptr; builder->get_widget("placeholder_inner_left", pLeft);
         if (pLeft) {
+            std::cout << "Initializing Upper Left column with Falcon indicators by default." << std::endl;
             innerLeftBox = create_motor_column({{"Arm L", &talon1Circle}, {"Arm R", &talon2Circle}, {"Bucket L", &talon3Circle}, {"Bucket R", &talon4Circle}}, nullptr, {"Talon 1", "Talon 2", "Talon 3", "Talon 4"}, true);
+            if(primaryBot){
+                innerLeftBox = create_motor_column({{"Arm L", &talon1Circle}, {"Arm R", &talon2Circle}, {"Bucket L", &talon3Circle}}, nullptr, {"Talon 1", "Talon 2", "Talon 3"}, true);
+            } else if(backupBot){
+                innerLeftBox = create_motor_column({{"Arm L", &talon1Circle}, {"Arm R", &talon2Circle}, {"Bucket L", &talon3Circle}, {"Bucket R", &talon4Circle}}, nullptr, {"Talon 1", "Talon 2", "Talon 3", "Talon 4"}, true);
+            } else if(dumpBot){
+                innerLeftBox = create_motor_column({{"Dump Bucket", &lowerFalcon1Circle}}, nullptr, {"Falcon 1"}, true);
+            }
             pLeft->add(*innerLeftBox);
             initArmPos();
         }
 
         Gtk::Box* pRight = nullptr; builder->get_widget("placeholder_inner_right", pRight);
         if (pRight) {
+            std::cout << "Initializing Upper Right motor column with Falcon indicators by default." << std::endl;
             innerRightBox = create_motor_column({{"Falcon 1", &falcon1Circle}, {"Falcon 2", &falcon2Circle}, {"Falcon 3", &falcon3Circle}, {"Falcon 4", &falcon4Circle}}, nullptr, {"Falcon 1", "Falcon 2", "Falcon 3", "Falcon 4"}, false);
             //pRight->add(*innerRightBox);
             initBucketPos();
@@ -2700,18 +2905,37 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
 
         Gtk::Box* pLowerLeft = nullptr; builder->get_widget("placeholder_lower_left", pLowerLeft);
         if (pLowerLeft) {
+            std::cout << "Initializing lower motor column with Falcon indicators by default." << std::endl;
             Gtk::Box* lowerLeftBox = create_lower_motor_column({{"Falcon 1", &lowerFalcon1Circle}, {"Falcon 2", &lowerFalcon2Circle}}, {"Falcon 1", "Falcon 2"}, true);
+            if(primaryBot){
+                std::cout << "Initializing lower left motor column with Kraken indicators for primary bot." << std::endl;
+                lowerLeftBox = create_lower_motor_column({{"Kraken 1", &kraken1Circle}, {"Kraken 2", &kraken2Circle}}, {"Kraken 1", "Kraken 2"});
+            } else if(backupBot){
+                lowerLeftBox = create_lower_motor_column({{"Falcon 1", &lowerFalcon1Circle}, {"Falcon 2", &lowerFalcon2Circle}}, {"Falcon 1", "Falcon 2"});
+            } else if(dumpBot){
+                lowerLeftBox = create_lower_motor_column({{"Neo 1", &neo1Circle}, {"Neo 2", &neo2Circle}}, {"Neo 1", "Neo 2"});
+            }
             pLowerLeft->add(*lowerLeftBox);
         }
 
         Gtk::Box* pLowerRight = nullptr; builder->get_widget("placeholder_lower_right", pLowerRight);
         if (pLowerRight) {
-            Gtk::Box* lowerRightBox = create_lower_motor_column({{"Falcon 3", &lowerFalcon3Circle}, {"Falcon 4", &lowerFalcon4Circle}}, {"Falcon 3", "Falcon 4"});
+            std::cout << "Initializing lower motor column with Falcon indicators by default." << std::endl;
+            Gtk::Box* lowerRightBox = create_lower_motor_column({{"Falcon 3", &lowerFalcon3Circle}, {"Falcon 4", &lowerFalcon4Circle}}, {"Falcon 3", "Falcon 4"}, false);
+            if(primaryBot){
+                std::cout << "Initializing lower right motor column with Kraken indicators for primary bot." << std::endl;
+                lowerRightBox = create_lower_motor_column({{"Kraken 3", &kraken3Circle}, {"Kraken 4", &kraken4Circle}}, {"Kraken 3", "Kraken 4"});
+            } else if(backupBot){
+                lowerRightBox = create_lower_motor_column({{"Falcon 3", &lowerFalcon3Circle}, {"Falcon 4", &lowerFalcon4Circle}}, {"Falcon 3", "Falcon 4"});
+            } else if(dumpBot){
+                lowerRightBox = create_lower_motor_column({{"Neo 3", &neo3Circle}, {"Neo 4", &neo4Circle}}, {"Neo 3", "Neo 4"});
+            }
             pLowerRight->add(*lowerRightBox);
         }
         
         Gtk::Box* pSpeedLeft = nullptr; builder->get_widget("placeholder_speed_left", pSpeedLeft);
         if(pSpeedLeft) {
+            std::cout << "Initializing left speedometer." << std::endl;
             leftSpeedometer = Gtk::manage(new Speedometer("Left Speedometer"));
             leftSpeedometer->set_size_request(300 * GUI_SCALE, 175 * GUI_SCALE);
             leftSpeedometer->set_display_speed(displaySpeed);
@@ -2722,6 +2946,7 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
 
         Gtk::Box* pSpeedRight = nullptr; builder->get_widget("placeholder_speed_right", pSpeedRight);
         if(pSpeedRight) {
+            std::cout << "Initializing right speedometer." << std::endl;
             rightSpeedometer = Gtk::manage(new Speedometer("Right Speedometer"));
             rightSpeedometer->set_size_request(300 * GUI_SCALE, 175 * GUI_SCALE);
             rightSpeedometer->set_display_speed(displaySpeed);
@@ -2732,6 +2957,7 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
 
         Gtk::Box* pGear = nullptr; builder->get_widget("placeholder_gear_dial", pGear);
         if(pGear) {
+            std::cout << "Initializing gear dial." << std::endl;
             gear_dial = create_gear_dial(currentGear, gears, gear_labels);
             pGear->add(*gear_dial);
             //highlight_gear(currentGear, gears, gear_labels, gear_dial);
@@ -2739,12 +2965,14 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
         
         Gtk::Box* pRoll = nullptr; builder->get_widget("placeholder_roll_image", pRoll);
         if(pRoll) {
+            std::cout << "Initializing roll indicator." << std::endl;
             createImageIndicator(roll_image, roll_pixbuf, "../resources/RobotSide.png", pRoll, roll_rotation_angle, 30, -30);
             roll_init = true;
         }
 
         Gtk::Box* pPitch = nullptr; builder->get_widget("placeholder_pitch_image", pPitch);
         if(pPitch) {
+            std::cout << "Initializing pitch indicator." << std::endl;
             createImageIndicator(pitch_image, pitch_pixbuf, "../resources/RobotBack.png", pPitch, pitch_rotation_angle, 30, -30);
             pitch_init = true;
         }
@@ -3203,6 +3431,8 @@ void on_sim_type_changed() {
     std::string prefix;
     if (label.find("Talon") != std::string::npos) prefix = "TALON";
     else if (label.find("Falcon") != std::string::npos) prefix = "FALCON";
+    else if (label.find("Kraken") != std::string::npos) prefix = "KRAKEN";
+    else if (label.find("Neo") != std::string::npos) prefix = "NEO";
     else if (label.find("Linear") != std::string::npos) prefix = "LINEAR";
     else if (label == "Zed") prefix = "ZED";
     else if (label == "Power") prefix = "POWER";
@@ -3775,6 +4005,8 @@ static void on_encode_type_changed() {
     std::string prefix;
     if (label.find("Talon") != std::string::npos) prefix = "TALON";
     else if (label.find("Falcon") != std::string::npos) prefix = "FALCON";
+    else if (label.find("Kraken") != std::string::npos) prefix = "KRAKEN";
+    else if (label.find("Neo") != std::string::npos) prefix = "NEO";
     else if (label.find("Linear") != std::string::npos) prefix = "LINEAR";
     else if (label == "Zed") prefix = "ZED";
     else if (label == "Power") prefix = "POWER";
@@ -3935,9 +4167,34 @@ void initSimulatorWindow() {
     std::vector<std::string> targets = {
         "Talon 1", "Talon 2", "Talon 3", "Talon 4",
         "Falcon 1", "Falcon 2", "Falcon 3", "Falcon 4",
+        "Kraken 1", "Kraken 2", "Kraken 3", "Kraken 4",
+        "Neo 1", "Neo 2", "Neo 3", "Neo 4",
         "Linear 1", "Linear 2", "Zed", "Drivetrain", 
         "Power", "Communication", "Autonomy"
     };
+    // if(primaryBot){
+    //     targets = {
+    //     "Talon 1", "Talon 2", "Talon 3",
+    //     "Kraken 1", "Kraken 2", "Kraken 3", "Kraken 4",
+    //     "Linear 1", "Linear 2", "Zed", "Drivetrain", 
+    //     "Power", "Communication", "Autonomy"
+    // };
+    // } else if(dumpBot){
+    //     targets = {
+    //     "Falcon 1", "Neo 1", "Neo 2", "Neo 3", "Neo 4",
+    //     "Linear 1", "Linear 2", "Zed", "Drivetrain", 
+    //     "Power", "Communication", "Autonomy"
+    // };
+    // } else if(backupBot){
+    //     targets = {
+    //     "Talon 1", "Talon 2", "Talon 3", "Talon 4",
+    //     "Falcon 1", "Falcon 2", "Falcon 3", "Falcon 4",
+    //     "Linear 1", "Linear 2", "Zed", "Drivetrain", 
+    //     "Power", "Communication", "Autonomy"
+    // };
+    // }
+
+
     for(const auto& t : targets) simTypeCombo->append(t);
     
     simTypeCombo->signal_changed().connect(sigc::ptr_fun(&on_sim_type_changed));
@@ -3956,6 +4213,13 @@ void initSimulatorWindow() {
     mainVBox->add(*btnSend);
 
     simulatorWindow->add(*mainVBox);
+    
+    // Apply light background color to simulator window
+    auto sim_css = Gtk::CssProvider::create();
+    std::string sim_bg_css = "window { background-color: " + lightBackgroundColor + "; }";
+    sim_css->load_from_data(sim_bg_css);
+    simulatorWindow->get_style_context()->add_provider(sim_css, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+    
     simulatorWindow->show_all();
     
     simTypeCombo->set_active_text("Talon 1");
@@ -4100,6 +4364,8 @@ void processArguments(int argc, char** argv){
                 std::cout << "--nano: Switches IP address used to connect to the Jetson Nano" << std::endl;
                 std::cout << "--test_input: Allows for testing inputs without being connected to robot" << std::endl;
                 std::cout << "--alt_layout: Uses alternate joystick control mapping for robot" << std::endl;
+                std::cout << "--backup_bot: Sets the backup bot" << std::endl;
+                std::cout << "--dump_bot: Sets the dump bot" << std::endl;
                 exit(0);
             }
             else if(!strcmp("--init", argv[i])){
@@ -4156,6 +4422,14 @@ void processArguments(int argc, char** argv){
             else if(!strcmp("--encode_tool", argv[i])){
                 start_encode_tool = true;
                 initVals = true;
+            }
+            else if(!strcmp("--backup_bot", argv[i])){
+                backupBot = true;
+                primaryBot = false;
+            }
+            else if(!strcmp("--dump_bot", argv[i])){
+                dumpBot = true;
+                primaryBot = false;
             }
         }
     }
@@ -4261,6 +4535,7 @@ int main(int argc, char** argv) {
     //Setup GUI
     Glib::RefPtr<Gtk::Application> application = Gtk::Application::create(argc, argv, "edu.uark.razorbotz");
     processArguments(argc, argv);
+    setup_local_key_vectors();
     checkSize();
     setupGUI(application);
     if(!noArena)

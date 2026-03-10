@@ -111,8 +111,12 @@ void insert(int value,uint8_t* array){
     array[3]=uint8_t((uint32_t(*(static_cast<uint32_t*>(static_cast<void*>(&value))))>>0) & 0xff);
 }
 
-
+std::unique_ptr<foxglove::Server<foxglove::WebSocketNoTls>> foxglove_server;
 bool quit(GdkEventAny* event){
+    if (foxglove_server) {
+        foxglove_server->stop();
+    }
+    
     exit(0);
 }
 
@@ -175,8 +179,8 @@ Gtk::Box* simContentBox = nullptr;
 std::map<std::string, Gtk::Widget*> activeSimWidgets;
 
 // --- Foxglove Globals ---
-std::unique_ptr<foxglove::Server<foxglove::WebSocketNoTls>> foxglove_server;
 foxglove::ChannelId arena_mesh_channel;
+foxglove::ChannelId tf_channel;
 std::chrono::high_resolution_clock::time_point lastFoxgloveTransmit = std::chrono::high_resolution_clock::now();
 
 // --- Encode Tool Globals ---
@@ -243,6 +247,11 @@ double bucket_rotation_angle = 0.0;
 Glib::RefPtr<Gdk::Pixbuf> bucket_rot_pixbuf;
 Gtk::Image* bucket_rot_image;
 
+double robot_x_m = 0.0;
+double robot_y_m = 0.0;
+double robot_pitch_rad = 0.0;
+double arm_angle_deg = 0.0; 
+double bucket_angle_deg = 0.0;
 
 double MULTIPLIER_X = 1100.0 / 6.88;
 double MULTIPLIER_Y = 800.0 / 5.0;
@@ -1674,23 +1683,28 @@ void handleZedElements(const std::vector<Element>& elements) {
         if (element.type != TYPE::FLOAT32) continue;
         float value = element.data.front().float32;
 
-        if (element.label == "roll") {
-            roll_rotation_angle = std::round(value);
-            roll_image->set(rotate_image(roll_pixbuf, -roll_rotation_angle, 200, 200, 30, -30));
-        }
-        else if (element.label == "yaw") {
-            pitch_rotation_angle = std::round(value);
+        if (element.label == "yaw") {
+            pitch_rotation_angle = std::round(value); // Assuming mapped to yaw here
             pitch_image->set(rotate_image(pitch_pixbuf, pitch_rotation_angle, 200, 200, 30, -30));
-        }
-        else if (element.label == "pitch" && !noArena) {
-            body_pitch_angle = value;
-            overlay_area->update_image_rotation(value - 90);
         }
         else if (element.label == "Z" && !noArena) {
             overlay_area->update_image_y(value * MULTIPLIER_Y);
+            // Capture live Y position
+            robot_y_m = -value; 
         }
         else if (element.label == "X" && !noArena) {
             overlay_area->update_image_x(value * MULTIPLIER_X);
+            // Capture live X position
+            robot_x_m = -value; 
+        }
+        else if (element.label == "pitch" && !noArena) {
+            overlay_area->update_image_rotation(value - 90);
+            // Capture live Yaw in radians
+            robot_pitch_rad = value * (M_PI / 180.0);
+        }
+        else if (element.label == "roll") {
+            roll_rotation_angle = std::round(value);
+            roll_image->set(rotate_image(roll_pixbuf, -roll_rotation_angle, 200, 200, 30, -30));
         }
     }
 }
@@ -1702,11 +1716,13 @@ void handleDrivetrainElements(const std::vector<Element>& elements) {
 void handleTalonElements(const std::string& label, const std::vector<Element>& elements) {
     for (const auto& element : elements) {
         if (element.label == "Sensor Position") {
-            int pos = element.data.front().float32;
+            int pos = element.data.front().uint16;
             if (label == "Talon 1") {
                 left_arm_pos = pos;
                 left_arm->set_height_ratio((920 - pos) / 920.0);
-
+                arm_angle_deg = ((pos - 20) / 900.0) * -57.2 + 17.1;
+                std::cout << "pos: " << pos << std::endl;
+                std::cout << "arm_angle_deg: " << arm_angle_deg << std::endl;
                 /*
                 bucket_elevation_height = pos; // MATH NEEDED
                 bucket_elevation->set_height_ratio((920 - pos) / 920.0) // ADJUST
@@ -1720,20 +1736,11 @@ void handleTalonElements(const std::string& label, const std::vector<Element>& e
                 left_bucket_pos = pos;
                 left_bucket->set_height_ratio((700 - pos) / 700.0);
 
-                double arm_max_pos = 920.0;
-                double arm_max_angle = 30.0;
-                double bucket_max_pos = 700.0;
-                double bucket_min_angle = 45.0;
-                double bucket_max_angle = -90.0;
-                double bucket_angle_range = bucket_max_angle - bucket_min_angle;
+                bucket_angle_deg = ((pos - 20) / 900.0) * 97.4 - 25.8;
+                std::cout << "pos: " << pos << std::endl;
+                std::cout << "bucket_angle_deg: " << bucket_angle_deg << std::endl;
 
-                double arm_pos_used = (left_arm_pos + right_arm_pos) / 2.0;
-                double arm_angle = (arm_pos_used / arm_max_pos) * arm_max_angle;
-                double bucket_rel = bucket_min_angle + (left_bucket_pos / bucket_max_pos) * bucket_angle_range;
-                double abs_angle = arm_angle + bucket_rel + body_pitch_angle;
-
-                bucket_rotation_angle = abs_angle;
-
+                bucket_rotation_angle = (pos / 700.0) * 180.0;  // FIX PLACEHOLDER MATH!
                 if (bucketRot_init) {
                     bucket_rot_image->set(rotate_image(bucket_rot_pixbuf, bucket_rotation_angle, 200, 200, 45, -90));
                 }
@@ -2965,27 +2972,23 @@ void initArenaWindow() {
 }
 
 void initFoxgloveServer() {
-    // Simple log handler so we can see connections in the terminal
     auto logHandler = [](foxglove::WebSocketLogLevel, char const* msg) {
         std::cout << "Foxglove: " << msg << std::endl;
     };
 
     foxglove::ServerOptions serverOptions;
     
-    // Instantiate the server
     foxglove_server = std::make_unique<foxglove::Server<foxglove::WebSocketNoTls>>(
         "Razorbotz_Control", logHandler, serverOptions
     );
 
-    // Define the channel
-    foxglove::ChannelWithoutId mesh_channel;
-    mesh_channel.topic = "/arena/mesh";
-    mesh_channel.encoding = "json";
-    mesh_channel.schemaName = "foxglove.SceneUpdate";
-    mesh_channel.schema = "";
-
-    auto channelIds = foxglove_server->addChannels({mesh_channel});
-    arena_mesh_channel = channelIds.front();
+    foxglove::ChannelWithoutId tf_chan;
+    tf_chan.topic = "/tf";
+    tf_chan.encoding = "json";
+    tf_chan.schemaName = "foxglove.FrameTransforms"; 
+    
+    auto tfIds = foxglove_server->addChannels({tf_chan});
+    tf_channel = tfIds.front();
 
     foxglove::ServerHandlers<foxglove::ConnHandle> handlers;
     
@@ -2999,7 +3002,6 @@ void initFoxgloveServer() {
 
     foxglove_server->setHandlers(std::move(handlers));
 
-    // Start the server on all network interfaces (0.0.0.0), port 8765
     foxglove_server->start("0.0.0.0", 8765);
     std::cout << "Foxglove WebSocket Server started on ws://0.0.0.0:8765" << std::endl;
 }
@@ -3027,47 +3029,171 @@ std::string getGLBBase64(const std::string& filepath) {
     return "";
 }
 
-void publishArenaMesh() {
-    if (!foxglove_server) return;
+nlohmann::json euler_to_quat(double roll, double pitch, double yaw) {
+    double cy = std::cos(yaw * 0.5);
+    double sy = std::sin(yaw * 0.5);
+    double cp = std::cos(pitch * 0.5);
+    double sp = std::sin(pitch * 0.5);
+    double cr = std::cos(roll * 0.5);
+    double sr = std::sin(roll * 0.5);
 
-    // Cache the base64 string so we don't encode it 60 times a minute
-    static std::string glb_base64 = "";
-    if (glb_base64.empty()) {
-        // Use a relative path assuming you run the executable from your project root
-        glb_base64 = getGLBBase64("resources/meshes/Test.glb"); 
-        if (glb_base64.empty()) return; // Abort if file not found
-    }
+    return {
+        {"x", sr * cp * cy - cr * sp * sy},
+        {"y", cr * sp * cy + sr * cp * sy},
+        {"z", cr * cp * sy - sr * sp * cy},
+        {"w", cr * cp * cy + sr * sp * sy}
+    };
+}
+
+void publishRobotTransform() {
+    if (!foxglove_server) return;
 
     auto now = std::chrono::system_clock::now();
     uint64_t timestamp_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count();
     uint32_t sec = timestamp_ns / 1000000000;
     uint32_t nsec = timestamp_ns % 1000000000;
 
-    nlohmann::json scene_update = {
-        {"deletions", nlohmann::json::array()},
-        {"entities", {
-            {
-                {"id", "arena_mesh"},
-                {"timestamp", {{"sec", sec}, {"nsec", nsec}}},
-                {"frame_id", "map"},
-                {"models", {
-                    {
-                        {"pose", {
-                            {"position", {"x", 0.0, "y", 0.0, "z", 0.0}},
-                            {"orientation", {"x", 0, "y", 0, "z", 0, "w", 1}}
-                        }},
-                        {"scale", {"x", 1.0, "y", 1.0, "z", 1.0}},
-                        {"media_type", "model/gltf-binary"},
-                        {"data", glb_base64}
-                    }
-                }}
-            }
-        }}
-    };
+    // --- SENSOR OFFSET MATH ---
+    const double OFFSET_X = 0.762639;
+    const double OFFSET_Y = -0.100614;
 
-    std::string json_str = scene_update.dump();
+    double cos_yaw = std::cos(robot_pitch_rad);
+    double sin_yaw = std::sin(robot_pitch_rad);
+
+    // Subtract the rotated offset from the camera's world position 
+    // to find the true center of the chassis
+    double true_base_x = robot_x_m - (OFFSET_X * cos_yaw - OFFSET_Y * sin_yaw);
+    double true_base_y = robot_y_m - (OFFSET_X * sin_yaw + OFFSET_Y * cos_yaw);
+
+    // --- SIMULATED WHEEL SPIN MATH ---
+    static double prev_x = true_base_x;
+    static double prev_y = true_base_y;
+    static double global_wheel_angle_rad = 0.0;
+
+    double dx = true_base_x - prev_x;
+    double dy = true_base_y - prev_y;
+    double distance = std::sqrt(dx*dx + dy*dy);
+
+    if (distance > 0.001) {
+        double movement_angle = std::atan2(dy, dx);
+        double angle_diff = movement_angle - robot_pitch_rad;
+        
+        // Normalize angle difference
+        while (angle_diff > M_PI) angle_diff -= 2.0 * M_PI;
+        while (angle_diff < -M_PI) angle_diff += 2.0 * M_PI;
+
+        if (std::abs(angle_diff) > M_PI / 2.0) {
+            distance = -distance; 
+        }
+
+        global_wheel_angle_rad += (distance / 0.210439);
+        
+        prev_x = true_base_x;
+        prev_y = true_base_y;
+    }
+
+    // --------------------------
+
+    double safe_arm_deg = arm_angle_deg;
+    if (safe_arm_deg < -40.1) safe_arm_deg = -40.1;
+    if (safe_arm_deg > 17.1) safe_arm_deg = 17.1;
+    
+    double arm_pitch_rad = safe_arm_deg * (M_PI / 180.0);
+
+    nlohmann::json tf_update;
+    tf_update["transforms"] = nlohmann::json::array();
+    
+    nlohmann::json transform;
+    transform["timestamp"]["sec"] = sec;
+    transform["timestamp"]["nsec"] = nsec;
+    transform["parent_frame_id"] = "world";
+    transform["child_frame_id"] = "base_link";
+    
+    transform["transform"]["translation"]["x"] = true_base_x;
+    transform["transform"]["translation"]["y"] = true_base_y;
+    transform["transform"]["translation"]["z"] = 0.0; 
+    
+    transform["transform"]["rotation"] = euler_to_quat(0.0, 0.0, robot_pitch_rad);
+    tf_update["transforms"].push_back(transform);
+
+    nlohmann::json arm_tf;
+    arm_tf["timestamp"]["sec"] = sec;
+    arm_tf["timestamp"]["nsec"] = nsec;
+    arm_tf["parent_frame_id"] = "base_link";
+    arm_tf["child_frame_id"] = "Arm";
+    
+    arm_tf["transform"]["translation"]["x"] = 0.28468;
+    arm_tf["transform"]["translation"]["y"] = -0.22263;
+    arm_tf["transform"]["translation"]["z"] = 0.30621; 
+    
+    arm_tf["transform"]["rotation"] = euler_to_quat(0.0, arm_pitch_rad, 0.0);
+    
+    tf_update["transforms"].push_back(arm_tf);
+
+    double safe_bucket_deg = bucket_angle_deg;
+    if (safe_bucket_deg < -25.8) safe_bucket_deg = -25.8;
+    if (safe_bucket_deg > 71.6) safe_bucket_deg = 71.6;
+    
+    // Convert to radians for Foxglove
+    double bucket_pitch_rad = safe_bucket_deg * (M_PI / 180.0);
+
+    nlohmann::json bucket_tf;
+    bucket_tf["timestamp"]["sec"] = sec;
+    bucket_tf["timestamp"]["nsec"] = nsec;
+    
+    bucket_tf["parent_frame_id"] = "Arm";
+    bucket_tf["child_frame_id"] = "Bucket";
+    
+    bucket_tf["transform"]["translation"]["x"] = 0.82651;
+    bucket_tf["transform"]["translation"]["y"] = 0.070738;
+    bucket_tf["transform"]["translation"]["z"] = -0.052110; 
+    
+    bucket_tf["transform"]["rotation"] = euler_to_quat(0.0, bucket_pitch_rad, 0.0);
+    tf_update["transforms"].push_back(bucket_tf);
+
+    // Front Left
+    nlohmann::json fl_tf;
+    fl_tf["timestamp"]["sec"] = sec; fl_tf["timestamp"]["nsec"] = nsec;
+    fl_tf["parent_frame_id"] = "base_link"; fl_tf["child_frame_id"] = "FL_Wheel";
+    fl_tf["transform"]["translation"]["x"] = 0.8411;
+    fl_tf["transform"]["translation"]["y"] = -0.019814;
+    fl_tf["transform"]["translation"]["z"] = 0.235883; 
+    fl_tf["transform"]["rotation"] = euler_to_quat(0.0, global_wheel_angle_rad, 0.0);
+    tf_update["transforms"].push_back(fl_tf);
+
+    // Front Right
+    nlohmann::json fr_tf;
+    fr_tf["timestamp"]["sec"] = sec; fr_tf["timestamp"]["nsec"] = nsec;
+    fr_tf["parent_frame_id"] = "base_link"; fr_tf["child_frame_id"] = "FR_Wheel";
+    fr_tf["transform"]["translation"]["x"] = 0.8411;
+    fr_tf["transform"]["translation"]["y"] = -0.538167;
+    fr_tf["transform"]["translation"]["z"] = 0.235883; 
+    fr_tf["transform"]["rotation"] = euler_to_quat(0.0, global_wheel_angle_rad, 0.0);
+    tf_update["transforms"].push_back(fr_tf);
+
+    // Back Left
+    nlohmann::json bl_tf;
+    bl_tf["timestamp"]["sec"] = sec; bl_tf["timestamp"]["nsec"] = nsec;
+    bl_tf["parent_frame_id"] = "base_link"; bl_tf["child_frame_id"] = "BL_Wheel";
+    bl_tf["transform"]["translation"]["x"] = 0.18387;
+    bl_tf["transform"]["translation"]["y"] = 0.0;
+    bl_tf["transform"]["translation"]["z"] = 0.23588; 
+    bl_tf["transform"]["rotation"] = euler_to_quat(0.0, global_wheel_angle_rad, 0.0);
+    tf_update["transforms"].push_back(bl_tf);
+
+    // Back Right
+    nlohmann::json br_tf;
+    br_tf["timestamp"]["sec"] = sec; br_tf["timestamp"]["nsec"] = nsec;
+    br_tf["parent_frame_id"] = "base_link"; br_tf["child_frame_id"] = "BR_Wheel";
+    br_tf["transform"]["translation"]["x"] = 0.183875;
+    br_tf["transform"]["translation"]["y"] = -0.475667;
+    br_tf["transform"]["translation"]["z"] = 0.235883; 
+    br_tf["transform"]["rotation"] = euler_to_quat(0.0, global_wheel_angle_rad, -3.1415);
+    tf_update["transforms"].push_back(br_tf);
+
+    std::string json_str = tf_update.dump();
     foxglove_server->broadcastMessage(
-        arena_mesh_channel, 
+        tf_channel, 
         timestamp_ns, 
         reinterpret_cast<const uint8_t*>(json_str.data()), 
         json_str.size()
@@ -4276,6 +4402,13 @@ int main(int argc, char** argv) {
             newFrameAvailable = false;
         }
 
+        now = std::chrono::high_resolution_clock::now();
+        time_span = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastFoxgloveTransmit);
+        if (time_span.count() > 0.016) {
+            lastFoxgloveTransmit = now;
+            publishRobotTransform();
+        }
+
         if(!testInput && !isServerInitialized() && !isServerInitialized2() && !isVideoStreamActive()) {
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
             continue;
@@ -4349,12 +4482,6 @@ int main(int argc, char** argv) {
         if (time_span.count() > 1.0 && isVideoConnected()) {
             lastVideoHeartbeatTime = now;
             sendVideoHeartbeat();
-        }
-
-        time_span = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastFoxgloveTransmit);
-        if (time_span.count() > 1.0) {
-            lastFoxgloveTransmit = now;
-            publishArenaMesh();
         }
 
 

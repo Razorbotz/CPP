@@ -4172,27 +4172,27 @@ void initSimulatorWindow() {
         "Linear 1", "Linear 2", "Zed", "Drivetrain", 
         "Power", "Communication", "Autonomy"
     };
-    // if(primaryBot){
-    //     targets = {
-    //     "Talon 1", "Talon 2", "Talon 3",
-    //     "Kraken 1", "Kraken 2", "Kraken 3", "Kraken 4",
-    //     "Linear 1", "Linear 2", "Zed", "Drivetrain", 
-    //     "Power", "Communication", "Autonomy"
-    // };
-    // } else if(dumpBot){
-    //     targets = {
-    //     "Falcon 1", "Neo 1", "Neo 2", "Neo 3", "Neo 4",
-    //     "Linear 1", "Linear 2", "Zed", "Drivetrain", 
-    //     "Power", "Communication", "Autonomy"
-    // };
-    // } else if(backupBot){
-    //     targets = {
-    //     "Talon 1", "Talon 2", "Talon 3", "Talon 4",
-    //     "Falcon 1", "Falcon 2", "Falcon 3", "Falcon 4",
-    //     "Linear 1", "Linear 2", "Zed", "Drivetrain", 
-    //     "Power", "Communication", "Autonomy"
-    // };
-    // }
+    if(primaryBot){
+        targets = {
+        "Talon 1", "Talon 2", "Talon 3",
+        "Kraken 1", "Kraken 2", "Kraken 3", "Kraken 4",
+        "Linear 1", "Linear 2", "Zed", "Drivetrain", 
+        "Power", "Communication", "Autonomy"
+    };
+    } else if(dumpBot){
+        targets = {
+        "Falcon 1", "Neo 1", "Neo 2", "Neo 3", "Neo 4",
+        "Linear 1", "Linear 2", "Zed", "Drivetrain", 
+        "Power", "Communication", "Autonomy"
+    };
+    } else if(backupBot){
+        targets = {
+        "Talon 1", "Talon 2", "Talon 3", "Talon 4",
+        "Falcon 1", "Falcon 2", "Falcon 3", "Falcon 4",
+        "Linear 1", "Linear 2", "Zed", "Drivetrain", 
+        "Power", "Communication", "Autonomy"
+    };
+    }
 
 
     for(const auto& t : targets) simTypeCombo->append(t);

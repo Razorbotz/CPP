@@ -67,8 +67,8 @@ Robot isn't drawing in correct location, need to offset for camera position
 
 */
 
-std::string ORIN_IP = "192.168.1.6";
-std::string NANO_IP = "192.168.1.5";
+std::string ORIN_IP = "192.168.0.6";
+std::string NANO_IP = "192.168.0.5";
 bool useOrin = true;
 
 #define LOW_VOLTAGE 12.0f
@@ -164,7 +164,6 @@ bool smallLaptop = false;
 bool wsl = false;
 double GUI_SCALE = 1.0;
 bool noVideo = false;
-bool noArena = false;
 std::string mapUsed = "NASA";
 bool testInput = false;
 bool useAltLayout = false;
@@ -255,22 +254,6 @@ double robot_pitch_rad = 0.0;
 double arm_angle_deg = 0.0; 
 double bucket_angle_deg = 0.0;
 
-double MULTIPLIER_X = 1100.0 / 6.88;
-double MULTIPLIER_Y = 800.0 / 5.0;
-
-double ARENA_WIDTH_M = 6.88, ARENA_HEIGHT_M = 5.0;
-double ARENA_WIDTH_P = 1100.0, ARENA_HEIGHT_P = 800.0;
-
-double UCF_WIDTH_M = 8.14, UCF_HEIGHT_M = 4.57;
-double UCF_WIDTH_P = 1300.0, UCF_HEIGHT_P = 730;
-
-double COSMIC_WIDTH_M = 5.48, COSMIC_HEIGHT_M = 4.87;
-double COMSIC_WIDTH_P = 877, COSMIC_HEIGHT_P = 780;
-
-double LAB_WIDTH_M = 5.0, LAB_HEIGHT_M = 4.0;
-double LAB_WIDTH_P = 800, LAB_HEIGHT_P = 640;
-
-
 std::vector<InfoFrame*> infoFrameList;
 
 struct AxisEvent{
@@ -323,210 +306,6 @@ bool arm_init = false, bucket_init = false, roll_init = false, pitch_init = fals
 bool bucketRot_init = false, bucketElevation_init = false;
 
 int right_arm_pos = 0, left_arm_pos = 0, right_bucket_pos = 0, left_bucket_pos = 0, bucket_elevation_height = 0;
-
-class ImageOverlay : public Gtk::DrawingArea {
-    public:
-        ImageOverlay() :
-            img_x(100), img_y(50), rotation_angle(0.0), dest_x(-1), dest_y(-1) {
-                load_images();
-            }
-    
-        bool update_image_position(double x, double y){
-            img_x = x;
-            img_y = y;
-            queue_draw();
-            return true;
-        }
-
-        bool update_image_rotation(double rotation){
-            rotation_angle = ((rotation * M_PI) / 180);
-            queue_draw();
-            return true;
-        }
-
-        bool update_image_x(double x){
-            img_x = x;
-            queue_draw();
-            return true;
-        }
-
-        bool update_image_y(double y){
-            img_y = y;
-            queue_draw();
-            return true;
-        }
-
-        // Scale factor of map means 1m = 160px, so scale multiplier sets
-        // the size of the rock and hole to scale multiplier meters in radius
-        void add_rock_image(int x, int y, double scale_multiplier) {
-            rock_data.emplace_back(x, y, scale_multiplier);
-            queue_draw();
-        }
-
-        void add_hole_image(int x, int y, double scale_multiplier) {
-            hole_data.emplace_back(x, y, scale_multiplier);
-            queue_draw();
-        }
-
-        void add_dest_loc(int x, int y){
-            dest_x = x;
-            dest_y = y;
-            queue_draw();
-        }
-
-    protected:
-    bool on_draw(const Cairo::RefPtr<Cairo::Context>& cr) override {
-        if (!background || !overlay) return false;
-
-        int height = 0;
-        if(mapUsed == "NASA"){
-            height = ARENA_HEIGHT_P;
-        }
-        // use UCF for the top half, UCF_flip for the bottom half
-        else if(mapUsed == "UCF" || mapUsed == "UCF_flip"){
-            height = UCF_HEIGHT_P;
-        }
-        else if(mapUsed == "Cosmic"){
-            height = COSMIC_HEIGHT_P;
-        }
-        else if(mapUsed == "Lab"){
-            height = LAB_HEIGHT_P;
-        }
-        else{
-            height = ARENA_HEIGHT_P;
-        }
-    
-        // Get widget and image sizes to scale the images correctly
-        int widget_width = get_allocation().get_width();
-        int widget_height = get_allocation().get_height();
-    
-        int img_width = background->get_width();
-        int img_height = background->get_height();
-    
-        double scale_x = static_cast<double>(widget_width) / img_width;
-        double scale_y = static_cast<double>(widget_height) / img_height;
-        double scale = std::min(scale_x, scale_y);
-    
-        double scaled_width = img_width * scale;
-        double scaled_height = img_height * scale;
-        double offset_x = (widget_width - scaled_width) / 2.0;
-        double offset_y = (widget_height - scaled_height) / 2.0;
-    
-        // Apply transformations for both background and overlay
-        cr->save();
-        cr->translate(offset_x, offset_y);
-        cr->scale(scale, scale);
-    
-        cr->save();
-        Gdk::Cairo::set_source_pixbuf(cr, background, 0, 0);
-        cr->paint();
-        cr->restore();
-
-        cr->save();
-        
-        cr->save();
-
-        cr->translate(img_x, height - img_y);
-
-        cr->rotate(rotation_angle);
-
-        double cam_pixel_x = overlay->get_width() * 0.73;
-        double cam_pixel_y = overlay->get_height() * 0.5;
-
-        cr->translate(-cam_pixel_x, -cam_pixel_y);
-
-        Gdk::Cairo::set_source_pixbuf(cr, overlay, 0, 0);
-        cr->paint();
-
-        cr->restore();
-        
-        // Draw rocks
-        for (const auto& data : rock_data) {
-            int new_width = rock->get_width() * data.scale_multiplier;
-            int new_height = rock->get_height() * data.scale_multiplier;
-            auto scaled_pixbuf = rock->scale_simple(new_width, new_height, Gdk::INTERP_BILINEAR);
-            int draw_x = data.x - (new_width / 2);
-            int draw_y = height - (data.y + new_height / 2);
-            Gdk::Cairo::set_source_pixbuf(cr, scaled_pixbuf, draw_x, draw_y);
-            cr->paint();
-        }
-    
-        // Draw holes
-        for (const auto& data : hole_data) {
-            int new_width = hole->get_width() * data.scale_multiplier;
-            int new_height = hole->get_height() * data.scale_multiplier;
-            auto scaled_pixbuf = hole->scale_simple(new_width, new_height, Gdk::INTERP_BILINEAR);
-            int draw_x = data.x - (new_width / 2);
-            int draw_y = height - (data.y + new_height / 2);
-            Gdk::Cairo::set_source_pixbuf(cr, scaled_pixbuf, draw_x, draw_y);
-            cr->paint();
-        }
-
-        if(dest_x != -1 && dest_y != -1){
-            int dest_img_w = dest_image->get_width();
-            int dest_img_h = dest_image->get_height();
-
-            int draw_x = dest_x - dest_img_w / 2;
-            int draw_y = height - (dest_y + dest_img_h / 2);
-
-            Gdk::Cairo::set_source_pixbuf(cr, dest_image, draw_x, draw_y);
-            cr->paint();
-        }
-
-        cr->restore();
-        cr->reset_clip();
-    
-        return true;
-    }
-    
-    private:
-        Glib::RefPtr<Gdk::Pixbuf> background, overlay, rock, hole, dest_image;
-        double img_x, img_y;
-        double rotation_angle;
-
-        int dest_x, dest_y;
-
-        struct ImageData {
-            int x, y;
-            double scale_multiplier;
-            ImageData(int x, int y, double scale) : x(x), y(y), scale_multiplier(scale) {}
-        };
-        std::vector<ImageData> rock_data;
-        std::vector<ImageData> hole_data;
-        double m_scale_multiplier;
-    
-        void load_images(){
-            try{
-                if(mapUsed == "NASA"){
-                    background = Gdk::Pixbuf::create_from_file("../resources/Arena.png");
-                }
-                else if(mapUsed == "UCF"){
-                    background = Gdk::Pixbuf::create_from_file("../resources/UCFArena.png");
-                }
-                else if (mapUsed == "UCF_flip") {
-                    background = Gdk::Pixbuf::create_from_file("../resources/UCFArena_flip.png");
-                }
-                else if(mapUsed == "Cosmic"){
-                    background = Gdk::Pixbuf::create_from_file("../resources/CosmicArena.png");
-                }
-                else if(mapUsed == "Lab"){
-                    background = Gdk::Pixbuf::create_from_file("../resources/LabArena.png");
-                }
-                else{
-                    background = Gdk::Pixbuf::create_from_file("../resources/Arena.png");
-                }
-                overlay = Gdk::Pixbuf::create_from_file("../resources/RobotTop.png");
-                rock = Gdk::Pixbuf::create_from_file("../resources/Rock.png");
-                hole = Gdk::Pixbuf::create_from_file("../resources/Hole.png");
-                dest_image = Gdk::Pixbuf::create_from_file("../resources/X.png");
-            }
-            catch(const Glib::Exception& ex){
-                g_warning("Failed to load images: %s", ex.what().c_str());
-            }
-        }
-};
-
-ImageOverlay* overlay_area;
 
 bool set_source_hex_color(const Cairo::RefPtr<Cairo::Context>& cr, const std::string& color_string) {
     if (color_string.empty()) return false;
@@ -1746,18 +1525,15 @@ void handleZedElements(const std::vector<Element>& elements) {
             pitch_image->set(rotate_image(pitch_pixbuf, pitch_rotation_angle, 200, 200, 30, -30));
             
         }
-        else if (element.label == "Z" && !noArena) {
-            overlay_area->update_image_y(value * MULTIPLIER_Y);
+        else if (element.label == "Z") {
             // Capture live Y position
             robot_y_m = -value; 
         }
-        else if (element.label == "X" && !noArena) {
-            overlay_area->update_image_x(value * MULTIPLIER_X);
+        else if (element.label == "X") {
             // Capture live X position
             robot_x_m = -value; 
         }
-        else if (element.label == "pitch" && !noArena) {
-            overlay_area->update_image_rotation(value - 90);
+        else if (element.label == "pitch") {
             // Capture live Yaw in radians
             robot_pitch_rad = value * (M_PI / 180.0);
         }
@@ -1955,18 +1731,12 @@ void handleAutonomyElements(const std::string& label, const std::vector<Element>
     int destY = -1;
     for (const auto& element : elements) {
         if (element.label == "Dest X") {
-            destX = element.data.front().float32 * MULTIPLIER_X;
-            if(destY != -1){
-                overlay_area->add_dest_loc(destX, destY);
-                break;
-            }
+            destX = element.data.front().float32;
+            // TODO: Add destination to Foxglove
         }
         else if(element.label == "Dest Z"){
-            destY = element.data.front().float32 * MULTIPLIER_Y;
-            if(destX != -1){
-                overlay_area->add_dest_loc(destX, destY);
-                break;
-            }
+            destY = element.data.front().float32;
+            // TODO: Add destination to Foxglove
         }
     }
 }
@@ -3081,102 +2851,6 @@ void initSensorsWindow() {
     }
 
     sensorsWindow->show_all();
-}
-
-void initArenaWindow() {
-    auto builder = Gtk::Builder::create_from_file("../resources/arenaLayout.glade");
-
-    builder->get_widget("arenaWindow", arenaWindow);
-
-    if (!arenaWindow) {
-        g_warning("Could not load 'arenaWindow' from arena.glade");
-        return;
-    }
-
-    auto arena_css = Gtk::CssProvider::create();
-    std::string arena_bg_css = "window { background-color: " + (isLightMode ? lightBackgroundColor : darkBackgroundColor) + "; }";
-    arena_css->load_from_data(arena_bg_css);
-    arenaWindow->get_style_context()->add_provider(arena_css, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
-
-    if (monitor_count == 3) {
-        auto display = Gdk::Display::get_default();
-        auto second_monitor = display->get_monitor(1);
-        Gdk::Rectangle second_monitor_geometry;
-        second_monitor->get_geometry(second_monitor_geometry);
-        arenaWindow->move(second_monitor_geometry.get_x(), second_monitor_geometry.get_y());
-        arenaWindow->set_default_size(second_monitor_geometry.get_width(), second_monitor_geometry.get_height());
-    }
-    else {
-        arenaWindow->maximize();
-    }
-
-    try {
-        auto icon = "../resources/razorbotz.png";
-        arenaWindow->set_icon_from_file(icon);
-    }
-    catch (const Glib::FileError& e) {
-        g_print("Failed to load image: %s\n", e.what().c_str());
-        return;
-    }
-
-    Gtk::Box* mapHolder = nullptr;
-    builder->get_widget("holder_map_area", mapHolder);
-    
-    if (mapHolder) {
-        overlay_area = Gtk::manage(new ImageOverlay());
-        mapHolder->pack_start(*overlay_area, Gtk::PACK_EXPAND_WIDGET);
-    }
-
-    // Camera 1: Awareness
-    Gtk::Box* webViewHolder1 = nullptr;
-    builder->get_widget("holder_webview1", webViewHolder1);
-
-    if (webViewHolder1) {
-        auto webview1 = WEBKIT_WEB_VIEW(webkit_web_view_new());
-        webkit_web_view_load_uri(webview1, "http://192.168.1.8/mjpeg/1");
-        Gtk::Widget* webview_widget1 = Glib::wrap(GTK_WIDGET(webview1));
-        webViewHolder1->pack_start(*webview_widget1, Gtk::PACK_EXPAND_WIDGET);
-    }
-
-    // Camera 2: Back
-    Gtk::Box* webViewHolder2 = nullptr;
-    builder->get_widget("holder_webview2", webViewHolder2);
-
-    if (webViewHolder2) {
-        auto webview2 = WEBKIT_WEB_VIEW(webkit_web_view_new());
-        webkit_web_view_load_uri(webview2, "http://192.168.1.9/mjpeg/1");
-        Gtk::Widget* webview_widget2 = Glib::wrap(GTK_WIDGET(webview2));
-        webViewHolder2->pack_start(*webview_widget2, Gtk::PACK_EXPAND_WIDGET);
-    }
-
-    Gtk::Label* awareness_label = nullptr;
-    Gtk::Label* back_label = nullptr;
-    builder->get_widget("lbl_awareness", awareness_label);
-    builder->get_widget("lbl_back", back_label);
-
-    auto css_provider = Gtk::CssProvider::create();
-    std::string format = "* { font-family: 'Proxima Nova'; }\n"
-        ".overlay-text {\n"
-        "font-size: 30px;\n"
-        "background-color: " + lightBackgroundColor + ";\n"
-        "padding: 5px;\n"
-        "margin: 10px;\n"
-        "border-radius: 3px;\n"
-        "}";
-    
-    css_provider->load_from_data(format);
-
-    if (awareness_label) {
-        awareness_label->get_style_context()->add_provider(
-            css_provider, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
-    }
-    
-    if (back_label) {
-        back_label->get_style_context()->add_provider(
-            css_provider, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
-    }
-
-    arenaWindow->show_all();
 }
 
 void initFoxgloveServer() {
@@ -4376,9 +4050,6 @@ void processArguments(int argc, char** argv){
             else if(!strcmp("--no_video", argv[i])){
                 noVideo = true;
             }
-            else if(!strcmp("--no_arena", argv[i])){
-                noArena = true;
-            }
             else if(!strcmp("--set_colors", argv[i])){
                 if(i+1 < argc){
                     lightBackgroundColor = argv[i+1];
@@ -4537,8 +4208,6 @@ int main(int argc, char** argv) {
     setup_local_key_vectors();
     checkSize();
     setupGUI(application);
-    if(!noArena)
-        initArenaWindow();
     if(!noVideo)
         initSensorsWindow();
     if(simulateNetwork) {

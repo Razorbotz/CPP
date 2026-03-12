@@ -14,7 +14,6 @@ find_package(ZLIB REQUIRED)
 find_package(OpenSSL REQUIRED)
 pkg_check_modules(GTKMM REQUIRED gtkmm-3.0)
 pkg_check_modules(CAIRO REQUIRED cairo)
-pkg_check_modules(WEBKITGTK REQUIRED webkit2gtk-4.0)
 pkg_check_modules(FFMPEG REQUIRED IMPORTED_TARGET
     libavcodec
     libavformat

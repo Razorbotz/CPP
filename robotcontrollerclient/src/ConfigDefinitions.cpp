@@ -50,6 +50,16 @@ DEFINE_KEY_GROUP(falcon,
     "Temperature", "Sensor Position", "Sensor Velocity", "Max Current", "Error"
 )
 
+DEFINE_KEY_GROUP(neo,
+    "Device ID", "Bus Voltage", "Output Current", "Output Percent",
+    "Temperature", "Sensor Position", "Sensor Velocity", "Max Current", "Error"
+)
+
+DEFINE_KEY_GROUP(kraken,
+    "Device ID", "Bus Voltage", "Output Current", "Output Percent",
+    "Temperature", "Sensor Position", "Sensor Velocity", "Max Current", "Error"
+)
+
 DEFINE_KEY_GROUP(linear,
     "Motor Number", "Speed", "Potentiometer", "Time Without Change",
     "Max", "Min", "Error", "At Min", "At Max", "Distance", "Sensorless"
@@ -91,6 +101,8 @@ std::map<std::string, std::vector<std::string>*>& get_key_vectors() {
     static std::map<std::string, std::vector<std::string>*> key_vectors = {
         {"Talon", &get_talon_keys()},
         {"Falcon", &get_falcon_keys()},
+        {"Kraken", &get_kraken_keys()},
+        {"Neo", &get_neo_keys()},
         {"Linear", &get_linear_keys()},
         {"Autonomy", &get_autonomy_keys()},
         {"Communication", &get_communication_keys()},
@@ -111,6 +123,20 @@ std::map<std::string, std::vector<ElementInfo>>& get_element_definitions() {
             {ElementType::UInt16, "Sensor Position"}, {ElementType::Float32, "Max Current"}
         }},
         {"FALCON", {
+            {ElementType::UInt8, "Device ID"}, {ElementType::UInt16, "Bus Voltage"},
+            {ElementType::UInt16, "Output Current"}, {ElementType::Float32, "Output Percent"},
+            {ElementType::UInt8, "Temperature"}, {ElementType::Float32, "Sensor Position"},
+            {ElementType::Float32, "Sensor Velocity"}, {ElementType::Float32, "Max Current"},
+            {ElementType::Boolean, "Error"}
+        }},
+        {"NEO", {
+           {ElementType::UInt8, "Device ID"}, {ElementType::UInt16, "Bus Voltage"},
+            {ElementType::UInt16, "Output Current"}, {ElementType::Float32, "Output Percent"},
+            {ElementType::UInt8, "Temperature"}, {ElementType::Float32, "Sensor Position"},
+            {ElementType::Float32, "Sensor Velocity"}, {ElementType::Float32, "Max Current"},
+            {ElementType::Boolean, "Error"}
+        }},
+        {"KRAKEN", {
             {ElementType::UInt8, "Device ID"}, {ElementType::UInt16, "Bus Voltage"},
             {ElementType::UInt16, "Output Current"}, {ElementType::Float32, "Output Percent"},
             {ElementType::UInt8, "Temperature"}, {ElementType::Float32, "Sensor Position"},
@@ -168,6 +194,8 @@ std::map<std::string, std::vector<ElementInfo>>& get_element_definitions() {
 void initialize_maps() {
     initialize_bool_map(get_talon_values(), get_talon_keys());
     initialize_bool_map(get_falcon_values(), get_falcon_keys());
+    initialize_bool_map(get_neo_values(), get_neo_keys());
+    initialize_bool_map(get_kraken_values(), get_kraken_keys());
     initialize_bool_map(get_linear_values(), get_linear_keys());
     initialize_bool_map(get_power_values(), get_power_keys());
     initialize_bool_map(get_power2_values(), get_power2_keys());
@@ -189,6 +217,8 @@ std::vector<std::string> getKeys(const std::string& label) {
 std::map<std::string, bool>& getMap(std::string label) {
     if (label.rfind("Talon", 0) == 0) return get_talon_values();
     if (label.rfind("Falcon", 0) == 0) return get_falcon_values();
+    if (label.rfind("Neo", 0) == 0) return get_neo_values();
+    if (label.rfind("Kraken", 0) == 0) return get_kraken_values();
     if (label.rfind("Linear", 0) == 0) return get_linear_values();
     if (label.rfind("Autonomy", 0) == 0) return get_autonomy_values();
     if (label.rfind("Communication", 0) == 0) return get_communication_values();
@@ -202,6 +232,8 @@ std::map<std::string, bool>& getMap(std::string label) {
 std::string getNameFromPrefix(std::string label) {
     if (label.rfind("TALON", 0) == 0) return "Talon";
     if (label.rfind("FALCON", 0) == 0) return "Falcon";
+    if (label.rfind("NEO", 0) == 0) return "Neo";
+    if (label.rfind("KRAKEN", 0) == 0) return "Kraken";
     if (label.rfind("LINEAR", 0) == 0) return "Linear";
     if (label.rfind("AUTONOMY", 0) == 0) return "Autonomy";
     if (label.rfind("COMMUNICATION", 0) == 0) return "Communication";

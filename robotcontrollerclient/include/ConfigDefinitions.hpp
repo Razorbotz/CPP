@@ -42,6 +42,14 @@ std::vector<std::string>& get_falcon_keys();
 std::vector<std::string>& get_reset_falcon_keys();
 std::map<std::string, bool>& get_falcon_values();
 
+std::vector<std::string>& get_neo_keys();
+std::vector<std::string>& get_reset_neo_keys();
+std::map<std::string, bool>& get_neo_values();
+
+std::vector<std::string>& get_kraken_keys();
+std::vector<std::string>& get_reset_kraken_keys();
+std::map<std::string, bool>& get_kraken_values();
+
 std::vector<std::string>& get_linear_keys();
 std::vector<std::string>& get_reset_linear_keys();
 std::map<std::string, bool>& get_linear_values();

@@ -1732,37 +1732,23 @@ void handleTalonElements(const std::string& label, const std::vector<Element>& e
                 right_arm_pos = pos;
                 right_arm->set_height_ratio((920 - pos) / 920.0);
             }
-            else if (label == "Talon 3") {
-                left_bucket_pos = pos;
-                left_bucket->set_height_ratio((700 - pos) / 700.0);
-
+            else if (label == "Talon 3" || label == "Talon 4") {
+                if (label == "Talon 3") {
+                    left_bucket_pos = pos;
+                    left_bucket->set_height_ratio((700 - pos) / 700.0);
+                }
+                else if (label == "Talon 4") {
+                    right_bucket_pos = pos;
+                    right_bucket->set_height_ratio((700 - pos) / 700.0);
+                }
+            
                 bucket_angle_deg = ((pos - 20) / 900.0) * 97.4 - 25.8;
                 std::cout << "pos: " << pos << std::endl;
                 std::cout << "bucket_angle_deg: " << bucket_angle_deg << std::endl;
 
-                bucket_rotation_angle = (pos / 700.0) * 180.0;  // FIX PLACEHOLDER MATH!
-                if (bucketRot_init) {
-                    bucket_rot_image->set(rotate_image(bucket_rot_pixbuf, bucket_rotation_angle, 200, 200, 45, -90));
-                }
-            }
-            else if (label == "Talon 4") {
-                right_bucket_pos = pos;
-                right_bucket->set_height_ratio((700 - pos) / 700.0);
-
-                double arm_max_pos = 920.0;
-                double arm_max_angle = 30.0;
-                double bucket_max_pos = 700.0;
-                double bucket_min_angle = 45.0;
-                double bucket_max_angle = -90.0;
-                double bucket_angle_range = bucket_max_angle - bucket_min_angle;
-
-                double arm_pos_used = (left_arm_pos + right_arm_pos) / 2.0;
-                double arm_angle = (arm_pos_used / arm_max_pos) * arm_max_angle;
-                double bucket_rel = bucket_min_angle + (right_bucket_pos / bucket_max_pos) * bucket_angle_range;
-                double abs_angle = arm_angle + bucket_rel + body_pitch_angle;
-
-                bucket_rotation_angle = abs_angle;
-
+                // Rotation angle should be sum of robot's pitch, arm angle, and bucket angle
+                // (pos / 700.0) * 180.0; - STORING FOR REFERENCE
+                bucket_rotation_angle = pitch_rotation_angle + arm_angle_deg + bucket_angle_deg;
                 if (bucketRot_init) {
                     bucket_rot_image->set(rotate_image(bucket_rot_pixbuf, bucket_rotation_angle, 200, 200, 45, -90));
                 }

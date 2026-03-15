@@ -155,6 +155,9 @@ Gtk::FlowBox* sensorBox;
 Gtk::Box* innerLeftBox;
 Gtk::Box* innerRightBox;
 Gtk::Box* bottomLowerBox;
+Gtk::Box* armPositionPlaceholder;
+Gtk::Box* bucketTiltPlaceholder;
+Gtk::Box* rollImagePlaceholder;
 
 Gtk::Window* window;
 
@@ -164,6 +167,7 @@ bool smallLaptop = false;
 bool wsl = false;
 double GUI_SCALE = 1.0;
 bool noVideo = false;
+bool debugGladeBounds = false;
 std::string mapUsed = "NASA";
 bool testInput = false;
 bool useAltLayout = false;
@@ -232,6 +236,10 @@ std::string darkBackgroundColor = "#0b1a21";
 std::string lightBackgroundColor = "#f0faf2";
 
 bool isLightMode = true;
+
+static constexpr int ROLL_PITCH_IMAGE_SIZE = 200;
+static constexpr int BUCKET_TILT_IMAGE_SIZE = 200;
+static constexpr int EDGE_PANEL_WIDTH = 250;
 
 
 double roll_rotation_angle = 0.0;
@@ -1001,6 +1009,7 @@ std::string generateDarkModeString(const std::string& color) {
         "* { font-family: 'Proxima Nova'; font-weight: bold; }\n"
         "window, notebook, box, flowbox { background-color: " + color + "; }\n"
         "#topControlsBox { background-color: " + darkBackgroundColor + "; }\n"
+        ".edge-panel { background-color: " + darkBackgroundColor + "; }\n"
         "#dark_text, #dark_text label { color: #000000; }\n"
         "label, button, entry { color: #edf6fa; }\n"
         "button { border: 1px solid #edf6fa; background-color: transparent; }\n"
@@ -1016,12 +1025,21 @@ std::string generateLightModeString(const std::string& color) {
         "* { font-family: 'Proxima Nova'; font-weight: bold }\n"
         "window, notebook, box, flowbox { background-color: " + color + "; }\n"
         "#topControlsBox { background-color: " + lightBackgroundColor + "; }\n"
+        ".edge-panel { background-color: " + lightBackgroundColor + "; }\n"
         "label, button, entry { color: #000000; }\n"
         "button { border: 1px solid #000000; background-color: #f0f0f0; }\n"
         
         "notebook tab { background-color: #e6e6e6; border-color: #cccccc; }\n"
         "notebook tab label { color: #000000; }\n"
         "notebook tab:checked { background-color: " + color + "; }\n";
+}
+
+void applyEdgePanelStyle(Gtk::Widget* widget) {
+    if (!widget) {
+        return;
+    }
+
+    widget->get_style_context()->add_class("edge-panel");
 }
 
 void updateBackgroundColor(InfoFrame* infoFrame, std::string label){
@@ -1318,21 +1336,24 @@ bool onMotorClick(GdkEventButton* event, const std::string& label){
 Gtk::Box* createPositionIndicator(const std::string& title, int spacing,
                                   DrawingArea*& left_indicator, 
                                   DrawingArea*& right_indicator, 
-                                  Gtk::Box*& container_box) 
+                                  Gtk::Box*& container_box,
+                                  int box_width = 110,
+                                  int indicator_width = 40,
+                                  int indicator_height = 180) 
 {
     auto text_box = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 2));
     container_box = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, spacing));
-    container_box->set_size_request(110 * GUI_SCALE, -1);
+    container_box->set_size_request(box_width * GUI_SCALE, -1);
     
     left_indicator = Gtk::manage(new DrawingArea());
-    left_indicator->set_size_request(40 * GUI_SCALE, 180 * GUI_SCALE);
+    left_indicator->set_size_request(indicator_width * GUI_SCALE, indicator_height * GUI_SCALE);
     left_indicator->set_hexpand(true);
     left_indicator->set_halign(Gtk::ALIGN_CENTER);
     container_box->add(*left_indicator);
     left_indicator->show();
     
     right_indicator = Gtk::manage(new DrawingArea());
-    right_indicator->set_size_request(40 * GUI_SCALE, 180 * GUI_SCALE);
+    right_indicator->set_size_request(indicator_width * GUI_SCALE, indicator_height * GUI_SCALE);
     right_indicator->set_hexpand(true);
     right_indicator->set_halign(Gtk::ALIGN_CENTER);
     container_box->add(*right_indicator);
@@ -1362,7 +1383,7 @@ Gtk::Box* createPositionIndicator(const std::string& title, int spacing,
  */
 bool createImageIndicator(Gtk::Image*& image_widget, Glib::RefPtr<Gdk::Pixbuf>& pixbuf, 
                           const std::string& file_path, Gtk::Container* parent, double initial_rotation,
-                          int high_angle, int low_angle)
+                          int high_angle, int low_angle, int target_size = 200)
 {
     image_widget = Gtk::manage(new Gtk::Image());
     try {
@@ -1374,19 +1395,30 @@ bool createImageIndicator(Gtk::Image*& image_widget, Glib::RefPtr<Gdk::Pixbuf>& 
     
     parent->add(*image_widget);
 
-    Glib::RefPtr<Gdk::Pixbuf> new_pixbuf = rotate_image(pixbuf, initial_rotation, 200, 200, high_angle, low_angle);
+    Glib::RefPtr<Gdk::Pixbuf> new_pixbuf = rotate_image(pixbuf, initial_rotation, target_size, target_size, high_angle, low_angle);
     image_widget->set(new_pixbuf);
     return true;
 }
 
+static void center_image_widget(Gtk::Image* image_widget) {
+    if (!image_widget) return;
+    image_widget->set_hexpand(true);
+    image_widget->set_vexpand(true);
+    image_widget->set_halign(Gtk::ALIGN_CENTER);
+    image_widget->set_valign(Gtk::ALIGN_CENTER);
+}
+
 void initRoll() {
     if (!roll_init) {
-        Gtk::Container* parent = noVideo ? static_cast<Gtk::Container*>(sensorBox) : bottomLowerBox;
+        Gtk::Container* parent = noVideo ? static_cast<Gtk::Container*>(sensorBox)
+                                         : (rollImagePlaceholder ? static_cast<Gtk::Container*>(rollImagePlaceholder)
+                                                                 : static_cast<Gtk::Container*>(bottomLowerBox));
         
         bool success = createImageIndicator(roll_image, roll_pixbuf, 
-            "../resources/RobotSide.png", parent, roll_rotation_angle, 30, -30);
+            "../resources/RobotSide.png", parent, roll_rotation_angle, 30, -30, ROLL_PITCH_IMAGE_SIZE);
 
         if (success) {
+            center_image_widget(roll_image);
             if (!noVideo) {
                 auto* padding = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
                 padding->set_size_request(100, 100);
@@ -1409,9 +1441,10 @@ void initPitch() {
         Gtk::Container* parent = noVideo ? static_cast<Gtk::Container*>(sensorBox) : bottomLowerBox;
         
         bool success = createImageIndicator(pitch_image, pitch_pixbuf, 
-            "../resources/RobotBack.png", parent, pitch_rotation_angle, 30, -30);
+            "../resources/RobotBack.png", parent, pitch_rotation_angle, 30, -30, ROLL_PITCH_IMAGE_SIZE);
 
         if (success) {
+            center_image_widget(pitch_image);
             pitch_init = true;
             window->show_all();
         }
@@ -1436,10 +1469,12 @@ void initBucketLvl() {
 
 void initArmPos() {
     if (!arm_init) {
-        auto* arm_widget = createPositionIndicator("Arm Positions", 5, left_arm, right_arm, armBox);
+        auto* arm_widget = createPositionIndicator("Arm Positions", 4, left_arm, right_arm, armBox, 90, 28, 200);
         
         if (noVideo)
             sensorBox->add(*arm_widget);
+        else if (armPositionPlaceholder)
+            armPositionPlaceholder->add(*arm_widget);
         else
             innerLeftBox->add(*arm_widget);
 
@@ -1475,12 +1510,15 @@ void initBucketElevation() {
 void initBucketRot() {
     if (!bucketRot_init) {
 
-        Gtk::Container* parent = noVideo ? static_cast<Gtk::Container*>(sensorBox) : innerLeftBox;
+        Gtk::Container* parent = noVideo ? static_cast<Gtk::Container*>(sensorBox)
+                                         : (bucketTiltPlaceholder ? static_cast<Gtk::Container*>(bucketTiltPlaceholder)
+                                                                  : static_cast<Gtk::Container*>(innerLeftBox));
 
         bool success = createImageIndicator(bucket_rot_image, bucket_rot_pixbuf, "../resources/newbucket.png", parent,
-            bucket_rotation_angle, 45, -90);
+            bucket_rotation_angle, 45, -90, BUCKET_TILT_IMAGE_SIZE);
 
         if (success) {
+            center_image_widget(bucket_rot_image);
             bucketRot_init = true;
             window->show_all();
         }
@@ -1522,7 +1560,7 @@ void handleZedElements(const std::vector<Element>& elements) {
 
         if (element.label == "yaw") {
             pitch_rotation_angle = std::round(value); // Assuming mapped to yaw here
-            pitch_image->set(rotate_image(pitch_pixbuf, pitch_rotation_angle, 200, 200, 30, -30));
+            pitch_image->set(rotate_image(pitch_pixbuf, pitch_rotation_angle, ROLL_PITCH_IMAGE_SIZE, ROLL_PITCH_IMAGE_SIZE, 30, -30));
             
         }
         else if (element.label == "Z") {
@@ -1539,7 +1577,7 @@ void handleZedElements(const std::vector<Element>& elements) {
         }
         else if (element.label == "roll") {
             roll_rotation_angle = std::round(value);
-            roll_image->set(rotate_image(roll_pixbuf, -roll_rotation_angle, 200, 200, 30, -30));
+            roll_image->set(rotate_image(roll_pixbuf, -roll_rotation_angle, ROLL_PITCH_IMAGE_SIZE, ROLL_PITCH_IMAGE_SIZE, 30, -30));
         }
     }
 }
@@ -1578,7 +1616,7 @@ void handleTalonElements(const std::string& label, const std::vector<Element>& e
 
                 bucket_rotation_angle = (pos / 700.0) * 180.0;  // FIX PLACEHOLDER MATH!
                 if (bucketRot_init) {
-                    bucket_rot_image->set(rotate_image(bucket_rot_pixbuf, bucket_rotation_angle, 200, 200, 45, -90));
+                    bucket_rot_image->set(rotate_image(bucket_rot_pixbuf, bucket_rotation_angle, BUCKET_TILT_IMAGE_SIZE, BUCKET_TILT_IMAGE_SIZE, 45, -90));
                 }
             }
             else if (label == "Talon 4") {
@@ -2097,7 +2135,6 @@ Gtk::Stack* create_gear_dial(const std::string& initial_gear,
         label->set_margin_bottom(8);
         label->set_alignment(0.5, 0.5);
         label->set_markup("<span size='20480' weight='bold' foreground='black'>" + gear + "</span>");
-
         gear_labels[gear] = label;
         label->show();
 
@@ -2361,7 +2398,7 @@ Gtk::EventBox* create_labeled_box(const Glib::ustring& label_text, CircleDrawing
     auto event_box = Gtk::manage(new Gtk::EventBox());
 
     auto box = Gtk::manage(new BorderedBox(Gtk::ORIENTATION_HORIZONTAL, 5));
-    box->set_size_request(300 * GUI_SCALE, 75 * GUI_SCALE);
+    box->set_size_request(200 * GUI_SCALE, 75 * GUI_SCALE);
 
     auto label = Gtk::manage(new Gtk::Label(label_text));
     label->set_hexpand(true);
@@ -2405,7 +2442,7 @@ bool onClickEvent(GdkEventButton* event, const std::string& id) {
 
 Gtk::Box* create_motor_column(std::vector<std::pair<Glib::ustring, CircleDrawingArea**>> items, void (*init_hook)(), std::vector<std::string> labels, bool right = false) {
     auto column = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
-    column->set_size_request(300, 300);
+    column->set_size_request(200, 300);
     column->set_hexpand(false);
     column->set_vexpand(false);
 
@@ -2429,9 +2466,10 @@ Gtk::Box* create_motor_column(std::vector<std::pair<Glib::ustring, CircleDrawing
 // To change Speedometer sizes, need to change this value
 Gtk::Box* create_lower_motor_column(std::vector<std::pair<Glib::ustring, CircleDrawingArea**>> items, std::vector<std::string> labels, bool right = false) {
     auto column = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
-    column->set_size_request(200, 300);
-    column->set_hexpand(false);
+    column->set_size_request(200, -1);
+    column->set_hexpand(true);
     column->set_vexpand(false);
+    column->set_valign(Gtk::ALIGN_END);
 
     for (size_t i = 0; i < items.size(); ++i) {
         auto box = create_labeled_box(items[i].first, *items[i].second, right);
@@ -2460,6 +2498,76 @@ void on_video_connection_finished() {
     update_video_connection_status(video_server_ui);
 }
 
+static std::string get_glade_widget_id(Gtk::Widget* widget) {
+    if (!widget) return "";
+
+    const gchar* buildable_name = gtk_buildable_get_name(GTK_BUILDABLE(widget->gobj()));
+    if (buildable_name && buildable_name[0] != '\0') {
+        return std::string(buildable_name);
+    }
+
+    const Glib::ustring css_name = widget->get_name();
+    if (!css_name.empty()) {
+        return css_name.raw();
+    }
+
+    const char* type_name = G_OBJECT_TYPE_NAME(widget->gobj());
+    return type_name ? std::string(type_name) : std::string("GtkWidget");
+}
+
+static void install_glade_debug_overlay(Gtk::Widget* widget) {
+    if (!widget) return;
+
+    const std::string widget_id = get_glade_widget_id(widget);
+
+    widget->signal_draw().connect(
+        [widget, widget_id](const Cairo::RefPtr<Cairo::Context>& cr) -> bool {
+            const int width = widget->get_allocated_width();
+            const int height = widget->get_allocated_height();
+            if (width <= 2 || height <= 2) return false;
+
+            // Draw a red border around each Glade widget for layout debugging.
+            cr->save();
+            cr->set_source_rgba(1.0, 0.0, 0.0, 0.9);
+            cr->set_line_width(1.0);
+            cr->rectangle(0.5, 0.5, width - 1.0, height - 1.0);
+            cr->stroke();
+
+            // Draw the widget's Glade ID centered in the widget bounds.
+            auto layout = widget->create_pango_layout(widget_id);
+            Pango::FontDescription font;
+            font.set_family("Monospace");
+            font.set_size(8 * Pango::SCALE);
+            layout->set_font_description(font);
+
+            int text_w = 0;
+            int text_h = 0;
+            layout->get_pixel_size(text_w, text_h);
+
+            const double box_w = static_cast<double>(text_w + 6);
+            const double box_h = static_cast<double>(text_h + 4);
+            const double box_x = std::max(1.0, (static_cast<double>(width) - box_w) * 0.5);
+            const double box_y = std::max(1.0, (static_cast<double>(height) - box_h) * 0.5);
+
+            cr->set_source_rgba(1.0, 1.0, 1.0, 0.65);
+            cr->rectangle(box_x, box_y, box_w, box_h);
+            cr->fill();
+
+            cr->set_source_rgba(1.0, 0.0, 0.0, 1.0);
+            cr->move_to(box_x + 3.0, box_y + 2.0);
+            layout->show_in_cairo_context(cr);
+            cr->restore();
+            return false;
+        },
+        true);
+
+    if (auto* container = dynamic_cast<Gtk::Container*>(widget)) {
+        for (auto* child : container->get_children()) {
+            install_glade_debug_overlay(child);
+        }
+    }
+}
+
 
 /*** Functions that setup the GUI and windows ***/
 /*
@@ -2479,6 +2587,8 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
     videoIPAddressEntry = nullptr; videoAddressListBox = nullptr;
     toggleModeButton = nullptr; settingsButton = nullptr;
     sensorBox = nullptr; innerLeftBox = nullptr; innerRightBox = nullptr;
+    armPositionPlaceholder = nullptr; bucketTiltPlaceholder = nullptr; rollImagePlaceholder = nullptr;
+    armPositionPlaceholder = nullptr;
 
     initialize_maps(); 
 
@@ -2650,30 +2760,91 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
         
         builder->get_widget("box_bottom_lower", bottomLowerBox);
 
+        Gtk::Box* leftEdgePanel = nullptr;
+        builder->get_widget("left_edge_panel", leftEdgePanel);
+        applyEdgePanelStyle(leftEdgePanel);
+        if (leftEdgePanel) {
+            // width_request in Glade is a minimum; pin panel width at runtime to prevent expansion.
+            leftEdgePanel->set_size_request(EDGE_PANEL_WIDTH, -1);
+            leftEdgePanel->set_hexpand(false);
+            leftEdgePanel->set_halign(Gtk::ALIGN_START);
+        }
+
+        Gtk::Box* rightEdgePanel = nullptr;
+        builder->get_widget("right_edge_panel", rightEdgePanel);
+        applyEdgePanelStyle(rightEdgePanel);
+        if (rightEdgePanel) {
+            // width_request in Glade is a minimum; pin panel width at runtime to prevent expansion.
+            rightEdgePanel->set_size_request(EDGE_PANEL_WIDTH, -1);
+            rightEdgePanel->set_hexpand(false);
+            rightEdgePanel->set_halign(Gtk::ALIGN_END);
+        }
+
         Gtk::Box* pLeft = nullptr; builder->get_widget("placeholder_inner_left", pLeft);
         if (pLeft) {
+            pLeft->set_size_request(EDGE_PANEL_WIDTH, -1);
             std::cout << "Initializing Upper Left column with Falcon indicators by default." << std::endl;
             if(primaryBot){
                 innerLeftBox = create_motor_column({{"Arm L", &talon1Circle}, {"Arm R", &talon2Circle}, {"Bucket L", &talon3Circle}}, nullptr, {"Talon 1", "Talon 2", "Talon 3"}, true);
             } else if(backupBot){
-                innerLeftBox = create_motor_column({{"Arm L", &talon1Circle}, {"Arm R", &talon2Circle}, {"Bucket L", &talon3Circle}, {"Bucket R", &talon4Circle}}, nullptr, {"Talon 1", "Talon 2", "Talon 3", "Talon 4"}, true);
+                innerLeftBox = create_motor_column({{"Arm R", &talon2Circle}, {"Arm L", &talon1Circle}}, nullptr, {"Talon 2", "Talon 1"}, true);
             } else if(dumpBot){
                 innerLeftBox = create_motor_column({{"Dump Bucket", &lowerFalcon1Circle}}, nullptr, {"Falcon 1"}, true);
             }
             pLeft->add(*innerLeftBox);
-            initArmPos();
+            innerLeftBox->set_size_request(200, -1);
+            innerLeftBox->set_valign(Gtk::ALIGN_START);
         }
+
+        Gtk::Box* pLeftImages = nullptr; builder->get_widget("placeholder_left_images", pLeftImages);
+        if (pLeftImages) {
+            auto* leftPanelBottomRow = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
+            leftPanelBottomRow->set_halign(Gtk::ALIGN_CENTER);
+            leftPanelBottomRow->set_valign(Gtk::ALIGN_END);
+            leftPanelBottomRow->set_hexpand(true);
+            leftPanelBottomRow->set_vexpand(false);
+
+            armPositionPlaceholder = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 0));
+            armPositionPlaceholder->set_hexpand(true);
+            armPositionPlaceholder->set_halign(Gtk::ALIGN_CENTER);
+            armPositionPlaceholder->set_valign(Gtk::ALIGN_END);
+
+            bucketTiltPlaceholder = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 0));
+            bucketTiltPlaceholder->set_hexpand(true);
+            bucketTiltPlaceholder->set_halign(Gtk::ALIGN_CENTER);
+            bucketTiltPlaceholder->set_valign(Gtk::ALIGN_END);
+
+            rollImagePlaceholder = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 0));
+            rollImagePlaceholder->set_hexpand(true);
+            rollImagePlaceholder->set_halign(Gtk::ALIGN_CENTER);
+            rollImagePlaceholder->set_valign(Gtk::ALIGN_END);
+
+            leftPanelBottomRow->pack_start(*armPositionPlaceholder, Gtk::PACK_SHRINK);
+            leftPanelBottomRow->pack_start(*bucketTiltPlaceholder, Gtk::PACK_SHRINK);
+            leftPanelBottomRow->pack_start(*rollImagePlaceholder, Gtk::PACK_SHRINK);
+            pLeftImages->pack_end(*leftPanelBottomRow, Gtk::PACK_SHRINK);
+        }
+        initArmPos();
+        initBucketRot();
 
         Gtk::Box* pRight = nullptr; builder->get_widget("placeholder_inner_right", pRight);
         if (pRight) {
+            pRight->set_size_request(EDGE_PANEL_WIDTH, -1);
             std::cout << "Initializing Upper Right motor column with Falcon indicators by default." << std::endl;
-            innerRightBox = create_motor_column({{"Falcon 1", &falcon1Circle}, {"Falcon 2", &falcon2Circle}, {"Falcon 3", &falcon3Circle}, {"Falcon 4", &falcon4Circle}}, nullptr, {"Falcon 1", "Falcon 2", "Falcon 3", "Falcon 4"}, false);
-            //pRight->add(*innerRightBox);
-            initBucketPos();
+            if(backupBot){
+                innerRightBox = create_motor_column({{"Bucket L", &talon3Circle}, {"Bucket R", &talon4Circle}}, nullptr, {"Talon 3", "Talon 4"}, false);
+            } else {
+                innerRightBox = create_motor_column({{"Falcon 1", &falcon1Circle}, {"Falcon 2", &falcon2Circle}, {"Falcon 3", &falcon3Circle}, {"Falcon 4", &falcon4Circle}}, nullptr, {"Falcon 1", "Falcon 2", "Falcon 3", "Falcon 4"}, false);
+            }
+            pRight->add(*innerRightBox);
+            if (!backupBot) {
+                initBucketPos();
+            }
         }
 
         Gtk::Box* pLowerLeft = nullptr; builder->get_widget("placeholder_lower_left", pLowerLeft);
         if (pLowerLeft) {
+            pLowerLeft->set_size_request(EDGE_PANEL_WIDTH, -1);
             std::cout << "Initializing lower motor column with Falcon indicators by default." << std::endl;
             Gtk::Box* lowerLeftBox;
             if(primaryBot){
@@ -2684,11 +2855,14 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
             } else if(dumpBot){
                 lowerLeftBox = create_lower_motor_column({{"Neo 1", &neo1Circle}, {"Neo 2", &neo2Circle}}, {"Neo 1", "Neo 2"});
             }
-            pLowerLeft->add(*lowerLeftBox);
+            if (lowerLeftBox) {
+                pLowerLeft->pack_end(*lowerLeftBox, Gtk::PACK_SHRINK);
+            }
         }
 
         Gtk::Box* pLowerRight = nullptr; builder->get_widget("placeholder_lower_right", pLowerRight);
         if (pLowerRight) {
+            pLowerRight->set_size_request(EDGE_PANEL_WIDTH, -1);
             std::cout << "Initializing lower motor column with Falcon indicators by default." << std::endl;
             Gtk::Box* lowerRightBox;
             if(primaryBot){
@@ -2699,7 +2873,9 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
             } else if(dumpBot){
                 lowerRightBox = create_lower_motor_column({{"Neo 3", &neo3Circle}, {"Neo 4", &neo4Circle}}, {"Neo 3", "Neo 4"});
             }
-            pLowerRight->add(*lowerRightBox);
+            if (lowerRightBox) {
+                pLowerRight->pack_end(*lowerRightBox, Gtk::PACK_SHRINK);
+            }
         }
         
         Gtk::Box* pSpeedLeft = nullptr; builder->get_widget("placeholder_speed_left", pSpeedLeft);
@@ -2732,17 +2908,20 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
             //highlight_gear(currentGear, gears, gear_labels, gear_dial);
         }
         
-        Gtk::Box* pRoll = nullptr; builder->get_widget("placeholder_roll_image", pRoll);
-        if(pRoll) {
+        if (rollImagePlaceholder) {
             std::cout << "Initializing roll indicator." << std::endl;
-            createImageIndicator(roll_image, roll_pixbuf, "../resources/RobotSide.png", pRoll, roll_rotation_angle, 30, -30);
+            createImageIndicator(roll_image, roll_pixbuf, "../resources/RobotSide.png", rollImagePlaceholder, roll_rotation_angle, 30, -30, ROLL_PITCH_IMAGE_SIZE);
+            center_image_widget(roll_image);
             roll_init = true;
         }
 
         Gtk::Box* pPitch = nullptr; builder->get_widget("placeholder_pitch_image", pPitch);
         if(pPitch) {
             std::cout << "Initializing pitch indicator." << std::endl;
-            createImageIndicator(pitch_image, pitch_pixbuf, "../resources/RobotBack.png", pPitch, pitch_rotation_angle, 30, -30);
+            createImageIndicator(pitch_image, pitch_pixbuf, "../resources/RobotBack.png", pPitch, pitch_rotation_angle, 30, -30, ROLL_PITCH_IMAGE_SIZE);
+            center_image_widget(pitch_image);
+            pitch_image->set_valign(Gtk::ALIGN_END);
+            pitch_image->set_vexpand(false);
             pitch_init = true;
         }
 
@@ -2760,6 +2939,12 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
     }
 
     if (window) {
+        if (debugGladeBounds) {
+            std::cout << "Debug mode: drawing Glade widget bounds/IDs." << std::endl;
+            install_glade_debug_overlay(window);
+            window->queue_draw();
+        }
+
         window->signal_delete_event().connect(sigc::ptr_fun(quit));
         window->show_all();
     }
@@ -4039,6 +4224,7 @@ void processArguments(int argc, char** argv){
                 std::cout << "--alt_layout: Uses alternate joystick control mapping for robot" << std::endl;
                 std::cout << "--backup_bot: Sets the backup bot" << std::endl;
                 std::cout << "--dump_bot: Sets the dump bot" << std::endl;
+                std::cout << "--debug_glade_bounds: Draws red bounds and Glade IDs on widgets" << std::endl;
                 exit(0);
             }
             else if(!strcmp("--init", argv[i])){
@@ -4100,6 +4286,9 @@ void processArguments(int argc, char** argv){
             else if(!strcmp("--dump_bot", argv[i])){
                 dumpBot = true;
                 primaryBot = false;
+            }
+            else if(!strcmp("--debug_glade_bounds", argv[i])){
+                debugGladeBounds = true;
             }
         }
     }

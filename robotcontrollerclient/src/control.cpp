@@ -1873,9 +1873,10 @@ void updateGUI(BinaryMessage& message) {
     if ((label == "Talon 1" || label == "Talon 2") && !arm_init) 
         initArmPos();
         //initBucketElevation();
-    if ((label == "Talon 3" || label == "Talon 4") && !bucket_init)
+    if ((label == "Talon 3" || label == "Talon 4") && !bucket_init){
         initBucketPos();
         initBucketRot();
+    }
     if (label == "Zed" && !roll_init) 
         initRoll();
     if(label == "Zed" && !pitch_init)
@@ -2034,7 +2035,9 @@ void initGUI() {
         initRoll();
         initPitch();
         initArmPos();
-        initBucketPos();
+        if (!dumpBot) {
+            initBucketPos();
+        }
         //initBucketElevation();
         initBucketRot();
         
@@ -2786,9 +2789,11 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
             std::cout << "Initializing Upper Left column with Falcon indicators by default." << std::endl;
             if(primaryBot){
                 innerLeftBox = create_motor_column({{"Arm L", &talon1Circle}, {"Arm R", &talon2Circle}, {"Bucket L", &talon3Circle}}, nullptr, {"Talon 1", "Talon 2", "Talon 3"}, true);
-            } else if(backupBot){
+            }
+            else if(backupBot){
                 innerLeftBox = create_motor_column({{"Arm R", &talon2Circle}, {"Arm L", &talon1Circle}}, nullptr, {"Talon 2", "Talon 1"}, true);
-            } else if(dumpBot){
+            }
+            else if(dumpBot){
                 innerLeftBox = create_motor_column({{"Dump Bucket", &lowerFalcon1Circle}}, nullptr, {"Falcon 1"}, true);
             }
             pLeft->add(*innerLeftBox);
@@ -2833,8 +2838,9 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
             std::cout << "Initializing Upper Right motor column with Falcon indicators by default." << std::endl;
             if(backupBot){
                 innerRightBox = create_motor_column({{"Bucket L", &talon3Circle}, {"Bucket R", &talon4Circle}}, nullptr, {"Talon 3", "Talon 4"}, false);
-            } else {
-                innerRightBox = create_motor_column({{"Falcon 1", &falcon1Circle}, {"Falcon 2", &falcon2Circle}, {"Falcon 3", &falcon3Circle}, {"Falcon 4", &falcon4Circle}}, nullptr, {"Falcon 1", "Falcon 2", "Falcon 3", "Falcon 4"}, false);
+            }
+            else {
+                innerRightBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
             }
             pRight->add(*innerRightBox);
             if (!backupBot) {
@@ -2845,14 +2851,17 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
         Gtk::Box* pLowerLeft = nullptr; builder->get_widget("placeholder_lower_left", pLowerLeft);
         if (pLowerLeft) {
             pLowerLeft->set_size_request(EDGE_PANEL_WIDTH, -1);
-            std::cout << "Initializing lower motor column with Falcon indicators by default." << std::endl;
             Gtk::Box* lowerLeftBox;
             if(primaryBot){
                 std::cout << "Initializing lower left motor column with Kraken indicators for primary bot." << std::endl;
                 lowerLeftBox = create_lower_motor_column({{"Kraken 1", &kraken1Circle}, {"Kraken 2", &kraken2Circle}}, {"Kraken 1", "Kraken 2"});
-            } else if(backupBot){
+            }
+            else if(backupBot){
+                std::cout << "Initializing lower motor column with Falcon indicators by default." << std::endl;
                 lowerLeftBox = create_lower_motor_column({{"Falcon 1", &lowerFalcon1Circle}, {"Falcon 2", &lowerFalcon2Circle}}, {"Falcon 1", "Falcon 2"});
-            } else if(dumpBot){
+            }
+            else if(dumpBot){
+                std::cout << "Initializing lower motor column with Neo indicators by default." << std::endl;
                 lowerLeftBox = create_lower_motor_column({{"Neo 1", &neo1Circle}, {"Neo 2", &neo2Circle}}, {"Neo 1", "Neo 2"});
             }
             if (lowerLeftBox) {
@@ -2868,9 +2877,11 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
             if(primaryBot){
                 std::cout << "Initializing lower right motor column with Kraken indicators for primary bot." << std::endl;
                 lowerRightBox = create_lower_motor_column({{"Kraken 3", &kraken3Circle}, {"Kraken 4", &kraken4Circle}}, {"Kraken 3", "Kraken 4"});
-            } else if(backupBot){
+            }
+            else if(backupBot){
                 lowerRightBox = create_lower_motor_column({{"Falcon 3", &lowerFalcon3Circle}, {"Falcon 4", &lowerFalcon4Circle}}, {"Falcon 3", "Falcon 4"});
-            } else if(dumpBot){
+            }
+            else if(dumpBot){
                 lowerRightBox = create_lower_motor_column({{"Neo 3", &neo3Circle}, {"Neo 4", &neo4Circle}}, {"Neo 3", "Neo 4"});
             }
             if (lowerRightBox) {

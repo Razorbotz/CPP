@@ -58,6 +58,7 @@ extern "C" {
 #include "ConfigDefinitions.hpp"
 #include "ConfigEditorWindow.hpp"
 #include "NetworkHandler.hpp"
+#include "ProximityBar.hpp"
 
 /*
 TODO: 
@@ -184,6 +185,8 @@ Gtk::ComboBoxText* simTypeCombo = nullptr;
 Gtk::Box* simContentBox = nullptr;
 
 std::map<std::string, Gtk::Widget*> activeSimWidgets;
+
+ProximityBar* proximityBar = nullptr;
 
 // --- Foxglove Globals ---
 foxglove::ChannelId arena_mesh_channel;
@@ -1104,6 +1107,9 @@ void toggleMode() {
     if(!noVideo) {
         setBackgroundColors(background);
     }
+    if (proximityBar) {
+        proximityBar->set_light_mode(isLightMode);
+    }
 }
 
 void updateBackgroundColor(Gtk::Box* box, bool synced){
@@ -1533,7 +1539,7 @@ const std::unordered_set<std::string> validLabels = {
     "Neo 1", "Neo 2", "Neo 3", "Neo 4",
     "Kraken 1", "Kraken 2", "Kraken 3", "Kraken 4",
     "Linear 1", "Linear 2", "Linear 3", "Linear 4",
-    "Zed", "Autonomy", "Communication", "Power", "Power2", "Drivetrain"
+    "Zed", "Autonomy", "Communication", "Power", "Power2", "Drivetrain", "Lidar"
 };
 
 void addElementToInfoFrame(std::string label, InfoFrame* frame, const Element& element) {
@@ -1586,6 +1592,21 @@ void handleDrivetrainElements(const std::vector<Element>& elements) {
     
 }
 
+void handleLidarElements(const std::vector<Element>& elements) {
+    for (const auto& element : elements) {
+        if (element.label == "Distance") {
+            float distance_m = 0.0f;
+            if (element.type == TYPE::UINT16) {
+                distance_m = element.data.front().uint16 / 1000.0f;
+            }
+ 
+            if (proximityBar) {
+                proximityBar->set_distance(distance_m);
+            }
+        }
+    }
+}
+
 void handleTalonElements(const std::string& label, const std::vector<Element>& elements) {
     bool lowVoltage = false;
     for (const auto& element : elements) {
@@ -1601,6 +1622,11 @@ void handleTalonElements(const std::string& label, const std::vector<Element>& e
                 bucket_elevation_height = pos; // MATH NEEDED
                 bucket_elevation->set_height_ratio((920 - pos) / 920.0) // ADJUST
                 */
+                if (!dumpBot) {
+                    if (proximityBar) {
+                        proximityBar->set_arm_position(pos);
+                    }
+                }
             }
             if(label == "Talon 2") {
                 right_arm_pos = pos;
@@ -1860,6 +1886,9 @@ void updateGUI(BinaryMessage& message) {
         }
         else if(label == "Drivetrain"){
             handleDrivetrainElements(elements);
+        }
+        else if (label == "Lidar" && !dumpBot) {
+            handleLidarElements(elements);
         }
         if(updateMotorDetails){
             updateMotor(label, elements);
@@ -2624,6 +2653,25 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
         Gtk::Overlay* mainOverlay = Gtk::manage(new Gtk::Overlay());
         mainOverlay->add(*videoArea);  // Video as base
         mainOverlay->add_overlay(*topLevelBox);  // UI on top
+
+        // Proximity bar floating on the video feed, left side
+        if (!dumpBot) {
+            std::cout << "Initializing proximity bar for dump bot." << std::endl;
+            proximityBar = Gtk::manage(new ProximityBar());
+            proximityBar->set_size_request(100 * GUI_SCALE, 380 * GUI_SCALE);
+            proximityBar->set_light_mode(isLightMode);
+            proximityBar->set_warning_threshold(0.5);
+            proximityBar->set_optimal_threshold(1.0);
+            proximityBar->set_max_distance(1.5);
+            proximityBar->set_arm_show_threshold(500);
+            proximityBar->set_halign(Gtk::ALIGN_START);
+            proximityBar->set_valign(Gtk::ALIGN_CENTER);
+            proximityBar->set_margin_left(EDGE_PANEL_WIDTH + 50);
+            mainOverlay->add_overlay(*proximityBar);
+        }
+
+        // Add overlay to window
+        window->add(*mainOverlay);
         
         // Add overlay to window
         window->add(*mainOverlay);
@@ -2889,8 +2937,9 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
             }
         }
         
-        Gtk::Box* pSpeedLeft = nullptr; builder->get_widget("placeholder_speed_left", pSpeedLeft);
-        if(pSpeedLeft) {
+        Gtk::Box* pSpeedLeft = nullptr;
+        builder->get_widget("placeholder_speed_left", pSpeedLeft);
+        if (pSpeedLeft) {
             std::cout << "Initializing left speedometer." << std::endl;
             leftSpeedometer = Gtk::manage(new Speedometer("Left Speedometer"));
             leftSpeedometer->set_size_request(300 * GUI_SCALE, 175 * GUI_SCALE);
@@ -3308,6 +3357,7 @@ void on_sim_type_changed() {
     else if (label == "Power2") prefix = "POWER2";
     else if (label == "Drivetrain") prefix = "DRIVETRAIN";
     else if (label == "Autonomy") prefix = "AUTONOMY";
+    else if (label == "Lidar") prefix = "LIDAR";
     else prefix = "COMMUNICATION";
 
     populateBinaryMessage(label, prefix, dummy);
@@ -4039,28 +4089,30 @@ void initSimulatorWindow() {
         "Kraken 1", "Kraken 2", "Kraken 3", "Kraken 4",
         "Neo 1", "Neo 2", "Neo 3", "Neo 4",
         "Linear 1", "Linear 2", "Zed", "Drivetrain", 
-        "Power", "Communication", "Autonomy"
+        "Power", "Communication", "Autonomy", "Lidar"
     };
     if(primaryBot){
         targets = {
-        "Talon 1", "Talon 2", "Talon 3",
-        "Kraken 1", "Kraken 2", "Kraken 3", "Kraken 4",
-        "Linear 1", "Linear 2", "Zed", "Drivetrain", 
-        "Power", "Communication", "Autonomy"
-    };
-    } else if(dumpBot){
+            "Talon 1", "Talon 3",
+            "Kraken 1", "Kraken 2", "Kraken 3", "Kraken 4",
+            "Linear 1", "Linear 3", "Zed", "Drivetrain", 
+            "Power", "Communication", "Autonomy", "Lidar"
+        };
+    }
+    else if(dumpBot){
         targets = {
-        "Falcon 1", "Neo 1", "Neo 2", "Neo 3", "Neo 4",
-        "Linear 1", "Linear 2", "Zed", "Drivetrain", 
-        "Power", "Communication", "Autonomy"
-    };
-    } else if(backupBot){
+            "Falcon 1", "Neo 1", "Neo 2", "Neo 3", "Neo 4",
+            "Linear 1", "Linear 2", "Zed", "Drivetrain", 
+            "Power", "Communication", "Autonomy"
+        };
+    }
+    else if(backupBot){
         targets = {
-        "Talon 1", "Talon 2", "Talon 3", "Talon 4",
-        "Falcon 1", "Falcon 2", "Falcon 3", "Falcon 4",
-        "Linear 1", "Linear 2", "Zed", "Drivetrain", 
-        "Power", "Communication", "Autonomy"
-    };
+            "Talon 1", "Talon 2", "Talon 3", "Talon 4",
+            "Falcon 1", "Falcon 2", "Falcon 3", "Falcon 4",
+            "Linear 1", "Linear 2", "Zed", "Drivetrain", 
+            "Power", "Communication", "Autonomy", "Lidar"
+        };
     }
 
 

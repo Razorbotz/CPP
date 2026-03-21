@@ -59,6 +59,9 @@ extern "C" {
 #include "ConfigEditorWindow.hpp"
 #include "NetworkHandler.hpp"
 #include "ProximityBar.hpp"
+#include "PositionBar.hpp"
+#include "ArtificialHorizon.hpp"
+#include "BatteryBar.hpp"
 
 /*
 TODO: 
@@ -306,10 +309,13 @@ class DrawingArea : public Gtk::DrawingArea {
         double ratio_;
     };
 
-DrawingArea* right_arm;
-DrawingArea* left_arm;
-DrawingArea* right_bucket;
-DrawingArea* left_bucket;
+PositionBar* right_arm = nullptr;
+PositionBar* left_arm = nullptr;
+PositionBar* right_bucket = nullptr;
+PositionBar* left_bucket = nullptr;
+SyncStatusLabel* armSyncLabel = nullptr;
+SyncStatusLabel* bucketSyncLabel = nullptr;
+
 //DrawingArea* bucket_elevation
 Gtk::Box* armBox;
 Gtk::Box* bucketBox;
@@ -831,6 +837,13 @@ Speedometer* velocityDial;
 Speedometer* currentDial;
 bool displayMotor = false;
 
+ArtificialHorizon* attitudeIndicator = nullptr;
+
+std::map<std::string, Gtk::Label*> motorTelemetryLabels;
+bool showMotorTelemetry = true;
+
+BatteryBar* batteryBar = nullptr;
+
 
 extern "C" void destroy_pixbuf_data(const guint8* data) {
     delete[] data;
@@ -1110,6 +1123,14 @@ void toggleMode() {
     if (proximityBar) {
         proximityBar->set_light_mode(isLightMode);
     }
+    if (attitudeIndicator) attitudeIndicator->set_light_mode(isLightMode);
+    if (batteryBar) batteryBar->set_light_mode(isLightMode);
+    if (armSyncLabel) armSyncLabel->set_light_mode(isLightMode);
+    if (bucketSyncLabel) bucketSyncLabel->set_light_mode(isLightMode);
+    if (left_arm) left_arm->set_light_mode(isLightMode);
+    if (right_arm) right_arm->set_light_mode(isLightMode);
+    if (left_bucket) left_bucket->set_light_mode(isLightMode);
+    if (right_bucket) right_bucket->set_light_mode(isLightMode);
 }
 
 void updateBackgroundColor(Gtk::Box* box, bool synced){
@@ -1340,47 +1361,85 @@ bool onMotorClick(GdkEventButton* event, const std::string& label){
  * Creates a position indicator widget composed of two vertical bars and labels.
  */
 Gtk::Box* createPositionIndicator(const std::string& title, int spacing,
-                                  DrawingArea*& left_indicator, 
-                                  DrawingArea*& right_indicator, 
+                                  PositionBar*& left_indicator,
+                                  PositionBar*& right_indicator,
                                   Gtk::Box*& container_box,
+                                  SyncStatusLabel*& sync_label,
+                                  int max_val = 920,
                                   int box_width = 110,
                                   int indicator_width = 40,
-                                  int indicator_height = 180) 
+                                  int indicator_height = 200)
 {
     auto text_box = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 2));
     container_box = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, spacing));
     container_box->set_size_request(box_width * GUI_SCALE, -1);
-    
-    left_indicator = Gtk::manage(new DrawingArea());
+ 
+    left_indicator = Gtk::manage(new PositionBar());
     left_indicator->set_size_request(indicator_width * GUI_SCALE, indicator_height * GUI_SCALE);
+    left_indicator->set_range(0, max_val);
+    left_indicator->set_warning_limits(max_val / 10, max_val * 9 / 10);
+    left_indicator->set_light_mode(isLightMode);
     left_indicator->set_hexpand(true);
     left_indicator->set_halign(Gtk::ALIGN_CENTER);
     container_box->add(*left_indicator);
     left_indicator->show();
-    
-    right_indicator = Gtk::manage(new DrawingArea());
+ 
+    right_indicator = Gtk::manage(new PositionBar());
     right_indicator->set_size_request(indicator_width * GUI_SCALE, indicator_height * GUI_SCALE);
+    right_indicator->set_range(0, max_val);
+    right_indicator->set_warning_limits(max_val / 10, max_val * 9 / 10);
+    right_indicator->set_light_mode(isLightMode);
     right_indicator->set_hexpand(true);
     right_indicator->set_halign(Gtk::ALIGN_CENTER);
     container_box->add(*right_indicator);
     right_indicator->show();
-    right_indicator->set_height_ratio(0.5);
-    
+ 
     container_box->set_halign(Gtk::ALIGN_CENTER);
     container_box->set_valign(Gtk::ALIGN_CENTER);
-    
+ 
     text_box->add(*container_box);
     text_box->set_halign(Gtk::ALIGN_CENTER);
-    
+ 
     auto pos_label = Gtk::manage(new Gtk::Label("L         R"));
     auto title_label = Gtk::manage(new Gtk::Label(title));
-    
     pos_label->set_halign(Gtk::ALIGN_CENTER);
     title_label->set_halign(Gtk::ALIGN_CENTER);
-    
+ 
     text_box->add(*pos_label);
     text_box->add(*title_label);
-    
+ 
+    // Sync status badge
+    sync_label = Gtk::manage(new SyncStatusLabel());
+    sync_label->set_light_mode(isLightMode);
+    sync_label->set_halign(Gtk::ALIGN_CENTER);
+    text_box->add(*sync_label);
+ 
+    return text_box;
+}
+ 
+Gtk::Box* createSinglePositionIndicator(const std::string& title,
+                                         PositionBar*& indicator,
+                                         int max_val = 920,
+                                         int indicator_width = 40,
+                                         int indicator_height = 200)
+{
+    auto text_box = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 2));
+    text_box->set_halign(Gtk::ALIGN_CENTER);
+ 
+    indicator = Gtk::manage(new PositionBar());
+    indicator->set_size_request(indicator_width * GUI_SCALE, indicator_height * GUI_SCALE);
+    indicator->set_range(0, max_val);
+    indicator->set_warning_limits(max_val / 10, max_val * 9 / 10);
+    indicator->set_light_mode(isLightMode);
+    indicator->set_hexpand(false);
+    indicator->set_halign(Gtk::ALIGN_CENTER);
+    text_box->add(*indicator);
+    indicator->show();
+ 
+    auto title_label = Gtk::manage(new Gtk::Label(title));
+    title_label->set_halign(Gtk::ALIGN_CENTER);
+    text_box->add(*title_label);
+ 
     return text_box;
 }
 
@@ -1416,45 +1475,34 @@ static void center_image_widget(Gtk::Image* image_widget) {
 
 void initRoll() {
     if (!roll_init) {
-        Gtk::Container* parent = noVideo ? static_cast<Gtk::Container*>(sensorBox)
-                                         : (rollImagePlaceholder ? static_cast<Gtk::Container*>(rollImagePlaceholder)
-                                                                 : static_cast<Gtk::Container*>(bottomLowerBox));
-        
-        bool success = createImageIndicator(roll_image, roll_pixbuf, 
-            "../resources/RobotSide.png", parent, roll_rotation_angle, 30, -30, ROLL_PITCH_IMAGE_SIZE);
+        attitudeIndicator = Gtk::manage(new ArtificialHorizon("Attitude"));
+        attitudeIndicator->set_size_request(ROLL_PITCH_IMAGE_SIZE * GUI_SCALE,
+                                             (ROLL_PITCH_IMAGE_SIZE + 30) * GUI_SCALE);
+        attitudeIndicator->set_warning_angles(30.0, -30.0);
+        attitudeIndicator->set_light_mode(isLightMode);
+        attitudeIndicator->set_halign(Gtk::ALIGN_CENTER);
+        attitudeIndicator->set_valign(Gtk::ALIGN_END);
 
-        if (success) {
-            center_image_widget(roll_image);
-            if (!noVideo) {
-                auto* padding = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
-                padding->set_size_request(100, 100);
-                bottomLowerBox->add(*padding);
-            }
-            roll_init = true;
-            window->show_all();
-        }
+        Gtk::Container* parent = noVideo
+            ? static_cast<Gtk::Container*>(sensorBox)
+            : (rollImagePlaceholder
+                ? static_cast<Gtk::Container*>(rollImagePlaceholder)
+                : static_cast<Gtk::Container*>(bottomLowerBox));
+
+        parent->add(*attitudeIndicator);
+        roll_init = true;
+        pitch_init = true;  // Combined widget handles both axes
+        window->show_all();
     }
 }
 
 void initPitch() {
-    if (!pitch_init) {
-        if (!noVideo) {
-            auto* padding = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
-            padding->set_size_request(100, 100);
-            bottomLowerBox->add(*padding);
-        }
-
-        Gtk::Container* parent = noVideo ? static_cast<Gtk::Container*>(sensorBox) : bottomLowerBox;
-        
-        bool success = createImageIndicator(pitch_image, pitch_pixbuf, 
-            "../resources/RobotBack.png", parent, pitch_rotation_angle, 30, -30, ROLL_PITCH_IMAGE_SIZE);
-
-        if (success) {
-            center_image_widget(pitch_image);
-            pitch_init = true;
-            window->show_all();
-        }
+    // Combined attitude indicator is created by initRoll().
+    // This function exists so existing call sites don't break.
+    if (!pitch_init && !roll_init) {
+        initRoll();
     }
+    pitch_init = true;
 }
 
 void initBucketLvl() {
@@ -1475,15 +1523,33 @@ void initBucketLvl() {
 
 void initArmPos() {
     if (!arm_init) {
-        auto* arm_widget = createPositionIndicator("Arm Positions", 4, left_arm, right_arm, armBox, 90, 28, 200);
-        
+        if (dumpBot) {
+            arm_init = true;
+            return;
+        }
+ 
+        Gtk::Widget* arm_widget;
+        if (backupBot) {
+            arm_widget = createSinglePositionIndicator("Arm Position", left_arm, 920, 40, 200);
+        }
+        else {
+            arm_widget = createSinglePositionIndicator("Arm Position", left_arm, 920, 40, 200);
+            
+            // Currently the primary and backup bot both have a single arm actuator
+            // This might change depending on the new bot design
+            //arm_widget = createPositionIndicator(
+            //    "Arm Positions", 4,
+            //    left_arm, right_arm, armBox, armSyncLabel,
+            //    920, 90, 28, 200);
+        }
+ 
         if (noVideo)
             sensorBox->add(*arm_widget);
         else if (armPositionPlaceholder)
             armPositionPlaceholder->add(*arm_widget);
         else
             innerLeftBox->add(*arm_widget);
-
+ 
         arm_init = true;
         window->show_all();
     }
@@ -1491,13 +1557,28 @@ void initArmPos() {
 
 void initBucketPos() {
     if (!bucket_init) {
-        auto* bucket_widget = createPositionIndicator("Bucket Positions", 20, left_bucket, right_bucket, bucketBox);
-        
+        if (dumpBot) {
+            bucket_init = true;
+            return;
+        }
+ 
+        Gtk::Widget* bucket_widget;
+        if (backupBot) {
+            bucket_widget = createSinglePositionIndicator("Bucket Position", left_bucket, 700, 40, 180);
+        }
+        else {
+            bucket_widget = createSinglePositionIndicator("Bucket Position", left_bucket, 700, 40, 180);
+            //bucket_widget = createPositionIndicator(
+            //    "Bucket Positions", 20,
+            //    left_bucket, right_bucket, bucketBox, bucketSyncLabel,
+            //    700, 110, 40, 180);
+        }
+ 
         if (noVideo)
             sensorBox->add(*bucket_widget);
         else
             innerRightBox->add(*bucket_widget);
-
+ 
         bucket_init = true;
         window->show_all();
     }
@@ -1531,6 +1612,24 @@ void initBucketRot() {
     }
 }
 
+void updateMotorTelemetry(const std::string& display_name, float voltage, float current) {
+    auto it = motorTelemetryLabels.find(display_name);
+    if (it == motorTelemetryLabels.end() || !it->second) return;
+ 
+    char buf[32];
+    std::snprintf(buf, sizeof(buf), "%.1fV  %.1fA", voltage, current);
+    it->second->set_text(buf);
+ 
+    Gdk::RGBA color;
+    if (voltage < LOW_VOLTAGE) {
+        color.set_rgba(0.94, 0.27, 0.27, 1.0);
+    } else if (voltage < LOW_VOLTAGE + 1.0f) {
+        color.set_rgba(0.98, 0.75, 0.17, 1.0);
+    } else {
+        color.set_rgba(0.29, 0.85, 0.50, 1.0);
+    }
+    it->second->override_color(color);
+}
 
 /*** Functions associated with GUI Updates ***/
 const std::unordered_set<std::string> validLabels = {
@@ -1565,25 +1664,21 @@ void handleZedElements(const std::vector<Element>& elements) {
         float value = element.data.front().float32;
 
         if (element.label == "yaw") {
-            pitch_rotation_angle = std::round(value); // Assuming mapped to yaw here
-            pitch_image->set(rotate_image(pitch_pixbuf, pitch_rotation_angle, ROLL_PITCH_IMAGE_SIZE, ROLL_PITCH_IMAGE_SIZE, 30, -30));
-            
+            pitch_rotation_angle = std::round(value);
+            if (attitudeIndicator) attitudeIndicator->set_pitch(pitch_rotation_angle);
         }
         else if (element.label == "Z") {
-            // Capture live Y position
             robot_y_m = -value; 
         }
         else if (element.label == "X") {
-            // Capture live X position
             robot_x_m = -value; 
         }
         else if (element.label == "pitch") {
-            // Capture live Yaw in radians
             robot_pitch_rad = value * (M_PI / 180.0);
         }
         else if (element.label == "roll") {
             roll_rotation_angle = std::round(value);
-            roll_image->set(rotate_image(roll_pixbuf, -roll_rotation_angle, ROLL_PITCH_IMAGE_SIZE, ROLL_PITCH_IMAGE_SIZE, 30, -30));
+            if (attitudeIndicator) attitudeIndicator->set_roll(-roll_rotation_angle);
         }
     }
 }
@@ -1609,12 +1704,14 @@ void handleLidarElements(const std::vector<Element>& elements) {
 
 void handleTalonElements(const std::string& label, const std::vector<Element>& elements) {
     bool lowVoltage = false;
+    float voltage_val = 0.0f;
+    float current_val = 0.0f;
     for (const auto& element : elements) {
         if (element.label == "Sensor Position") {
             int pos = element.data.front().uint16;
             if (label == "Talon 1") {
                 left_arm_pos = pos;
-                left_arm->set_height_ratio((920 - pos) / 920.0);
+                if (left_arm) left_arm->set_position(pos);
                 arm_angle_deg = ((pos - 20) / 900.0) * -57.2 + 17.1;
                 std::cout << "pos: " << pos << std::endl;
                 std::cout << "arm_angle_deg: " << arm_angle_deg << std::endl;
@@ -1630,11 +1727,11 @@ void handleTalonElements(const std::string& label, const std::vector<Element>& e
             }
             if(label == "Talon 2") {
                 right_arm_pos = pos;
-                right_arm->set_height_ratio((920 - pos) / 920.0);
+                if (right_arm) right_arm->set_position(pos);
             }
             else if (label == "Talon 3") {
                 left_bucket_pos = pos;
-                left_bucket->set_height_ratio((700 - pos) / 700.0);
+                if (left_bucket) left_bucket->set_position(pos);
 
                 bucket_angle_deg = ((pos - 20) / 900.0) * 97.4 - 25.8;
                 std::cout << "pos: " << pos << std::endl;
@@ -1647,26 +1744,27 @@ void handleTalonElements(const std::string& label, const std::vector<Element>& e
             }
             else if (label == "Talon 4") {
                 right_bucket_pos = pos;
-                right_bucket->set_height_ratio((700 - pos) / 700.0);
+                if (right_bucket) right_bucket->set_position(pos);
             }
 
             if (label == "Talon 1" || label == "Talon 2"){
-                bool synced = std::abs(left_arm_pos - right_arm_pos) > 50;
-                updateBackgroundColor(armBox, synced);
+                if (armSyncLabel) armSyncLabel->update(left_arm_pos, right_arm_pos, 50);
             }
             else{
-                bool synced = std::abs(left_bucket_pos - right_bucket_pos) > 50;
-                updateBackgroundColor(bucketBox, synced);
+                if (bucketSyncLabel) bucketSyncLabel->update(left_bucket_pos, right_bucket_pos, 50);
             }
             if (!noVideo) talonPositionGraph->update_data(label, pos);
         }
         else if (element.label == "Bus Voltage") {
             float voltage = element.data.front().uint16 / 100.0f;
+            voltage_val = voltage;
             if (!noVideo) talonVoltageGraph->update_data(label, voltage);
             lowVoltage = voltage < LOW_VOLTAGE;
+            if (batteryBar) batteryBar->report_voltage(label, voltage);
         }
         else if (element.label == "Output Current") {
             float current = element.data.front().uint16 / 100.0f;
+            current_val = current;
             if (!noVideo) talonCurrentGraph->update_data(label, current);
         }
         else if (element.label == "Output Percent") {
@@ -1675,6 +1773,20 @@ void handleTalonElements(const std::string& label, const std::vector<Element>& e
         }
     }
     updateCircleColor(getTalonCircle(label), false, lowVoltage);
+
+    // Update telemetry labels under motor status circles
+    static const std::map<std::string, std::string> talonDisplayPrimary = {
+        {"Talon 1", "Arm L"}, {"Talon 2", "Arm R"}, {"Talon 3", "Bucket L"}
+    };
+    static const std::map<std::string, std::string> talonDisplayBackup = {
+        {"Talon 1", "Arm L"}, {"Talon 2", "Arm R"},
+        {"Talon 3", "Bucket L"}, {"Talon 4", "Bucket R"}
+    };
+    const auto& nameMap = backupBot ? talonDisplayBackup : talonDisplayPrimary;
+    auto nameIt = nameMap.find(label);
+    if (nameIt != nameMap.end()) {
+        updateMotorTelemetry(nameIt->second, voltage_val, current_val);
+    }
 }
 
 struct MotorState {
@@ -1685,15 +1797,20 @@ struct MotorState {
 std::map<std::string, MotorState> motorStates;
 
 void handleFalconElements(const std::string& label, const std::vector<Element>& elements) {
+    float voltage_val = 0.0f;
+    float current_val = 0.0f;
     for (const auto& element : elements) {
         if (element.label == "Bus Voltage") {
             float voltage = element.data.front().uint16 / 100.0f;
+            voltage_val = voltage;
             if (!noVideo) falconVoltageGraph->update_data(label, voltage);
             bool lowVoltage = voltage < LOW_VOLTAGE;
             motorStates[label].lowVoltage = lowVoltage;
+            if (batteryBar) batteryBar->report_voltage(label, voltage);
         }
         else if (element.label == "Output Current") {
             float current = element.data.front().uint16 / 100.0f;
+            current_val = current;
             if (!noVideo) falconCurrentGraph->update_data(label, current);
         }
         else if (element.label == "Output Percent") {
@@ -1712,17 +1829,30 @@ void handleFalconElements(const std::string& label, const std::vector<Element>& 
         }
     }
     updateCircleColor(getLowerFalconCircle(label), motorStates[label].lowVoltage, motorStates[label].error);
+
+    // Telemetry labels — display names match create_motor_column calls
+    // dumpBot: Falcon 1 = "Dump Bucket"; backupBot: "Falcon 1"-"Falcon 4"
+    if (dumpBot && label == "Falcon 1") {
+        updateMotorTelemetry("Dump Bucket", voltage_val, current_val);
+    } else {
+        updateMotorTelemetry(label, voltage_val, current_val);
+    }
 }
 
 void handleNeoElements(const std::string& label, const std::vector<Element>& elements) {
+    float voltage_val = 0.0f;
+    float current_val = 0.0f;
     for (const auto& element : elements) {
         if (element.label == "Bus Voltage") {
             float voltage = element.data.front().uint16 / 100.0f;
+            voltage_val = voltage;
             if (!noVideo) falconVoltageGraph->update_data(label, voltage);
             motorStates[label].lowVoltage = voltage < LOW_VOLTAGE;
+            if (batteryBar) batteryBar->report_voltage(label, voltage);
         }
         else if (element.label == "Output Current") {
             float current = element.data.front().uint16 / 100.0f;
+            current_val = current;
             if (!noVideo) falconCurrentGraph->update_data(label, current);
         }
         else if (element.label == "Output Percent") {
@@ -1741,18 +1871,24 @@ void handleNeoElements(const std::string& label, const std::vector<Element>& ele
         }
     }
     updateCircleColor(getNeoCircle(label), motorStates[label].lowVoltage, motorStates[label].error);
+    updateMotorTelemetry(label, voltage_val, current_val);
 }
 
 void handleKrakenElements(const std::string& label, const std::vector<Element>& elements) {
+    float voltage_val = 0.0f;
+    float current_val = 0.0f;
     for (const auto& element : elements) {
         if (element.label == "Bus Voltage") {
             float voltage = element.data.front().uint16 / 100.0f;
+            voltage_val = voltage;
             if (!noVideo) falconVoltageGraph->update_data(label, voltage);
             bool lowVoltage = voltage < LOW_VOLTAGE;
             motorStates[label].lowVoltage = lowVoltage;
+            if (batteryBar) batteryBar->report_voltage(label, voltage);
         }
         else if (element.label == "Output Current") {
             float current = element.data.front().uint16 / 100.0f;
+            current_val = current;
             if (!noVideo) falconCurrentGraph->update_data(label, current);
         }
         else if (element.label == "Output Percent") {
@@ -1771,6 +1907,7 @@ void handleKrakenElements(const std::string& label, const std::vector<Element>& 
         }
         updateCircleColor(getKrakenCircle(label), motorStates[label].lowVoltage, motorStates[label].error);
     }
+    updateMotorTelemetry(label, voltage_val, current_val);
 }
 
 void handleCommunicationElements(InfoFrame* frame, const std::vector<Element>& elements) {
@@ -2128,7 +2265,8 @@ void resetUIOnDisconnect() {
             updateCircleColor(talon1Circle, black);
             updateCircleColor(talon2Circle, black);
             updateCircleColor(talon3Circle, black);
-        } else if(backupBot){
+        }
+        else if(backupBot){
             updateCircleColor(talon1Circle, black);
             updateCircleColor(talon2Circle, black);
             updateCircleColor(talon3Circle, black);
@@ -2137,7 +2275,8 @@ void resetUIOnDisconnect() {
             updateCircleColor(lowerFalcon2Circle, black);
             updateCircleColor(lowerFalcon3Circle, black);
             updateCircleColor(lowerFalcon4Circle, black);
-        } else if(dumpBot){
+        }
+        else if(dumpBot){
             updateCircleColor(neo1Circle, black);
             updateCircleColor(neo2Circle, black);
             updateCircleColor(neo3Circle, black);
@@ -2145,6 +2284,7 @@ void resetUIOnDisconnect() {
             updateCircleColor(lowerFalcon1Circle, black);
         }
     }
+    if (batteryBar) batteryBar->reset_cycle();
 }
 
 
@@ -2234,7 +2374,8 @@ std::map<std::string, std::string> tooltip_map = {
     {"DISPLAY_SPEED", "Show or hide the speedometer."},
     {"NUMBERS_INSIDE", "Display numbers inside the speedometer ring."},
     {"NUMBER_TICKS", "Align numbers with speedometer tick marks."},
-    {"SHOW_FALCON_Device ID", "Show Falcon CAN ID in the telemetry frame."}
+    {"SHOW_FALCON_Device ID", "Show Falcon CAN ID in the telemetry frame."},
+    {"SHOW_MOTOR_TELEMETRY", "Show voltage and current under motor status indicators."}
 };
 
 
@@ -2426,38 +2567,67 @@ bool on_key_press_event(GdkEventKey* key_event){
     return false;
 }
 
-Gtk::EventBox* create_labeled_box(const Glib::ustring& label_text, CircleDrawingArea*& out_circle, bool right = false) {
+Gtk::EventBox* create_labeled_box(const Glib::ustring& label_text,
+                                   CircleDrawingArea*& out_circle,
+                                   bool right = false) {
     auto event_box = Gtk::manage(new Gtk::EventBox());
-
     auto box = Gtk::manage(new BorderedBox(Gtk::ORIENTATION_HORIZONTAL, 5));
     box->set_size_request(200 * GUI_SCALE, 75 * GUI_SCALE);
-
+ 
+    auto label_box = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 0));
+    label_box->set_hexpand(true);
+    label_box->set_valign(Gtk::ALIGN_CENTER);
+ 
     auto label = Gtk::manage(new Gtk::Label(label_text));
-    label->set_hexpand(true);
-
     Pango::FontDescription font;
-    font.set_size(20 * GUI_SCALE * Pango::SCALE);
+    font.set_size(18 * GUI_SCALE * Pango::SCALE);
     label->override_font(font);
-
+    label->set_halign(right ? Gtk::ALIGN_END : Gtk::ALIGN_START);
+    label_box->add(*label);
+ 
+    // Telemetry line — hidden when showMotorTelemetry is false
+    auto telem_label = Gtk::manage(new Gtk::Label("--V  --A"));
+    Pango::FontDescription telem_font;
+    telem_font.set_family("monospace");
+    telem_font.set_size(9 * GUI_SCALE * Pango::SCALE);
+    telem_label->override_font(telem_font);
+    telem_label->set_halign(right ? Gtk::ALIGN_END : Gtk::ALIGN_START);
+    Gdk::RGBA dim_color;
+    dim_color.set_rgba(0.5, 0.5, 0.5, 0.7);
+    telem_label->override_color(dim_color);
+    telem_label->set_no_show_all(!showMotorTelemetry);
+    telem_label->set_visible(showMotorTelemetry);
+    label_box->add(*telem_label);
+ 
+    motorTelemetryLabels[label_text] = telem_label;
+ 
     out_circle = Gtk::manage(new CircleDrawingArea());
     out_circle->set_size_request(75 * GUI_SCALE, 75 * GUI_SCALE);
     out_circle->set_hexpand(false);
     out_circle->set_halign(Gtk::ALIGN_CENTER);
-
-    if(right){
-        box->add(*label);
+ 
+    if (right) {
+        box->add(*label_box);
         box->add(*out_circle);
+    } else {
+        box->add(*out_circle);
+        box->add(*label_box);
     }
-    else{
-        box->add(*out_circle);
-        box->add(*label);
-    }   
-
+ 
     event_box->add(*box);
     event_box->add_events(Gdk::BUTTON_PRESS_MASK);
     event_box->set_visible_window(false);
-
     return event_box;
+}
+
+void setMotorTelemetryVisible(bool visible) {
+    showMotorTelemetry = visible;
+    for (auto& kv : motorTelemetryLabels) {
+        if (kv.second) {
+            kv.second->set_visible(visible);
+            kv.second->set_no_show_all(!visible);
+        }
+    }
 }
 
 bool onClickEvent(GdkEventButton* event, const std::string& id) {
@@ -2681,6 +2851,14 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
     builder->get_widget("topControlsBox", topControlsBox);
     if (topControlsBox) {
         topControlsBox->set_name("topControlsBox");
+
+        batteryBar = Gtk::manage(new BatteryBar());
+        batteryBar->set_size_request(-1, 28);
+        batteryBar->set_hexpand(true);
+        batteryBar->set_warning_voltage(LOW_VOLTAGE);
+        batteryBar->set_critical_voltage(LOW_VOLTAGE - 1.0f);
+        batteryBar->set_light_mode(isLightMode);
+        topControlsBox->pack_end(*batteryBar, Gtk::PACK_SHRINK);
     }
 
     try {window->set_icon_from_file("../resources/razorbotz.png"); } catch (...) {}
@@ -2969,19 +3147,16 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
         }
         
         if (rollImagePlaceholder) {
-            std::cout << "Initializing roll indicator." << std::endl;
-            createImageIndicator(roll_image, roll_pixbuf, "../resources/RobotSide.png", rollImagePlaceholder, roll_rotation_angle, 30, -30, ROLL_PITCH_IMAGE_SIZE);
-            center_image_widget(roll_image);
+            std::cout << "Initializing combined attitude indicator (roll + pitch)." << std::endl;
+            attitudeIndicator = Gtk::manage(new ArtificialHorizon("Attitude"));
+            attitudeIndicator->set_size_request(ROLL_PITCH_IMAGE_SIZE * GUI_SCALE,
+                                                 (ROLL_PITCH_IMAGE_SIZE + 30) * GUI_SCALE);
+            attitudeIndicator->set_warning_angles(30.0, -30.0);
+            attitudeIndicator->set_light_mode(isLightMode);
+            attitudeIndicator->set_halign(Gtk::ALIGN_CENTER);
+            attitudeIndicator->set_valign(Gtk::ALIGN_END);
+            rollImagePlaceholder->add(*attitudeIndicator);
             roll_init = true;
-        }
-
-        Gtk::Box* pPitch = nullptr; builder->get_widget("placeholder_pitch_image", pPitch);
-        if(pPitch) {
-            std::cout << "Initializing pitch indicator." << std::endl;
-            createImageIndicator(pitch_image, pitch_pixbuf, "../resources/RobotBack.png", pPitch, pitch_rotation_angle, 30, -30, ROLL_PITCH_IMAGE_SIZE);
-            center_image_widget(pitch_image);
-            pitch_image->set_valign(Gtk::ALIGN_END);
-            pitch_image->set_vexpand(false);
             pitch_init = true;
         }
 

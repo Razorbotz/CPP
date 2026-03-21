@@ -33,6 +33,9 @@
  *   proximityBar->set_size_request(100, 380);
  *   pSpeedLeft->add(*proximityBar);  // or any overlay placeholder
  * 
+ *   // In your sensor update handlers:
+ *   proximityBar->set_distance(lidar_distance_meters);
+ *   proximityBar->set_arm_position(arm_sensor_position);
  */
 class ProximityBar : public Gtk::DrawingArea {
 public:
@@ -58,9 +61,9 @@ public:
         blink_connection_ = Glib::signal_timeout().connect(
             sigc::mem_fun(*this, &ProximityBar::on_blink_tick), 300);
 
-        // Smooth fade timer (~60fps for show/hide transitions)
+        // Smooth fade timer (~30fps for show/hide transitions)
         fade_connection_ = Glib::signal_timeout().connect(
-            sigc::mem_fun(*this, &ProximityBar::on_fade_tick), 30);
+            sigc::mem_fun(*this, &ProximityBar::on_fade_tick), 33);
     }
 
     ~ProximityBar() override {
@@ -188,47 +191,38 @@ protected:
         double warn_y = dist_to_y(warning_threshold_m_);
         double opt_y  = dist_to_y(optimal_threshold_m_);
         Zone current_zone = get_current_zone();
-        double active_alpha = 0.9;
-        double dim_alpha = 0.2;
 
-        // WARNING zone (top)
-        draw_zone(cr, bar_x + 2, bar_top + 2, bar_w - 4, warn_y - bar_top - 2,
-                  0.86, 0.15, 0.15,
-                  current_zone == Zone::WARNING ? (blink_on_ ? active_alpha : 0.35) : dim_alpha);
+        double active_alpha = 0.90;
+        double dim_alpha    = 0.18;
 
-        // OPTIMAL zone (middle)
-        draw_zone(cr, bar_x + 2, warn_y, bar_w - 4, opt_y - warn_y,
-                  0.133, 0.773, 0.369,
-                  current_zone == Zone::OPTIMAL ? active_alpha : dim_alpha);
+        // TOP zone: too far (red)
+        // from max distance down to optimal threshold
+        draw_zone(cr, bar_x + 2, bar_top + 2, bar_w - 4, opt_y - bar_top - 2,
+                0.86, 0.15, 0.15,
+                current_zone == Zone::APPROACH ? active_alpha : dim_alpha);
 
-        // APPROACH zone (bottom)
-        draw_zone(cr, bar_x + 2, opt_y, bar_w - 4, bar_bottom - 2 - opt_y,
-                  0.231, 0.510, 0.965,
-                  current_zone == Zone::APPROACH ? active_alpha : dim_alpha);
+        // MIDDLE zone: optimal (green)
+        // from optimal threshold down to warning threshold
+        draw_zone(cr, bar_x + 2, opt_y, bar_w - 4, warn_y - opt_y,
+                0.133, 0.773, 0.369,
+                current_zone == Zone::OPTIMAL ? active_alpha : dim_alpha);
 
-        // --- Optimal zone dashed border (always visible as target) ---
-        cr->set_source_rgba(0.29, 0.85, 0.50, 0.8);
-        cr->set_line_width(1.5);
-        std::vector<double> dashes = {4.0, 3.0};
-        cr->set_dash(dashes, 0);
-        rounded_rect(cr, bar_x, warn_y - 1, bar_w, (opt_y - warn_y) + 2, 4.0);
-        cr->stroke();
-        cr->unset_dash();
+        // BOTTOM zone: too close (red)
+        // from warning threshold down to 0.0m
+        draw_zone(cr, bar_x + 2, warn_y, bar_w - 4, bar_bottom - 2 - warn_y,
+                0.86, 0.15, 0.15,
+                current_zone == Zone::WARNING ? active_alpha : dim_alpha);
 
         // --- Needle ---
         {
             double needle_y = dist_to_y(distance_m_);
             needle_y = std::max(bar_top + 2.0, std::min(bar_bottom - 2.0, needle_y));
-
+ 
             cr->set_source_rgb(1.0, 1.0, 1.0);
             cr->set_line_width(2.5);
-            cr->move_to(bar_x - 6, needle_y);
-            cr->line_to(bar_x + bar_w + 6, needle_y);
+            cr->move_to(bar_x + 2, needle_y);
+            cr->line_to(bar_x + bar_w - 2, needle_y);
             cr->stroke();
-
-            // Arrow tips
-            draw_arrow_tip(cr, bar_x - 6, needle_y, true);
-            draw_arrow_tip(cr, bar_x + bar_w + 6, needle_y, false);
         }
 
         // --- Tick labels ---
@@ -244,18 +238,24 @@ protected:
         draw_tick(cr, dist_to_y(optimal_threshold_m_), tick_x, bar_x + bar_w,
                   format_dist(optimal_threshold_m_), 0.133, 0.773, 0.369);
         draw_tick(cr, dist_to_y(max_distance_m_), tick_x, bar_x + bar_w,
-                  format_dist(max_distance_m_), 0.231, 0.510, 0.965);
+                  format_dist(max_distance_m_), 0.86, 0.15, 0.15);
 
         // --- Distance readout ---
         cr->select_font_face("monospace", Cairo::FONT_SLANT_NORMAL, Cairo::FONT_WEIGHT_BOLD);
         cr->set_font_size(20.0);
-        set_text_color(cr, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0);
+        if (current_zone == Zone::WARNING) {
+            // Blink the distance text red when too close
+            double text_alpha = 1.0;
+            cr->set_source_rgba(0.94, 0.27, 0.27, text_alpha);
+        } else {
+            set_text_color(cr, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0);
+        }
         std::string dist_text = format_dist(distance_m_);
         cr->get_text_extents(dist_text, te);
         cr->move_to((w - te.width) / 2.0, bar_bottom + 24);
         cr->show_text(dist_text);
 
-        // --- Status badge ---
+        // --- Status badge (blinks only for WARNING) ---
         draw_status_badge(cr, w, bar_bottom + 32, current_zone);
 
         // Pop group and paint with fade alpha
@@ -296,15 +296,17 @@ private:
 
     bool on_fade_tick() {
         double target = bar_visible_ ? 1.0 : 0.0;
-        double delta = target - fade_alpha_;
+        double step = 0.1;  // ~330ms full transition at 33ms ticks
 
-        if (std::abs(delta) < 0.01) {
-            fade_alpha_ = target;
+        if (std::abs(fade_alpha_ - target) < step) {
+            if (fade_alpha_ != target) {
+                fade_alpha_ = target;
+                queue_draw();
+            }
         } else {
-            fade_alpha_ += delta * 0.22;
+            fade_alpha_ += (target > fade_alpha_) ? step : -step;
+            queue_draw();
         }
-
-        queue_draw();
         return true;
     }
 
@@ -367,7 +369,6 @@ private:
                 fg_r = 0.97; fg_g = 0.44; fg_b = 0.44;
                 if (!blink_on_) {
                     bg_r *= 0.4; bg_g *= 0.4; bg_b *= 0.4;
-                    fg_r *= 0.5; fg_g *= 0.5; fg_b *= 0.5;
                 }
                 break;
             case Zone::OPTIMAL:
@@ -376,9 +377,9 @@ private:
                 fg_r = 0.29; fg_g = 0.85; fg_b = 0.50;
                 break;
             case Zone::APPROACH:
-                text = "APPROACH";
-                bg_r = 0.12; bg_g = 0.23; bg_b = 0.37;
-                fg_r = 0.38; fg_g = 0.65; fg_b = 0.98;
+                text = "TOO FAR";
+                bg_r = 0.50; bg_g = 0.11; bg_b = 0.11;
+                fg_r = 0.97; fg_g = 0.44; fg_b = 0.44;
                 break;
         }
 

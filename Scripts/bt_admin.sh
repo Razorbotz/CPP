@@ -114,24 +114,45 @@ case "$1" in
 
         # Automate the pairing with expect
         expect << EOF
-            set timeout 20
+            set timeout 30
+            # Increase log level for debugging if needed: exp_internal 1
             spawn bluetoothctl
             expect "# "
+            send "agent on\r"
+            expect "Agent registered"
+            send "default-agent\r"
+            expect "Default agent request successful"
+            
             send "scan on\r"
             expect "$PEER_MAC"
             send "scan off\r"
             expect "# "
-            send "pair $PEER_MAC\r"
-            expect {
-                "Confirm passkey" { send "yes\r"; exp_continue }
-                "Enter PIN code" { send "0000\r"; exp_continue }
-                "Pairing successful" { }
-                timeout { exit 1 }
-            }
-            expect "# "
+            
             send "trust $PEER_MAC\r"
             expect "trust succeeded"
-            send "exit\r"
+            
+            send "pair $PEER_MAC\r"
+            
+            # The key is catching the specific Agent prompt
+            expect {
+                -re "Confirm passkey|Accept pairing|yes/no" { 
+                    send "yes\r"
+                    exp_continue 
+                }
+                -re "Enter PIN code" { 
+                    send "0000\r"
+                    exp_continue 
+                }
+                "Pairing successful" { 
+                    # Success reached
+                }
+                timeout { 
+                    puts "Timed out waiting for response"
+                    exit 1 
+                }
+            }
+            expect "# "
+            send "quit\r"
             expect eof
 EOF
         

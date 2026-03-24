@@ -244,8 +244,6 @@ Glib::RefPtr<Gdk::Pixbuf> lvl_pixbuf;
 Gtk::Image* pitch_image;
 Gtk::Image* lvl_image;
 
-double body_pitch_angle = 0.0;
-
 double bucket_rotation_angle = 0.0;
 Glib::RefPtr<Gdk::Pixbuf> bucket_rot_pixbuf;
 Gtk::Image* bucket_rot_image;
@@ -1541,6 +1539,11 @@ void handleZedElements(const std::vector<Element>& elements) {
         else if (element.label == "roll") {
             roll_rotation_angle = std::round(value);
             roll_image->set(rotate_image(roll_pixbuf, -roll_rotation_angle, 200, 200, 30, -30));
+
+            bucket_rotation_angle = -(roll_rotation_angle + arm_angle_deg + bucket_angle_deg);
+                if (bucketRot_init) {
+                    bucket_rot_image->set(rotate_image(bucket_rot_pixbuf, bucket_rotation_angle, 200, 200, 45, -90));
+                }
         }
     }
 }
@@ -1560,6 +1563,12 @@ void handleTalonElements(const std::string& label, const std::vector<Element>& e
                 arm_angle_deg = ((pos - 20) / 900.0) * -57.2 + 17.1;
                 std::cout << "pos: " << pos << std::endl;
                 std::cout << "arm_angle_deg: " << arm_angle_deg << std::endl;
+
+                bucket_rotation_angle = roll_rotation_angle + arm_angle_deg + bucket_angle_deg;
+                if (bucketRot_init) {
+                    bucket_rot_image->set(rotate_image(bucket_rot_pixbuf, bucket_rotation_angle, 200, 200, 45, -90));
+                }
+
                 /*
                 bucket_elevation_height = pos; // MATH NEEDED
                 bucket_elevation->set_height_ratio((920 - pos) / 920.0) // ADJUST
@@ -1583,9 +1592,7 @@ void handleTalonElements(const std::string& label, const std::vector<Element>& e
                 std::cout << "pos: " << pos << std::endl;
                 std::cout << "bucket_angle_deg: " << bucket_angle_deg << std::endl;
 
-                // Rotation angle should be sum of robot's pitch, arm angle, and bucket angle
-                // (pos / 700.0) * 180.0; - STORING FOR REFERENCE
-                bucket_rotation_angle = pitch_rotation_angle + arm_angle_deg + bucket_angle_deg;
+                bucket_rotation_angle = roll_rotation_angle + arm_angle_deg + bucket_angle_deg;
                 if (bucketRot_init) {
                     bucket_rot_image->set(rotate_image(bucket_rot_pixbuf, bucket_rotation_angle, 200, 200, 45, -90));
                 }

@@ -1677,6 +1677,14 @@ void addElementToInfoFrame(std::string label, InfoFrame* frame, const Element& e
     addElementToInfoFrame(frame, element);
 }
 
+static void update_bucket_rotation_image() {
+    bucket_rotation_angle = -roll_rotation_angle + arm_angle_deg + bucket_angle_deg;
+
+    if (bucketRot_init && bucket_rot_image && bucket_rot_pixbuf) {
+        bucket_rot_image->set(rotate_image(bucket_rot_pixbuf, bucket_rotation_angle, BUCKET_TILT_IMAGE_SIZE, BUCKET_TILT_IMAGE_SIZE, 45, -90));
+    }
+}
+
 /*
 The following functions with the names handleNodeElements handle any 
 specific logic that is required to update any widgets that use the 
@@ -1703,13 +1711,9 @@ void handleZedElements(const std::vector<Element>& elements) {
         }
         else if (element.label == "roll") {
             roll_rotation_angle = std::round(value);
-            roll_image->set(rotate_image(roll_pixbuf, -roll_rotation_angle, 200, 200, 30, -30));
-
-            bucket_rotation_angle = -(roll_rotation_angle + arm_angle_deg + bucket_angle_deg);
-                if (bucketRot_init) {
-                    bucket_rot_image->set(rotate_image(bucket_rot_pixbuf, bucket_rotation_angle, 200, 200, 45, -90));
-                }
             if (attitudeIndicator) attitudeIndicator->set_roll(-roll_rotation_angle);
+        
+            update_bucket_rotation_image();
         }
     }
 }
@@ -1747,15 +1751,8 @@ void handleTalonElements(const std::string& label, const std::vector<Element>& e
                 std::cout << "pos: " << pos << std::endl;
                 std::cout << "arm_angle_deg: " << arm_angle_deg << std::endl;
 
-                bucket_rotation_angle = roll_rotation_angle + arm_angle_deg + bucket_angle_deg;
-                if (bucketRot_init) {
-                    bucket_rot_image->set(rotate_image(bucket_rot_pixbuf, bucket_rotation_angle, 200, 200, 45, -90));
-                }
+                update_bucket_rotation_image();
 
-                /*
-                bucket_elevation_height = pos; // MATH NEEDED
-                bucket_elevation->set_height_ratio((920 - pos) / 920.0) // ADJUST
-                */
                 if (!dumpBot) {
                     if (proximityBar) {
                         proximityBar->set_arm_position(pos);
@@ -1774,10 +1771,7 @@ void handleTalonElements(const std::string& label, const std::vector<Element>& e
                 std::cout << "pos: " << pos << std::endl;
                 std::cout << "bucket_angle_deg: " << bucket_angle_deg << std::endl;
 
-                bucket_rotation_angle = roll_rotation_angle + arm_angle_deg + bucket_angle_deg;
-                if (bucketRot_init) {
-                    bucket_rot_image->set(rotate_image(bucket_rot_pixbuf, bucket_rotation_angle, BUCKET_TILT_IMAGE_SIZE, BUCKET_TILT_IMAGE_SIZE, 45, -90));
-                }
+                update_bucket_rotation_image();
             }
             else if (label == "Talon 4") {
                 right_bucket_pos = pos;

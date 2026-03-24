@@ -96,6 +96,10 @@ DEFINE_KEY_GROUP(drivetrain,
     "F4 Vel", "F4 RPM", "F4 Speed"
 )
 
+DEFINE_KEY_GROUP(lidar,
+    "Distance"
+)
+
 // --- Central Maps ---
 std::map<std::string, std::vector<std::string>*>& get_key_vectors() {
     static std::map<std::string, std::vector<std::string>*> key_vectors = {
@@ -109,7 +113,8 @@ std::map<std::string, std::vector<std::string>*>& get_key_vectors() {
         {"Power2", &get_power2_keys()},
         {"Power", &get_power_keys()},
         {"Zed", &get_zed_keys()},
-        {"Drivetrain", &get_drivetrain_keys()}
+        {"Drivetrain", &get_drivetrain_keys()},
+        {"Lidar", &get_lidar_keys()}
     };
     return key_vectors;
 }
@@ -185,6 +190,9 @@ std::map<std::string, std::vector<ElementInfo>>& get_element_definitions() {
             {ElementType::Float32, "F2 Vel"}, {ElementType::Float32, "F2 RPM"}, {ElementType::Float32, "F2 Speed"},
             {ElementType::Float32, "F3 Vel"}, {ElementType::Float32, "F3 RPM"}, {ElementType::Float32, "F3 Speed"},
             {ElementType::Float32, "F4 Vel"}, {ElementType::Float32, "F4 RPM"}, {ElementType::Float32, "F4 Speed"}
+        }},
+        {"LIDAR", {
+            {ElementType::UInt16, "Distance"}
         }}
     };
     return element_definitions;
@@ -203,6 +211,7 @@ void initialize_maps() {
     initialize_bool_map(get_zed_values(), get_zed_keys());
     initialize_bool_map(get_communication_values(), get_communication_keys());
     initialize_bool_map(get_drivetrain_values(), get_drivetrain_keys());
+    initialize_bool_map(get_lidar_values(), get_lidar_keys());
 }
 
 // --- Helper Functions ---
@@ -226,6 +235,7 @@ std::map<std::string, bool>& getMap(std::string label) {
     if (label.rfind("Power", 0) == 0) return get_power_values();
     if (label.rfind("Zed", 0) == 0) return get_zed_values();
     if (label.rfind("Drivetrain", 0) == 0) return get_drivetrain_values();
+    if (label.rfind("Lidar", 0) == 0) return get_lidar_values();
     return get_talon_values();
 }
 
@@ -242,6 +252,7 @@ std::string getNameFromPrefix(std::string label) {
     if (label.rfind("ZED", 0) == 0) return "Zed";
     if (label.rfind("TEST", 0) == 0) return "Test";
     if (label.rfind("DRIVETRAIN", 0) == 0) return "Drivetrain";
+    if (label.rfind("LIDAR", 0) == 0) return "Lidar";
     return "Talon";
 }
 

@@ -44,7 +44,9 @@
       <geometry>
         <mesh filename="Arm.STL" scale="1 1 1"/>
       </geometry>
-      <material name="orange"><color rgba="1.0 0.5 0.0 1.0"/></material>
+      <material name="grey">
+        <color rgba="0.5 0.5 0.5 1.0"/>
+      </material>
     </visual>
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0"/>
@@ -74,7 +76,9 @@
       <geometry>
         <mesh filename="Bucket.STL" scale="1 1 1"/>
       </geometry>
-      <material name="dark_grey"><color rgba="0.2 0.2 0.2 1.0"/></material>
+      <material name="grey">
+        <color rgba="0.5 0.5 0.5 1.0"/>
+      </material>
     </visual>
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0"/>
@@ -102,7 +106,9 @@
       <geometry>
         <mesh filename="FL_Wheel.STL" scale="1 1 1"/>
       </geometry>
-      <material name="black"><color rgba="0.1 0.1 0.1 1.0"/></material>
+      <material name="grey">
+        <color rgba="0.5 0.5 0.5 1.0"/>
+      </material>
     </visual>
     <collision>
       <geometry>
@@ -129,7 +135,9 @@
       <geometry>
         <mesh filename="FR_Wheel.STL" scale="1 1 1"/>
       </geometry>
-      <material name="black"/>
+      <material name="grey">
+        <color rgba="0.5 0.5 0.5 1.0"/>
+      </material>
     </visual>
     <collision>
       <geometry>
@@ -156,7 +164,9 @@
       <geometry>
         <mesh filename="BL_Wheel.STL" scale="1 1 1"/>
       </geometry>
-      <material name="black"/>
+      <material name="grey">
+        <color rgba="0.5 0.5 0.5 1.0"/>
+      </material>
     </visual>
     <collision>
       <geometry>
@@ -184,7 +194,9 @@
       <geometry>
         <mesh filename="BR_Wheel.STL" scale="1 1 1"/>
       </geometry>
-      <material name="black"/>
+      <material name="grey">
+        <color rgba="0.5 0.5 0.5 1.0"/>
+      </material>
     </visual>
     <collision>
       <geometry>

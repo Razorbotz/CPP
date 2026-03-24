@@ -58,12 +58,15 @@ extern "C" {
 #include "ConfigDefinitions.hpp"
 #include "ConfigEditorWindow.hpp"
 #include "NetworkHandler.hpp"
+#include "ProximityBar.hpp"
+#include "PositionBar.hpp"
+#include "ArtificialHorizon.hpp"
+#include "BatteryBar.hpp"
+#include "BotConfig.hpp"
 
 /*
 TODO: 
 Map Issues:
-Cosmic map isn't drawing robot in correct location
-Robot isn't drawing in correct location, need to offset for camera position
 
 */
 
@@ -155,6 +158,9 @@ Gtk::FlowBox* sensorBox;
 Gtk::Box* innerLeftBox;
 Gtk::Box* innerRightBox;
 Gtk::Box* bottomLowerBox;
+Gtk::Box* armPositionPlaceholder;
+Gtk::Box* bucketTiltPlaceholder;
+Gtk::Box* rollImagePlaceholder;
 
 Gtk::Window* window;
 
@@ -164,11 +170,17 @@ bool smallLaptop = false;
 bool wsl = false;
 double GUI_SCALE = 1.0;
 bool noVideo = false;
-std::string mapUsed = "NASA";
+bool debugGladeBounds = false;
 bool testInput = false;
 bool useAltLayout = false;
 bool isController = false;
 bool twoJoysticks = false;
+BotConfig activeConfig = configs::primaryBot();
+
+// Backward-compatible flags — derived from activeConfig in processArguments().
+// Use these in code that hasn't been migrated to read activeConfig directly yet.
+// Once all if(primaryBot)/if(backupBot)/if(dumpBot) branches are converted to
+// use activeConfig or feature flags, remove these.
 bool primaryBot = true;
 bool backupBot = false;
 bool dumpBot = false;
@@ -180,6 +192,8 @@ Gtk::ComboBoxText* simTypeCombo = nullptr;
 Gtk::Box* simContentBox = nullptr;
 
 std::map<std::string, Gtk::Widget*> activeSimWidgets;
+
+ProximityBar* proximityBar = nullptr;
 
 // --- Foxglove Globals ---
 foxglove::ChannelId arena_mesh_channel;
@@ -232,6 +246,10 @@ std::string darkBackgroundColor = "#0b1a21";
 std::string lightBackgroundColor = "#f0faf2";
 
 bool isLightMode = true;
+
+static constexpr int ROLL_PITCH_IMAGE_SIZE = 200;
+static constexpr int BUCKET_TILT_IMAGE_SIZE = 200;
+static constexpr int EDGE_PANEL_WIDTH = 250;
 
 
 double roll_rotation_angle = 0.0;
@@ -295,10 +313,13 @@ class DrawingArea : public Gtk::DrawingArea {
         double ratio_;
     };
 
-DrawingArea* right_arm;
-DrawingArea* left_arm;
-DrawingArea* right_bucket;
-DrawingArea* left_bucket;
+PositionBar* right_arm = nullptr;
+PositionBar* left_arm = nullptr;
+PositionBar* right_bucket = nullptr;
+PositionBar* left_bucket = nullptr;
+SyncStatusLabel* armSyncLabel = nullptr;
+SyncStatusLabel* bucketSyncLabel = nullptr;
+
 //DrawingArea* bucket_elevation
 Gtk::Box* armBox;
 Gtk::Box* bucketBox;
@@ -820,6 +841,13 @@ Speedometer* velocityDial;
 Speedometer* currentDial;
 bool displayMotor = false;
 
+ArtificialHorizon* attitudeIndicator = nullptr;
+
+std::map<std::string, Gtk::Label*> motorTelemetryLabels;
+bool showMotorTelemetry = true;
+
+BatteryBar* batteryBar = nullptr;
+
 
 extern "C" void destroy_pixbuf_data(const guint8* data) {
     delete[] data;
@@ -924,40 +952,14 @@ private:
 
 VideoWidget* videoArea;
 
+std::map<std::string, CircleDrawingArea*> motorCircles;
 
 void setBackgroundColors(Gdk::RGBA color){
-    if(talon1Circle)
-        talon1Circle->set_background_color(color);
-    if(talon2Circle)
-        talon2Circle->set_background_color(color);
-    if(talon3Circle)
-        talon3Circle->set_background_color(color);
-    if(talon4Circle)
-        talon4Circle->set_background_color(color);
-    if(neo1Circle)
-        neo1Circle->set_background_color(color);
-    if(neo2Circle)
-        neo2Circle->set_background_color(color);
-    if(neo3Circle)
-        neo3Circle->set_background_color(color);
-    if(neo4Circle)
-        neo4Circle->set_background_color(color);
-    if(kraken1Circle)
-        kraken1Circle->set_background_color(color);
-    if(kraken2Circle)
-        kraken2Circle->set_background_color(color);
-    if(kraken3Circle)
-        kraken3Circle->set_background_color(color);
-    if(kraken4Circle)
-        kraken4Circle->set_background_color(color);
-    if(lowerFalcon1Circle)
-        lowerFalcon1Circle->set_background_color(color);
-    if(lowerFalcon2Circle)
-        lowerFalcon2Circle->set_background_color(color);
-    if(lowerFalcon3Circle)
-        lowerFalcon3Circle->set_background_color(color);
-    if(lowerFalcon4Circle)
-        lowerFalcon4Circle->set_background_color(color);
+    for (auto& kv : motorCircles) {
+        if (kv.second) {
+            kv.second->set_background_color(color);
+        }
+    }
 }
 
 InfoFrame* getInfoFrame(std::string label){
@@ -1001,6 +1003,7 @@ std::string generateDarkModeString(const std::string& color) {
         "* { font-family: 'Proxima Nova'; font-weight: bold; }\n"
         "window, notebook, box, flowbox { background-color: " + color + "; }\n"
         "#topControlsBox { background-color: " + darkBackgroundColor + "; }\n"
+        ".edge-panel { background-color: " + darkBackgroundColor + "; }\n"
         "#dark_text, #dark_text label { color: #000000; }\n"
         "label, button, entry { color: #edf6fa; }\n"
         "button { border: 1px solid #edf6fa; background-color: transparent; }\n"
@@ -1016,12 +1019,21 @@ std::string generateLightModeString(const std::string& color) {
         "* { font-family: 'Proxima Nova'; font-weight: bold }\n"
         "window, notebook, box, flowbox { background-color: " + color + "; }\n"
         "#topControlsBox { background-color: " + lightBackgroundColor + "; }\n"
+        ".edge-panel { background-color: " + lightBackgroundColor + "; }\n"
         "label, button, entry { color: #000000; }\n"
         "button { border: 1px solid #000000; background-color: #f0f0f0; }\n"
         
         "notebook tab { background-color: #e6e6e6; border-color: #cccccc; }\n"
         "notebook tab label { color: #000000; }\n"
         "notebook tab:checked { background-color: " + color + "; }\n";
+}
+
+void applyEdgePanelStyle(Gtk::Widget* widget) {
+    if (!widget) {
+        return;
+    }
+
+    widget->get_style_context()->add_class("edge-panel");
 }
 
 void updateBackgroundColor(InfoFrame* infoFrame, std::string label){
@@ -1078,7 +1090,7 @@ void toggleMode() {
 
     if (simulatorWindow) {
         auto sim_css = Gtk::CssProvider::create();
-        std::string sim_bg_css = "window { background-color: " + lightBackgroundColor + "; }";
+        std::string sim_bg_css = "window { background-color: " + (isLightMode ? lightBackgroundColor : darkBackgroundColor) + "; }";
         sim_css->load_from_data(sim_bg_css);
         simulatorWindow->get_style_context()->add_provider(sim_css, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
     }
@@ -1086,6 +1098,17 @@ void toggleMode() {
     if(!noVideo) {
         setBackgroundColors(background);
     }
+    if (proximityBar) {
+        proximityBar->set_light_mode(isLightMode);
+    }
+    if (attitudeIndicator) attitudeIndicator->set_light_mode(isLightMode);
+    if (batteryBar) batteryBar->set_light_mode(isLightMode);
+    if (armSyncLabel) armSyncLabel->set_light_mode(isLightMode);
+    if (bucketSyncLabel) bucketSyncLabel->set_light_mode(isLightMode);
+    if (left_arm) left_arm->set_light_mode(isLightMode);
+    if (right_arm) right_arm->set_light_mode(isLightMode);
+    if (left_bucket) left_bucket->set_light_mode(isLightMode);
+    if (right_bucket) right_bucket->set_light_mode(isLightMode);
 }
 
 void updateBackgroundColor(Gtk::Box* box, bool synced){
@@ -1101,12 +1124,32 @@ void updateBackgroundColor(Gtk::Box* box, bool synced){
     }
 }
 
-const std::set<std::string> talonBackupLabels = {"Talon 1", "Talon 2", "Talon 3", "Talon 4"};
-const std::set<std::string> falconBackupLabels = {"Falcon 1", "Falcon 2", "Falcon 3", "Falcon 4"};
-const std::set<std::string> neoDumpLabels = {"Neo 1", "Neo 2", "Neo 3", "Neo 4"};
-const std::set<std::string> falconDumpLabels = {"Falcon 1"};
-const std::set<std::string> krakenMainLabels = {"Kraken 1", "Kraken 2", "Kraken 3", "Kraken 4"};
-const std::set<std::string> talonMainLabels = {"Talon 1", "Talon 2", "Talon 3"};
+// Config-derived label sets and display name map.
+// These are populated by rebuildConfigDerivedGlobals() after processArguments()
+// selects the active config. They cannot be initialized at file scope because
+// activeConfig may change during argument parsing.
+std::set<std::string> talonLabels;
+std::set<std::string> falconLabels;
+std::set<std::string> krakenLabels;
+std::set<std::string> neoLabels;
+std::map<std::string, std::string> displayNameMap;
+
+void rebuildConfigDerivedGlobals() {
+    talonLabels  = activeConfig.getLabelsForType(MotorType::TALON);
+    falconLabels = activeConfig.getLabelsForType(MotorType::FALCON);
+    krakenLabels = activeConfig.getLabelsForType(MotorType::KRAKEN);
+    neoLabels    = activeConfig.getLabelsForType(MotorType::NEO);
+    displayNameMap = activeConfig.getDisplayNameMap();
+}
+
+CircleDrawingArea** getOrCreateCircle(const std::string& label) {
+    return &motorCircles[label];  // auto-creates entry if missing
+}
+
+CircleDrawingArea* getMotorCircle(const std::string& label) {
+    auto it = motorCircles.find(label);
+    return (it != motorCircles.end()) ? it->second : nullptr;
+}
 
 CircleDrawingArea* getTalonCircle(const std::string& label) {
     if (label == "Talon 1") return talon1Circle;
@@ -1316,44 +1359,85 @@ bool onMotorClick(GdkEventButton* event, const std::string& label){
  * Creates a position indicator widget composed of two vertical bars and labels.
  */
 Gtk::Box* createPositionIndicator(const std::string& title, int spacing,
-                                  DrawingArea*& left_indicator, 
-                                  DrawingArea*& right_indicator, 
-                                  Gtk::Box*& container_box) 
+                                  PositionBar*& left_indicator,
+                                  PositionBar*& right_indicator,
+                                  Gtk::Box*& container_box,
+                                  SyncStatusLabel*& sync_label,
+                                  int max_val = 920,
+                                  int box_width = 110,
+                                  int indicator_width = 40,
+                                  int indicator_height = 200)
 {
     auto text_box = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 2));
     container_box = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, spacing));
-    container_box->set_size_request(110 * GUI_SCALE, -1);
-    
-    left_indicator = Gtk::manage(new DrawingArea());
-    left_indicator->set_size_request(40 * GUI_SCALE, 180 * GUI_SCALE);
+    container_box->set_size_request(box_width * GUI_SCALE, -1);
+ 
+    left_indicator = Gtk::manage(new PositionBar());
+    left_indicator->set_size_request(indicator_width * GUI_SCALE, indicator_height * GUI_SCALE);
+    left_indicator->set_range(0, max_val);
+    left_indicator->set_warning_limits(max_val / 10, max_val * 9 / 10);
+    left_indicator->set_light_mode(isLightMode);
     left_indicator->set_hexpand(true);
     left_indicator->set_halign(Gtk::ALIGN_CENTER);
     container_box->add(*left_indicator);
     left_indicator->show();
-    
-    right_indicator = Gtk::manage(new DrawingArea());
-    right_indicator->set_size_request(40 * GUI_SCALE, 180 * GUI_SCALE);
+ 
+    right_indicator = Gtk::manage(new PositionBar());
+    right_indicator->set_size_request(indicator_width * GUI_SCALE, indicator_height * GUI_SCALE);
+    right_indicator->set_range(0, max_val);
+    right_indicator->set_warning_limits(max_val / 10, max_val * 9 / 10);
+    right_indicator->set_light_mode(isLightMode);
     right_indicator->set_hexpand(true);
     right_indicator->set_halign(Gtk::ALIGN_CENTER);
     container_box->add(*right_indicator);
     right_indicator->show();
-    right_indicator->set_height_ratio(0.5);
-    
+ 
     container_box->set_halign(Gtk::ALIGN_CENTER);
     container_box->set_valign(Gtk::ALIGN_CENTER);
-    
+ 
     text_box->add(*container_box);
     text_box->set_halign(Gtk::ALIGN_CENTER);
-    
+ 
     auto pos_label = Gtk::manage(new Gtk::Label("L         R"));
     auto title_label = Gtk::manage(new Gtk::Label(title));
-    
     pos_label->set_halign(Gtk::ALIGN_CENTER);
     title_label->set_halign(Gtk::ALIGN_CENTER);
-    
+ 
     text_box->add(*pos_label);
     text_box->add(*title_label);
-    
+ 
+    // Sync status badge
+    sync_label = Gtk::manage(new SyncStatusLabel());
+    sync_label->set_light_mode(isLightMode);
+    sync_label->set_halign(Gtk::ALIGN_CENTER);
+    text_box->add(*sync_label);
+ 
+    return text_box;
+}
+ 
+Gtk::Box* createSinglePositionIndicator(const std::string& title,
+                                         PositionBar*& indicator,
+                                         int max_val = 920,
+                                         int indicator_width = 40,
+                                         int indicator_height = 200)
+{
+    auto text_box = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 2));
+    text_box->set_halign(Gtk::ALIGN_CENTER);
+ 
+    indicator = Gtk::manage(new PositionBar());
+    indicator->set_size_request(indicator_width * GUI_SCALE, indicator_height * GUI_SCALE);
+    indicator->set_range(0, max_val);
+    indicator->set_warning_limits(max_val / 10, max_val * 9 / 10);
+    indicator->set_light_mode(isLightMode);
+    indicator->set_hexpand(false);
+    indicator->set_halign(Gtk::ALIGN_CENTER);
+    text_box->add(*indicator);
+    indicator->show();
+ 
+    auto title_label = Gtk::manage(new Gtk::Label(title));
+    title_label->set_halign(Gtk::ALIGN_CENTER);
+    text_box->add(*title_label);
+ 
     return text_box;
 }
 
@@ -1362,7 +1446,7 @@ Gtk::Box* createPositionIndicator(const std::string& title, int spacing,
  */
 bool createImageIndicator(Gtk::Image*& image_widget, Glib::RefPtr<Gdk::Pixbuf>& pixbuf, 
                           const std::string& file_path, Gtk::Container* parent, double initial_rotation,
-                          int high_angle, int low_angle)
+                          int high_angle, int low_angle, int target_size = 200)
 {
     image_widget = Gtk::manage(new Gtk::Image());
     try {
@@ -1374,50 +1458,78 @@ bool createImageIndicator(Gtk::Image*& image_widget, Glib::RefPtr<Gdk::Pixbuf>& 
     
     parent->add(*image_widget);
 
-    Glib::RefPtr<Gdk::Pixbuf> new_pixbuf = rotate_image(pixbuf, initial_rotation, 200, 200, high_angle, low_angle);
+    Glib::RefPtr<Gdk::Pixbuf> new_pixbuf = rotate_image(pixbuf, initial_rotation, target_size, target_size, high_angle, low_angle);
     image_widget->set(new_pixbuf);
     return true;
 }
 
+static void center_image_widget(Gtk::Image* image_widget) {
+    if (!image_widget) return;
+    image_widget->set_hexpand(true);
+    image_widget->set_vexpand(true);
+    image_widget->set_halign(Gtk::ALIGN_CENTER);
+    image_widget->set_valign(Gtk::ALIGN_CENTER);
+}
+
 void initRoll() {
     if (!roll_init) {
-        Gtk::Container* parent = noVideo ? static_cast<Gtk::Container*>(sensorBox) : bottomLowerBox;
-        
-        bool success = createImageIndicator(roll_image, roll_pixbuf, 
-            "../resources/RobotSide.png", parent, roll_rotation_angle, 30, -30);
+        attitudeIndicator = Gtk::manage(new ArtificialHorizon("Attitude"));
+        attitudeIndicator->set_size_request(ROLL_PITCH_IMAGE_SIZE * GUI_SCALE,
+                                             (ROLL_PITCH_IMAGE_SIZE + 30) * GUI_SCALE);
+        attitudeIndicator->set_warning_angles(30.0, -30.0);
+        attitudeIndicator->set_light_mode(isLightMode);
+        attitudeIndicator->set_halign(Gtk::ALIGN_CENTER);
+        attitudeIndicator->set_valign(Gtk::ALIGN_END);
 
-        if (success) {
-            if (!noVideo) {
-                auto* padding = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
-                padding->set_size_request(100, 100);
-                bottomLowerBox->add(*padding);
-            }
-            roll_init = true;
-            window->show_all();
-        }
+        Gtk::Container* parent = noVideo
+            ? static_cast<Gtk::Container*>(sensorBox)
+            : (rollImagePlaceholder
+                ? static_cast<Gtk::Container*>(rollImagePlaceholder)
+                : static_cast<Gtk::Container*>(bottomLowerBox));
+
+        parent->add(*attitudeIndicator);
+        roll_init = true;
+        pitch_init = true;  // Combined widget handles both axes
+        window->show_all();
     }
 }
 
 void initPitch() {
-    if (!pitch_init) {
-        if (!noVideo) {
-            auto* padding = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
-            padding->set_size_request(100, 100);
-            bottomLowerBox->add(*padding);
-        }
-
-        Gtk::Container* parent = noVideo ? static_cast<Gtk::Container*>(sensorBox) : bottomLowerBox;
-        
-        bool success = createImageIndicator(pitch_image, pitch_pixbuf, 
-            "../resources/RobotBack.png", parent, pitch_rotation_angle, 30, -30);
-
-        if (success) {
-            pitch_init = true;
-            window->show_all();
-        }
+    // Combined attitude indicator is created by initRoll().
+    // This function exists so existing call sites don't break.
+    if (!pitch_init && !roll_init) {
+        initRoll();
     }
+    pitch_init = true;
 }
 
+void initMechanisms() {
+    for (const auto& mech : activeConfig.mechanisms) {
+        if (mech.name == "Arm") {
+            if (mech.mode == MechanismMode::PAIRED) {
+                auto* widget = createPositionIndicator("Arm Positions", 4,
+                    left_arm, right_arm, armBox, armSyncLabel,
+                    mech.sensorMax, 90, 28, 200);
+                // ... add to placeholder ...
+            }
+            else if (mech.mode == MechanismMode::SINGLE) {
+                auto* widget = createSinglePositionIndicator(
+                    "Arm Position", left_arm, mech.sensorMax, 40, 200);
+                // ... add to placeholder ...
+            }
+            // NONE mode: do nothing
+            arm_init = true;
+        }
+        else if (mech.name == "Bucket") {
+            // Same pattern
+            bucket_init = true;
+        }
+    }
+    // If no Arm mechanism defined, arm_init stays false until data arrives
+    // and the lazy init in updateGUI handles it — or just set the flag:
+    if (!activeConfig.findMechanism("Arm")) arm_init = true;
+    if (!activeConfig.findMechanism("Bucket")) bucket_init = true;
+}
 void initBucketLvl() {
     if (!bucketLevel_init) {
         if (!noVideo) {
@@ -1436,13 +1548,33 @@ void initBucketLvl() {
 
 void initArmPos() {
     if (!arm_init) {
-        auto* arm_widget = createPositionIndicator("Arm Positions", 5, left_arm, right_arm, armBox);
-        
+        if (dumpBot) {
+            arm_init = true;
+            return;
+        }
+ 
+        Gtk::Widget* arm_widget;
+        if (backupBot) {
+            arm_widget = createSinglePositionIndicator("Arm Position", left_arm, 920, 40, 200);
+        }
+        else {
+            arm_widget = createSinglePositionIndicator("Arm Position", left_arm, 920, 40, 200);
+            
+            // Currently the primary and backup bot both have a single arm actuator
+            // This might change depending on the new bot design
+            //arm_widget = createPositionIndicator(
+            //    "Arm Positions", 4,
+            //    left_arm, right_arm, armBox, armSyncLabel,
+            //    920, 90, 28, 200);
+        }
+ 
         if (noVideo)
             sensorBox->add(*arm_widget);
+        else if (armPositionPlaceholder)
+            armPositionPlaceholder->add(*arm_widget);
         else
             innerLeftBox->add(*arm_widget);
-
+ 
         arm_init = true;
         window->show_all();
     }
@@ -1450,13 +1582,28 @@ void initArmPos() {
 
 void initBucketPos() {
     if (!bucket_init) {
-        auto* bucket_widget = createPositionIndicator("Bucket Positions", 20, left_bucket, right_bucket, bucketBox);
-        
+        if (dumpBot) {
+            bucket_init = true;
+            return;
+        }
+ 
+        Gtk::Widget* bucket_widget;
+        if (backupBot) {
+            bucket_widget = createSinglePositionIndicator("Bucket Position", left_bucket, 700, 40, 180);
+        }
+        else {
+            bucket_widget = createSinglePositionIndicator("Bucket Position", left_bucket, 700, 40, 180);
+            //bucket_widget = createPositionIndicator(
+            //    "Bucket Positions", 20,
+            //    left_bucket, right_bucket, bucketBox, bucketSyncLabel,
+            //    700, 110, 40, 180);
+        }
+ 
         if (noVideo)
             sensorBox->add(*bucket_widget);
         else
             innerRightBox->add(*bucket_widget);
-
+ 
         bucket_init = true;
         window->show_all();
     }
@@ -1475,18 +1622,39 @@ void initBucketElevation() {
 void initBucketRot() {
     if (!bucketRot_init) {
 
-        Gtk::Container* parent = noVideo ? static_cast<Gtk::Container*>(sensorBox) : innerLeftBox;
+        Gtk::Container* parent = noVideo ? static_cast<Gtk::Container*>(sensorBox)
+                                         : (bucketTiltPlaceholder ? static_cast<Gtk::Container*>(bucketTiltPlaceholder)
+                                                                  : static_cast<Gtk::Container*>(innerLeftBox));
 
         bool success = createImageIndicator(bucket_rot_image, bucket_rot_pixbuf, "../resources/newbucket.png", parent,
-            bucket_rotation_angle, 45, -90);
+            bucket_rotation_angle, 45, -90, BUCKET_TILT_IMAGE_SIZE);
 
         if (success) {
+            center_image_widget(bucket_rot_image);
             bucketRot_init = true;
             window->show_all();
         }
     }
 }
 
+void updateMotorTelemetry(const std::string& display_name, float voltage, float current) {
+    auto it = motorTelemetryLabels.find(display_name);
+    if (it == motorTelemetryLabels.end() || !it->second) return;
+ 
+    char buf[32];
+    std::snprintf(buf, sizeof(buf), "%.1fV  %.1fA", voltage, current);
+    it->second->set_text(buf);
+ 
+    Gdk::RGBA color;
+    if (voltage < LOW_VOLTAGE) {
+        color.set_rgba(0.94, 0.27, 0.27, 1.0);
+    } else if (voltage < LOW_VOLTAGE + 1.0f) {
+        color.set_rgba(0.98, 0.75, 0.17, 1.0);
+    } else {
+        color.set_rgba(0.29, 0.85, 0.50, 1.0);
+    }
+    it->second->override_color(color);
+}
 
 /*** Functions associated with GUI Updates ***/
 const std::unordered_set<std::string> validLabels = {
@@ -1495,7 +1663,7 @@ const std::unordered_set<std::string> validLabels = {
     "Neo 1", "Neo 2", "Neo 3", "Neo 4",
     "Kraken 1", "Kraken 2", "Kraken 3", "Kraken 4",
     "Linear 1", "Linear 2", "Linear 3", "Linear 4",
-    "Zed", "Autonomy", "Communication", "Power", "Power2", "Drivetrain"
+    "Zed", "Autonomy", "Communication", "Power", "Power2", "Drivetrain", "Lidar"
 };
 
 void addElementToInfoFrame(std::string label, InfoFrame* frame, const Element& element) {
@@ -1521,19 +1689,16 @@ void handleZedElements(const std::vector<Element>& elements) {
         float value = element.data.front().float32;
 
         if (element.label == "yaw") {
-            pitch_rotation_angle = std::round(value); // Assuming mapped to yaw here
-            pitch_image->set(rotate_image(pitch_pixbuf, pitch_rotation_angle, 200, 200, 30, -30));
+            pitch_rotation_angle = std::round(value);
+            if (attitudeIndicator) attitudeIndicator->set_pitch(pitch_rotation_angle);
         }
         else if (element.label == "Z") {
-            // Capture live Y position
             robot_y_m = -value; 
         }
         else if (element.label == "X") {
-            // Capture live X position
             robot_x_m = -value; 
         }
         else if (element.label == "pitch") {
-            // Capture live Yaw in radians
             robot_pitch_rad = value * (M_PI / 180.0);
         }
         else if (element.label == "roll") {
@@ -1544,6 +1709,7 @@ void handleZedElements(const std::vector<Element>& elements) {
                 if (bucketRot_init) {
                     bucket_rot_image->set(rotate_image(bucket_rot_pixbuf, bucket_rotation_angle, 200, 200, 45, -90));
                 }
+            if (attitudeIndicator) attitudeIndicator->set_roll(-roll_rotation_angle);
         }
     }
 }
@@ -1552,14 +1718,31 @@ void handleDrivetrainElements(const std::vector<Element>& elements) {
     
 }
 
+void handleLidarElements(const std::vector<Element>& elements) {
+    for (const auto& element : elements) {
+        if (element.label == "Distance") {
+            float distance_m = 0.0f;
+            if (element.type == TYPE::UINT16) {
+                distance_m = element.data.front().uint16 / 1000.0f;
+            }
+ 
+            if (proximityBar) {
+                proximityBar->set_distance(distance_m);
+            }
+        }
+    }
+}
+
 void handleTalonElements(const std::string& label, const std::vector<Element>& elements) {
     bool lowVoltage = false;
+    float voltage_val = 0.0f;
+    float current_val = 0.0f;
     for (const auto& element : elements) {
         if (element.label == "Sensor Position") {
             int pos = element.data.front().uint16;
             if (label == "Talon 1") {
                 left_arm_pos = pos;
-                left_arm->set_height_ratio((920 - pos) / 920.0);
+                if (left_arm) left_arm->set_position(pos);
                 arm_angle_deg = ((pos - 20) / 900.0) * -57.2 + 17.1;
                 std::cout << "pos: " << pos << std::endl;
                 std::cout << "arm_angle_deg: " << arm_angle_deg << std::endl;
@@ -1573,48 +1756,52 @@ void handleTalonElements(const std::string& label, const std::vector<Element>& e
                 bucket_elevation_height = pos; // MATH NEEDED
                 bucket_elevation->set_height_ratio((920 - pos) / 920.0) // ADJUST
                 */
+                if (!dumpBot) {
+                    if (proximityBar) {
+                        proximityBar->set_arm_position(pos);
+                    }
+                }
             }
             if(label == "Talon 2") {
                 right_arm_pos = pos;
-                right_arm->set_height_ratio((920 - pos) / 920.0);
+                if (right_arm) right_arm->set_position(pos);
             }
-            else if (label == "Talon 3" || label == "Talon 4") {
-                if (label == "Talon 3") {
-                    left_bucket_pos = pos;
-                    left_bucket->set_height_ratio((700 - pos) / 700.0);
-                }
-                else if (label == "Talon 4") {
-                    right_bucket_pos = pos;
-                    right_bucket->set_height_ratio((700 - pos) / 700.0);
-                }
-            
+            else if (label == "Talon 3") {
+                left_bucket_pos = pos;
+                if (left_bucket) left_bucket->set_position(pos);
+
                 bucket_angle_deg = ((pos - 20) / 900.0) * 97.4 - 25.8;
                 std::cout << "pos: " << pos << std::endl;
                 std::cout << "bucket_angle_deg: " << bucket_angle_deg << std::endl;
 
                 bucket_rotation_angle = roll_rotation_angle + arm_angle_deg + bucket_angle_deg;
                 if (bucketRot_init) {
-                    bucket_rot_image->set(rotate_image(bucket_rot_pixbuf, bucket_rotation_angle, 200, 200, 45, -90));
+                    bucket_rot_image->set(rotate_image(bucket_rot_pixbuf, bucket_rotation_angle, BUCKET_TILT_IMAGE_SIZE, BUCKET_TILT_IMAGE_SIZE, 45, -90));
                 }
+            }
+            else if (label == "Talon 4") {
+                right_bucket_pos = pos;
+                if (right_bucket) right_bucket->set_position(pos);
             }
 
             if (label == "Talon 1" || label == "Talon 2"){
-                bool synced = std::abs(left_arm_pos - right_arm_pos) > 50;
-                updateBackgroundColor(armBox, synced);
+                if (armSyncLabel) armSyncLabel->update(left_arm_pos, right_arm_pos, 50);
             }
             else{
-                bool synced = std::abs(left_bucket_pos - right_bucket_pos) > 50;
-                updateBackgroundColor(bucketBox, synced);
+                if (bucketSyncLabel) bucketSyncLabel->update(left_bucket_pos, right_bucket_pos, 50);
             }
             if (!noVideo) talonPositionGraph->update_data(label, pos);
         }
         else if (element.label == "Bus Voltage") {
             float voltage = element.data.front().uint16 / 100.0f;
+            voltage_val = voltage;
             if (!noVideo) talonVoltageGraph->update_data(label, voltage);
             lowVoltage = voltage < LOW_VOLTAGE;
+            if (batteryBar) batteryBar->report_voltage(label, voltage);
         }
         else if (element.label == "Output Current") {
             float current = element.data.front().uint16 / 100.0f;
+            current_val = current;
             if (!noVideo) talonCurrentGraph->update_data(label, current);
         }
         else if (element.label == "Output Percent") {
@@ -1622,7 +1809,12 @@ void handleTalonElements(const std::string& label, const std::vector<Element>& e
             if (!noVideo) talonOutputGraph->update_data(label, percent);
         }
     }
-    updateCircleColor(getTalonCircle(label), false, lowVoltage);
+    updateCircleColor(getMotorCircle(label), false, lowVoltage);
+
+    auto nameIt = displayNameMap.find(label);
+    if (nameIt != displayNameMap.end()) {
+        updateMotorTelemetry(nameIt->second, voltage_val, current_val);
+    }
 }
 
 struct MotorState {
@@ -1633,15 +1825,20 @@ struct MotorState {
 std::map<std::string, MotorState> motorStates;
 
 void handleFalconElements(const std::string& label, const std::vector<Element>& elements) {
+    float voltage_val = 0.0f;
+    float current_val = 0.0f;
     for (const auto& element : elements) {
         if (element.label == "Bus Voltage") {
             float voltage = element.data.front().uint16 / 100.0f;
+            voltage_val = voltage;
             if (!noVideo) falconVoltageGraph->update_data(label, voltage);
             bool lowVoltage = voltage < LOW_VOLTAGE;
             motorStates[label].lowVoltage = lowVoltage;
+            if (batteryBar) batteryBar->report_voltage(label, voltage);
         }
         else if (element.label == "Output Current") {
             float current = element.data.front().uint16 / 100.0f;
+            current_val = current;
             if (!noVideo) falconCurrentGraph->update_data(label, current);
         }
         else if (element.label == "Output Percent") {
@@ -1659,18 +1856,28 @@ void handleFalconElements(const std::string& label, const std::vector<Element>& 
             motorStates[label].error = error;
         }
     }
-    updateCircleColor(getLowerFalconCircle(label), motorStates[label].lowVoltage, motorStates[label].error);
+    updateCircleColor(getMotorCircle(label), motorStates[label].lowVoltage, motorStates[label].error);
+
+    auto nameIt = displayNameMap.find(label);
+    if (nameIt != displayNameMap.end()) {
+        updateMotorTelemetry(nameIt->second, voltage_val, current_val);
+    }
 }
 
 void handleNeoElements(const std::string& label, const std::vector<Element>& elements) {
+    float voltage_val = 0.0f;
+    float current_val = 0.0f;
     for (const auto& element : elements) {
         if (element.label == "Bus Voltage") {
             float voltage = element.data.front().uint16 / 100.0f;
+            voltage_val = voltage;
             if (!noVideo) falconVoltageGraph->update_data(label, voltage);
             motorStates[label].lowVoltage = voltage < LOW_VOLTAGE;
+            if (batteryBar) batteryBar->report_voltage(label, voltage);
         }
         else if (element.label == "Output Current") {
             float current = element.data.front().uint16 / 100.0f;
+            current_val = current;
             if (!noVideo) falconCurrentGraph->update_data(label, current);
         }
         else if (element.label == "Output Percent") {
@@ -1688,19 +1895,28 @@ void handleNeoElements(const std::string& label, const std::vector<Element>& ele
             motorStates[label].error = error;
         }
     }
-    updateCircleColor(getNeoCircle(label), motorStates[label].lowVoltage, motorStates[label].error);
+    updateCircleColor(getMotorCircle(label), motorStates[label].lowVoltage, motorStates[label].error);
+    auto neoNameIt = displayNameMap.find(label);
+    if (neoNameIt != displayNameMap.end()) {
+        updateMotorTelemetry(neoNameIt->second, voltage_val, current_val);
+    }
 }
 
 void handleKrakenElements(const std::string& label, const std::vector<Element>& elements) {
+    float voltage_val = 0.0f;
+    float current_val = 0.0f;
     for (const auto& element : elements) {
         if (element.label == "Bus Voltage") {
             float voltage = element.data.front().uint16 / 100.0f;
+            voltage_val = voltage;
             if (!noVideo) falconVoltageGraph->update_data(label, voltage);
             bool lowVoltage = voltage < LOW_VOLTAGE;
             motorStates[label].lowVoltage = lowVoltage;
+            if (batteryBar) batteryBar->report_voltage(label, voltage);
         }
         else if (element.label == "Output Current") {
             float current = element.data.front().uint16 / 100.0f;
+            current_val = current;
             if (!noVideo) falconCurrentGraph->update_data(label, current);
         }
         else if (element.label == "Output Percent") {
@@ -1717,7 +1933,11 @@ void handleKrakenElements(const std::string& label, const std::vector<Element>& 
             bool error = element.data.front().boolean;
             motorStates[label].error = error;
         }
-        updateCircleColor(getKrakenCircle(label), motorStates[label].lowVoltage, motorStates[label].error);
+        updateCircleColor(getMotorCircle(label), motorStates[label].lowVoltage, motorStates[label].error);
+    }
+    auto krakenNameIt = displayNameMap.find(label);
+    if (krakenNameIt != displayNameMap.end()) {
+        updateMotorTelemetry(krakenNameIt->second, voltage_val, current_val);
     }
 }
 
@@ -1805,35 +2025,29 @@ void updateGUI(BinaryMessage& message) {
 
         const auto& elements = message.getObject().elementList;
 
+        const MotorDef* motorDef = activeConfig.findMotor(label);
+        if (motorDef) {
+            switch (motorDef->type) {
+                case MotorType::TALON:  handleTalonElements(label, elements);  break;
+                case MotorType::FALCON: handleFalconElements(label, elements); break;
+                case MotorType::NEO:    handleNeoElements(label, elements);    break;
+                case MotorType::KRAKEN: handleKrakenElements(label, elements); break;
+            }
+        }
         if (label == "Zed") {
             handleZedElements(elements);
         }
         else if (label == "Communication") {
             handleCommunicationElements(frame, elements);
         }
-        else if (talonMainLabels.count(label) && primaryBot) {
-            handleTalonElements(label, elements);
-        }
-        else if (krakenMainLabels.count(label) && primaryBot) {
-            handleKrakenElements(label, elements);
-        }
-        else if (neoDumpLabels.count(label) && dumpBot) {
-            handleNeoElements(label, elements);
-        }
-        else if (falconDumpLabels.count(label) && dumpBot) {
-            handleFalconElements(label, elements);
-        }
-        else if (talonBackupLabels.count(label) && backupBot) {
-            handleTalonElements(label, elements);
-        }
-        else if (falconBackupLabels.count(label) && backupBot) {
-            handleFalconElements(label, elements);
-        }
         else if(label == "Autonomy"){
             handleAutonomyElements(label, elements);
         }
         else if(label == "Drivetrain"){
             handleDrivetrainElements(elements);
+        }
+        else if (label == "Lidar" && !dumpBot) {
+            handleLidarElements(elements);
         }
         if(updateMotorDetails){
             updateMotor(label, elements);
@@ -1847,9 +2061,10 @@ void updateGUI(BinaryMessage& message) {
     if ((label == "Talon 1" || label == "Talon 2") && !arm_init) 
         initArmPos();
         //initBucketElevation();
-    if ((label == "Talon 3" || label == "Talon 4") && !bucket_init)
+    if ((label == "Talon 3" || label == "Talon 4") && !bucket_init){
         initBucketPos();
         initBucketRot();
+    }
     if (label == "Zed" && !roll_init) 
         initRoll();
     if(label == "Zed" && !pitch_init)
@@ -1977,22 +2192,27 @@ void initGUI() {
     if(initVals){
         if(primaryBot){
             createMessage("Talon 1", "TALON");
-            createMessage("Talon 2", "TALON");
             createMessage("Talon 3", "TALON");
             createMessage("Kraken 1", "KRAKEN");
             createMessage("Kraken 2", "KRAKEN");
             createMessage("Kraken 3", "KRAKEN");
             createMessage("Kraken 4", "KRAKEN");
-        } else if(backupBot){
+            createMessage("Linear 1", "LINEAR");
+            createMessage("Linear 3", "LINEAR");
+            createMessage("Lidar", "LIDAR");
+        }
+        else if(backupBot){
             createMessage("Talon 1", "TALON");
-            createMessage("Talon 2", "TALON");
             createMessage("Talon 3", "TALON");
-            createMessage("Talon 4", "TALON");
             createMessage("Falcon 1", "FALCON");
             createMessage("Falcon 2", "FALCON");
             createMessage("Falcon 3", "FALCON");
             createMessage("Falcon 4", "FALCON");
-        } else if(dumpBot){
+            createMessage("Linear 1", "LINEAR");
+            createMessage("Linear 3", "LINEAR");
+            createMessage("Lidar", "LIDAR");
+        }
+        else if(dumpBot){
             createMessage("Neo 1", "NEO");
             createMessage("Neo 2", "NEO");
             createMessage("Neo 3", "NEO");
@@ -2000,17 +2220,14 @@ void initGUI() {
             createMessage("Falcon 1", "FALCON");
         }
         
-        createMessage("Linear 1", "LINEAR");
-        createMessage("Linear 2", "LINEAR");
-        createMessage("Linear 3", "LINEAR");
-        createMessage("Linear 4", "LINEAR");
-        
         initRoll();
         initPitch();
-        initArmPos();
-        initBucketPos();
-        //initBucketElevation();
-        initBucketRot();
+        if (!dumpBot) {
+            initBucketPos();
+            initArmPos();
+            //initBucketElevation();
+            initBucketRot();
+        }
         
         createMessage("Communication", "COMMUNICATION");
         createMessage("Autonomy", "AUTONOMY");
@@ -2062,31 +2279,11 @@ void resetUIOnDisconnect() {
     if(!noVideo) {
         Gdk::RGBA black;
         black.set_rgba(0.0, 0.0, 0.0, 1.0);
-        if(primaryBot){
-            updateCircleColor(kraken1Circle, black);
-            updateCircleColor(kraken2Circle, black);
-            updateCircleColor(kraken3Circle, black);
-            updateCircleColor(kraken4Circle, black);
-            updateCircleColor(talon1Circle, black);
-            updateCircleColor(talon2Circle, black);
-            updateCircleColor(talon3Circle, black);
-        } else if(backupBot){
-            updateCircleColor(talon1Circle, black);
-            updateCircleColor(talon2Circle, black);
-            updateCircleColor(talon3Circle, black);
-            updateCircleColor(talon4Circle, black);
-            updateCircleColor(lowerFalcon1Circle, black);
-            updateCircleColor(lowerFalcon2Circle, black);
-            updateCircleColor(lowerFalcon3Circle, black);
-            updateCircleColor(lowerFalcon4Circle, black);
-        } else if(dumpBot){
-            updateCircleColor(neo1Circle, black);
-            updateCircleColor(neo2Circle, black);
-            updateCircleColor(neo3Circle, black);
-            updateCircleColor(neo4Circle, black);
-            updateCircleColor(lowerFalcon1Circle, black);
+        for (auto& kv : motorCircles) {
+            updateCircleColor(kv.second, black);
         }
     }
+    if (batteryBar) batteryBar->reset_cycle();
 }
 
 
@@ -2109,7 +2306,6 @@ Gtk::Stack* create_gear_dial(const std::string& initial_gear,
         label->set_margin_bottom(8);
         label->set_alignment(0.5, 0.5);
         label->set_markup("<span size='20480' weight='bold' foreground='black'>" + gear + "</span>");
-
         gear_labels[gear] = label;
         label->show();
 
@@ -2177,7 +2373,8 @@ std::map<std::string, std::string> tooltip_map = {
     {"DISPLAY_SPEED", "Show or hide the speedometer."},
     {"NUMBERS_INSIDE", "Display numbers inside the speedometer ring."},
     {"NUMBER_TICKS", "Align numbers with speedometer tick marks."},
-    {"SHOW_FALCON_Device ID", "Show Falcon CAN ID in the telemetry frame."}
+    {"SHOW_FALCON_Device ID", "Show Falcon CAN ID in the telemetry frame."},
+    {"SHOW_MOTOR_TELEMETRY", "Show voltage and current under motor status indicators."}
 };
 
 
@@ -2229,43 +2426,25 @@ std::vector<std::string> local_drivetrain_keys = get_drivetrain_keys();
 std::map<std::string, std::vector<std::string>*> local_key_vectors = {};
 
 void setup_local_key_vectors() {
-    if(primaryBot){
-        local_key_vectors = {
-            {"Talon", &local_talon_keys},
-            {"Kraken", &local_kraken_keys},
-            {"Linear", &local_linear_keys},
-            {"Autonomy", &local_autonomy_keys},
-            {"Communication", &local_communication_keys},
-            {"Power2", &local_power2_keys},
-            {"Power", &local_power_keys},
-            {"Zed", &local_zed_keys},
-            {"Drivetrain", &local_drivetrain_keys}
-        };
-    } else if(backupBot){
-        local_key_vectors = {
-            {"Talon", &local_talon_keys},
-            {"Falcon", &local_falcon_keys},
-            {"Linear", &local_linear_keys},
-            {"Autonomy", &local_autonomy_keys},
-            {"Communication", &local_communication_keys},
-            {"Power2", &local_power2_keys},
-            {"Power", &local_power_keys},
-            {"Zed", &local_zed_keys},
-            {"Drivetrain", &local_drivetrain_keys}
-        };
-    } else if(dumpBot){
-        local_key_vectors = {
-            {"Neo", &local_neo_keys},
-            {"Falcon", &local_falcon_keys},
-            {"Linear", &local_linear_keys},
-            {"Autonomy", &local_autonomy_keys},
-            {"Communication", &local_communication_keys},
-            {"Power2", &local_power2_keys},
-            {"Power", &local_power_keys},
-            {"Zed", &local_zed_keys},
-            {"Drivetrain", &local_drivetrain_keys}
-        };
-    }
+    local_key_vectors.clear();
+ 
+    // Motor-type keys
+    if (!activeConfig.getLabelsForType(MotorType::TALON).empty())
+        local_key_vectors["Talon"] = &local_talon_keys;
+    if (!activeConfig.getLabelsForType(MotorType::FALCON).empty())
+        local_key_vectors["Falcon"] = &local_falcon_keys;
+    if (!activeConfig.getLabelsForType(MotorType::NEO).empty())
+        local_key_vectors["Neo"] = &local_neo_keys;
+    if (!activeConfig.getLabelsForType(MotorType::KRAKEN).empty())
+        local_key_vectors["Kraken"] = &local_kraken_keys;
+ 
+    local_key_vectors["Linear"] = &local_linear_keys;
+    local_key_vectors["Autonomy"] = &local_autonomy_keys;
+    local_key_vectors["Communication"] = &local_communication_keys;
+    local_key_vectors["Power2"] = &local_power2_keys;
+    local_key_vectors["Power"] = &local_power_keys;
+    local_key_vectors["Zed"] = &local_zed_keys;
+    local_key_vectors["Drivetrain"] = &local_drivetrain_keys;
 }
 
 
@@ -2369,38 +2548,67 @@ bool on_key_press_event(GdkEventKey* key_event){
     return false;
 }
 
-Gtk::EventBox* create_labeled_box(const Glib::ustring& label_text, CircleDrawingArea*& out_circle, bool right = false) {
+Gtk::EventBox* create_labeled_box(const Glib::ustring& label_text,
+                                   CircleDrawingArea*& out_circle,
+                                   bool right = false) {
     auto event_box = Gtk::manage(new Gtk::EventBox());
-
     auto box = Gtk::manage(new BorderedBox(Gtk::ORIENTATION_HORIZONTAL, 5));
-    box->set_size_request(300 * GUI_SCALE, 75 * GUI_SCALE);
-
+    box->set_size_request(200 * GUI_SCALE, 75 * GUI_SCALE);
+ 
+    auto label_box = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 0));
+    label_box->set_hexpand(true);
+    label_box->set_valign(Gtk::ALIGN_CENTER);
+ 
     auto label = Gtk::manage(new Gtk::Label(label_text));
-    label->set_hexpand(true);
-
     Pango::FontDescription font;
-    font.set_size(20 * GUI_SCALE * Pango::SCALE);
+    font.set_size(18 * GUI_SCALE * Pango::SCALE);
     label->override_font(font);
-
+    label->set_halign(right ? Gtk::ALIGN_END : Gtk::ALIGN_START);
+    label_box->add(*label);
+ 
+    // Telemetry line — hidden when showMotorTelemetry is false
+    auto telem_label = Gtk::manage(new Gtk::Label("--V  --A"));
+    Pango::FontDescription telem_font;
+    telem_font.set_family("monospace");
+    telem_font.set_size(9 * GUI_SCALE * Pango::SCALE);
+    telem_label->override_font(telem_font);
+    telem_label->set_halign(right ? Gtk::ALIGN_END : Gtk::ALIGN_START);
+    Gdk::RGBA dim_color;
+    dim_color.set_rgba(0.5, 0.5, 0.5, 0.7);
+    telem_label->override_color(dim_color);
+    telem_label->set_no_show_all(!showMotorTelemetry);
+    telem_label->set_visible(showMotorTelemetry);
+    label_box->add(*telem_label);
+ 
+    motorTelemetryLabels[label_text] = telem_label;
+ 
     out_circle = Gtk::manage(new CircleDrawingArea());
     out_circle->set_size_request(75 * GUI_SCALE, 75 * GUI_SCALE);
     out_circle->set_hexpand(false);
     out_circle->set_halign(Gtk::ALIGN_CENTER);
-
-    if(right){
-        box->add(*label);
+ 
+    if (right) {
+        box->add(*label_box);
         box->add(*out_circle);
+    } else {
+        box->add(*out_circle);
+        box->add(*label_box);
     }
-    else{
-        box->add(*out_circle);
-        box->add(*label);
-    }   
-
+ 
     event_box->add(*box);
     event_box->add_events(Gdk::BUTTON_PRESS_MASK);
     event_box->set_visible_window(false);
-
     return event_box;
+}
+
+void setMotorTelemetryVisible(bool visible) {
+    showMotorTelemetry = visible;
+    for (auto& kv : motorTelemetryLabels) {
+        if (kv.second) {
+            kv.second->set_visible(visible);
+            kv.second->set_no_show_all(!visible);
+        }
+    }
 }
 
 bool onClickEvent(GdkEventButton* event, const std::string& id) {
@@ -2417,7 +2625,7 @@ bool onClickEvent(GdkEventButton* event, const std::string& id) {
 
 Gtk::Box* create_motor_column(std::vector<std::pair<Glib::ustring, CircleDrawingArea**>> items, void (*init_hook)(), std::vector<std::string> labels, bool right = false) {
     auto column = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
-    column->set_size_request(300, 300);
+    column->set_size_request(200, 300);
     column->set_hexpand(false);
     column->set_vexpand(false);
 
@@ -2441,9 +2649,10 @@ Gtk::Box* create_motor_column(std::vector<std::pair<Glib::ustring, CircleDrawing
 // To change Speedometer sizes, need to change this value
 Gtk::Box* create_lower_motor_column(std::vector<std::pair<Glib::ustring, CircleDrawingArea**>> items, std::vector<std::string> labels, bool right = false) {
     auto column = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
-    column->set_size_request(200, 300);
-    column->set_hexpand(false);
+    column->set_size_request(200, -1);
+    column->set_hexpand(true);
     column->set_vexpand(false);
+    column->set_valign(Gtk::ALIGN_END);
 
     for (size_t i = 0; i < items.size(); ++i) {
         auto box = create_labeled_box(items[i].first, *items[i].second, right);
@@ -2472,6 +2681,94 @@ void on_video_connection_finished() {
     update_video_connection_status(video_server_ui);
 }
 
+static std::string get_glade_widget_id(Gtk::Widget* widget) {
+    if (!widget) return "";
+
+    const gchar* buildable_name = gtk_buildable_get_name(GTK_BUILDABLE(widget->gobj()));
+    if (buildable_name && buildable_name[0] != '\0') {
+        return std::string(buildable_name);
+    }
+
+    const Glib::ustring css_name = widget->get_name();
+    if (!css_name.empty()) {
+        return css_name.raw();
+    }
+
+    const char* type_name = G_OBJECT_TYPE_NAME(widget->gobj());
+    return type_name ? std::string(type_name) : std::string("GtkWidget");
+}
+
+static void install_glade_debug_overlay(Gtk::Widget* widget) {
+    if (!widget) return;
+
+    const std::string widget_id = get_glade_widget_id(widget);
+
+    widget->signal_draw().connect(
+        [widget, widget_id](const Cairo::RefPtr<Cairo::Context>& cr) -> bool {
+            const int width = widget->get_allocated_width();
+            const int height = widget->get_allocated_height();
+            if (width <= 2 || height <= 2) return false;
+
+            // Draw a red border around each Glade widget for layout debugging.
+            cr->save();
+            cr->set_source_rgba(1.0, 0.0, 0.0, 0.9);
+            cr->set_line_width(1.0);
+            cr->rectangle(0.5, 0.5, width - 1.0, height - 1.0);
+            cr->stroke();
+
+            // Draw the widget's Glade ID centered in the widget bounds.
+            auto layout = widget->create_pango_layout(widget_id);
+            Pango::FontDescription font;
+            font.set_family("Monospace");
+            font.set_size(8 * Pango::SCALE);
+            layout->set_font_description(font);
+
+            int text_w = 0;
+            int text_h = 0;
+            layout->get_pixel_size(text_w, text_h);
+
+            const double box_w = static_cast<double>(text_w + 6);
+            const double box_h = static_cast<double>(text_h + 4);
+            const double box_x = std::max(1.0, (static_cast<double>(width) - box_w) * 0.5);
+            const double box_y = std::max(1.0, (static_cast<double>(height) - box_h) * 0.5);
+
+            cr->set_source_rgba(1.0, 1.0, 1.0, 0.65);
+            cr->rectangle(box_x, box_y, box_w, box_h);
+            cr->fill();
+
+            cr->set_source_rgba(1.0, 0.0, 0.0, 1.0);
+            cr->move_to(box_x + 3.0, box_y + 2.0);
+            layout->show_in_cairo_context(cr);
+            cr->restore();
+            return false;
+        },
+        true);
+
+    if (auto* container = dynamic_cast<Gtk::Container*>(widget)) {
+        for (auto* child : container->get_children()) {
+            install_glade_debug_overlay(child);
+        }
+    }
+}
+
+auto buildMotorColumn = [](PanelPosition pos, bool rightAligned) -> Gtk::Box* {
+    auto motors = activeConfig.getMotorsForPanel(pos);
+    if (motors.empty()) return Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
+ 
+    std::vector<std::pair<Glib::ustring, CircleDrawingArea**>> items;
+    std::vector<std::string> labels;
+ 
+    for (const auto& motor : motors) {
+        CircleDrawingArea** circle = getOrCreateCircle(motor.internalLabel);
+        items.push_back({motor.displayName, circle});
+        labels.push_back(motor.internalLabel);
+    }
+
+    if (pos == PanelPosition::LOWER_LEFT || pos == PanelPosition::LOWER_RIGHT) {
+        return create_lower_motor_column(items, labels, rightAligned);
+    }
+    return create_motor_column(items, nullptr, labels, rightAligned);
+};
 
 /*** Functions that setup the GUI and windows ***/
 /*
@@ -2491,6 +2788,8 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
     videoIPAddressEntry = nullptr; videoAddressListBox = nullptr;
     toggleModeButton = nullptr; settingsButton = nullptr;
     sensorBox = nullptr; innerLeftBox = nullptr; innerRightBox = nullptr;
+    armPositionPlaceholder = nullptr; bucketTiltPlaceholder = nullptr; rollImagePlaceholder = nullptr;
+    armPositionPlaceholder = nullptr;
 
     initialize_maps(); 
 
@@ -2523,6 +2822,25 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
         Gtk::Overlay* mainOverlay = Gtk::manage(new Gtk::Overlay());
         mainOverlay->add(*videoArea);  // Video as base
         mainOverlay->add_overlay(*topLevelBox);  // UI on top
+
+        // Proximity bar floating on the video feed, left side
+        if (!dumpBot) {
+            std::cout << "Initializing proximity bar for dump bot." << std::endl;
+            proximityBar = Gtk::manage(new ProximityBar());
+            proximityBar->set_size_request(100 * GUI_SCALE, 380 * GUI_SCALE);
+            proximityBar->set_light_mode(isLightMode);
+            proximityBar->set_warning_threshold(0.6);
+            proximityBar->set_optimal_threshold(0.9);
+            proximityBar->set_max_distance(1.5);
+            proximityBar->set_arm_show_threshold(500);
+            proximityBar->set_halign(Gtk::ALIGN_START);
+            proximityBar->set_valign(Gtk::ALIGN_CENTER);
+            proximityBar->set_margin_left(EDGE_PANEL_WIDTH + 50);
+            mainOverlay->add_overlay(*proximityBar);
+        }
+
+        // Add overlay to window
+        window->add(*mainOverlay);
         
         // Add overlay to window
         window->add(*mainOverlay);
@@ -2532,6 +2850,14 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
     builder->get_widget("topControlsBox", topControlsBox);
     if (topControlsBox) {
         topControlsBox->set_name("topControlsBox");
+
+        batteryBar = Gtk::manage(new BatteryBar());
+        batteryBar->set_size_request(-1, 28);
+        batteryBar->set_hexpand(true);
+        batteryBar->set_warning_voltage(LOW_VOLTAGE);
+        batteryBar->set_critical_voltage(LOW_VOLTAGE - 1.0f);
+        batteryBar->set_light_mode(isLightMode);
+        topControlsBox->pack_end(*batteryBar, Gtk::PACK_SHRINK);
     }
 
     try {window->set_icon_from_file("../resources/razorbotz.png"); } catch (...) {}
@@ -2662,60 +2988,100 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
         
         builder->get_widget("box_bottom_lower", bottomLowerBox);
 
+        Gtk::Box* leftEdgePanel = nullptr;
+        builder->get_widget("left_edge_panel", leftEdgePanel);
+        applyEdgePanelStyle(leftEdgePanel);
+        if (leftEdgePanel) {
+            // width_request in Glade is a minimum; pin panel width at runtime to prevent expansion.
+            leftEdgePanel->set_size_request(EDGE_PANEL_WIDTH, -1);
+            leftEdgePanel->set_hexpand(false);
+            leftEdgePanel->set_halign(Gtk::ALIGN_START);
+        }
+
+        Gtk::Box* rightEdgePanel = nullptr;
+        builder->get_widget("right_edge_panel", rightEdgePanel);
+        applyEdgePanelStyle(rightEdgePanel);
+        if (rightEdgePanel) {
+            // width_request in Glade is a minimum; pin panel width at runtime to prevent expansion.
+            rightEdgePanel->set_size_request(EDGE_PANEL_WIDTH, -1);
+            rightEdgePanel->set_hexpand(false);
+            rightEdgePanel->set_halign(Gtk::ALIGN_END);
+        }
+
         Gtk::Box* pLeft = nullptr; builder->get_widget("placeholder_inner_left", pLeft);
         if (pLeft) {
+            pLeft->set_size_request(EDGE_PANEL_WIDTH, -1);
             std::cout << "Initializing Upper Left column with Falcon indicators by default." << std::endl;
-            if(primaryBot){
-                innerLeftBox = create_motor_column({{"Arm L", &talon1Circle}, {"Arm R", &talon2Circle}, {"Bucket L", &talon3Circle}}, nullptr, {"Talon 1", "Talon 2", "Talon 3"}, true);
-            } else if(backupBot){
-                innerLeftBox = create_motor_column({{"Arm L", &talon1Circle}, {"Arm R", &talon2Circle}, {"Bucket L", &talon3Circle}, {"Bucket R", &talon4Circle}}, nullptr, {"Talon 1", "Talon 2", "Talon 3", "Talon 4"}, true);
-            } else if(dumpBot){
-                innerLeftBox = create_motor_column({{"Dump Bucket", &lowerFalcon1Circle}}, nullptr, {"Falcon 1"}, true);
-            }
+            innerLeftBox = buildMotorColumn(PanelPosition::UPPER_LEFT, true);
             pLeft->add(*innerLeftBox);
-            initArmPos();
+            innerLeftBox->set_size_request(200, -1);
+            innerLeftBox->set_valign(Gtk::ALIGN_START);
         }
+
+        Gtk::Box* pLeftImages = nullptr; builder->get_widget("placeholder_left_images", pLeftImages);
+        if (pLeftImages) {
+            auto* leftPanelBottomRow = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
+            leftPanelBottomRow->set_halign(Gtk::ALIGN_CENTER);
+            leftPanelBottomRow->set_valign(Gtk::ALIGN_END);
+            leftPanelBottomRow->set_hexpand(true);
+            leftPanelBottomRow->set_vexpand(false);
+
+            armPositionPlaceholder = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 0));
+            armPositionPlaceholder->set_hexpand(true);
+            armPositionPlaceholder->set_halign(Gtk::ALIGN_CENTER);
+            armPositionPlaceholder->set_valign(Gtk::ALIGN_END);
+
+            bucketTiltPlaceholder = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 0));
+            bucketTiltPlaceholder->set_hexpand(true);
+            bucketTiltPlaceholder->set_halign(Gtk::ALIGN_CENTER);
+            bucketTiltPlaceholder->set_valign(Gtk::ALIGN_END);
+
+            rollImagePlaceholder = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 0));
+            rollImagePlaceholder->set_hexpand(true);
+            rollImagePlaceholder->set_halign(Gtk::ALIGN_CENTER);
+            rollImagePlaceholder->set_valign(Gtk::ALIGN_END);
+
+            leftPanelBottomRow->pack_start(*armPositionPlaceholder, Gtk::PACK_SHRINK);
+            leftPanelBottomRow->pack_start(*bucketTiltPlaceholder, Gtk::PACK_SHRINK);
+            leftPanelBottomRow->pack_start(*rollImagePlaceholder, Gtk::PACK_SHRINK);
+            pLeftImages->pack_end(*leftPanelBottomRow, Gtk::PACK_SHRINK);
+        }
+        initArmPos();
+        initBucketRot();
 
         Gtk::Box* pRight = nullptr; builder->get_widget("placeholder_inner_right", pRight);
         if (pRight) {
+            pRight->set_size_request(EDGE_PANEL_WIDTH, -1);
             std::cout << "Initializing Upper Right motor column with Falcon indicators by default." << std::endl;
-            innerRightBox = create_motor_column({{"Falcon 1", &falcon1Circle}, {"Falcon 2", &falcon2Circle}, {"Falcon 3", &falcon3Circle}, {"Falcon 4", &falcon4Circle}}, nullptr, {"Falcon 1", "Falcon 2", "Falcon 3", "Falcon 4"}, false);
-            //pRight->add(*innerRightBox);
-            initBucketPos();
+            innerRightBox = buildMotorColumn(PanelPosition::UPPER_RIGHT, false);
+            pRight->add(*innerRightBox);
+            if (!backupBot) {
+                initBucketPos();
+            }
         }
 
         Gtk::Box* pLowerLeft = nullptr; builder->get_widget("placeholder_lower_left", pLowerLeft);
         if (pLowerLeft) {
-            std::cout << "Initializing lower motor column with Falcon indicators by default." << std::endl;
-            Gtk::Box* lowerLeftBox;
-            if(primaryBot){
-                std::cout << "Initializing lower left motor column with Kraken indicators for primary bot." << std::endl;
-                lowerLeftBox = create_lower_motor_column({{"Kraken 1", &kraken1Circle}, {"Kraken 2", &kraken2Circle}}, {"Kraken 1", "Kraken 2"});
-            } else if(backupBot){
-                lowerLeftBox = create_lower_motor_column({{"Falcon 1", &lowerFalcon1Circle}, {"Falcon 2", &lowerFalcon2Circle}}, {"Falcon 1", "Falcon 2"});
-            } else if(dumpBot){
-                lowerLeftBox = create_lower_motor_column({{"Neo 1", &neo1Circle}, {"Neo 2", &neo2Circle}}, {"Neo 1", "Neo 2"});
+            pLowerLeft->set_size_request(EDGE_PANEL_WIDTH, -1);
+            Gtk::Box* lowerLeftBox = buildMotorColumn(PanelPosition::LOWER_LEFT, false);
+            if (lowerLeftBox) {
+                pLowerLeft->pack_end(*lowerLeftBox, Gtk::PACK_SHRINK);
             }
-            pLowerLeft->add(*lowerLeftBox);
         }
 
         Gtk::Box* pLowerRight = nullptr; builder->get_widget("placeholder_lower_right", pLowerRight);
         if (pLowerRight) {
+            pLowerRight->set_size_request(EDGE_PANEL_WIDTH, -1);
             std::cout << "Initializing lower motor column with Falcon indicators by default." << std::endl;
-            Gtk::Box* lowerRightBox;
-            if(primaryBot){
-                std::cout << "Initializing lower right motor column with Kraken indicators for primary bot." << std::endl;
-                lowerRightBox = create_lower_motor_column({{"Kraken 3", &kraken3Circle}, {"Kraken 4", &kraken4Circle}}, {"Kraken 3", "Kraken 4"});
-            } else if(backupBot){
-                lowerRightBox = create_lower_motor_column({{"Falcon 3", &lowerFalcon3Circle}, {"Falcon 4", &lowerFalcon4Circle}}, {"Falcon 3", "Falcon 4"});
-            } else if(dumpBot){
-                lowerRightBox = create_lower_motor_column({{"Neo 3", &neo3Circle}, {"Neo 4", &neo4Circle}}, {"Neo 3", "Neo 4"});
+            Gtk::Box* lowerRightBox = buildMotorColumn(PanelPosition::LOWER_RIGHT, false);
+            if (lowerRightBox) {
+                pLowerRight->pack_end(*lowerRightBox, Gtk::PACK_SHRINK);
             }
-            pLowerRight->add(*lowerRightBox);
         }
         
-        Gtk::Box* pSpeedLeft = nullptr; builder->get_widget("placeholder_speed_left", pSpeedLeft);
-        if(pSpeedLeft) {
+        Gtk::Box* pSpeedLeft = nullptr;
+        builder->get_widget("placeholder_speed_left", pSpeedLeft);
+        if (pSpeedLeft) {
             std::cout << "Initializing left speedometer." << std::endl;
             leftSpeedometer = Gtk::manage(new Speedometer("Left Speedometer"));
             leftSpeedometer->set_size_request(300 * GUI_SCALE, 175 * GUI_SCALE);
@@ -2744,17 +3110,17 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
             //highlight_gear(currentGear, gears, gear_labels, gear_dial);
         }
         
-        Gtk::Box* pRoll = nullptr; builder->get_widget("placeholder_roll_image", pRoll);
-        if(pRoll) {
-            std::cout << "Initializing roll indicator." << std::endl;
-            createImageIndicator(roll_image, roll_pixbuf, "../resources/RobotSide.png", pRoll, roll_rotation_angle, 30, -30);
+        if (rollImagePlaceholder) {
+            std::cout << "Initializing combined attitude indicator (roll + pitch)." << std::endl;
+            attitudeIndicator = Gtk::manage(new ArtificialHorizon("Attitude"));
+            attitudeIndicator->set_size_request(ROLL_PITCH_IMAGE_SIZE * GUI_SCALE,
+                                                 (ROLL_PITCH_IMAGE_SIZE + 30) * GUI_SCALE);
+            attitudeIndicator->set_warning_angles(30.0, -30.0);
+            attitudeIndicator->set_light_mode(isLightMode);
+            attitudeIndicator->set_halign(Gtk::ALIGN_CENTER);
+            attitudeIndicator->set_valign(Gtk::ALIGN_END);
+            rollImagePlaceholder->add(*attitudeIndicator);
             roll_init = true;
-        }
-
-        Gtk::Box* pPitch = nullptr; builder->get_widget("placeholder_pitch_image", pPitch);
-        if(pPitch) {
-            std::cout << "Initializing pitch indicator." << std::endl;
-            createImageIndicator(pitch_image, pitch_pixbuf, "../resources/RobotBack.png", pPitch, pitch_rotation_angle, 30, -30);
             pitch_init = true;
         }
 
@@ -2772,6 +3138,12 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
     }
 
     if (window) {
+        if (debugGladeBounds) {
+            std::cout << "Debug mode: drawing Glade widget bounds/IDs." << std::endl;
+            install_glade_debug_overlay(window);
+            window->queue_draw();
+        }
+
         window->signal_delete_event().connect(sigc::ptr_fun(quit));
         window->show_all();
     }
@@ -3124,6 +3496,7 @@ void on_sim_type_changed() {
     else if (label == "Power2") prefix = "POWER2";
     else if (label == "Drivetrain") prefix = "DRIVETRAIN";
     else if (label == "Autonomy") prefix = "AUTONOMY";
+    else if (label == "Lidar") prefix = "LIDAR";
     else prefix = "COMMUNICATION";
 
     populateBinaryMessage(label, prefix, dummy);
@@ -3855,28 +4228,30 @@ void initSimulatorWindow() {
         "Kraken 1", "Kraken 2", "Kraken 3", "Kraken 4",
         "Neo 1", "Neo 2", "Neo 3", "Neo 4",
         "Linear 1", "Linear 2", "Zed", "Drivetrain", 
-        "Power", "Communication", "Autonomy"
+        "Power", "Communication", "Autonomy", "Lidar"
     };
     if(primaryBot){
         targets = {
-        "Talon 1", "Talon 2", "Talon 3",
-        "Kraken 1", "Kraken 2", "Kraken 3", "Kraken 4",
-        "Linear 1", "Linear 2", "Zed", "Drivetrain", 
-        "Power", "Communication", "Autonomy"
-    };
-    } else if(dumpBot){
+            "Talon 1", "Talon 3",
+            "Kraken 1", "Kraken 2", "Kraken 3", "Kraken 4",
+            "Linear 1", "Linear 3", "Zed", "Drivetrain", 
+            "Power", "Communication", "Autonomy", "Lidar"
+        };
+    }
+    else if(dumpBot){
         targets = {
-        "Falcon 1", "Neo 1", "Neo 2", "Neo 3", "Neo 4",
-        "Linear 1", "Linear 2", "Zed", "Drivetrain", 
-        "Power", "Communication", "Autonomy"
-    };
-    } else if(backupBot){
+            "Falcon 1", "Neo 1", "Neo 2", "Neo 3", "Neo 4",
+            "Linear 1", "Linear 2", "Zed", "Drivetrain", 
+            "Power", "Communication", "Autonomy"
+        };
+    }
+    else if(backupBot){
         targets = {
-        "Talon 1", "Talon 2", "Talon 3", "Talon 4",
-        "Falcon 1", "Falcon 2", "Falcon 3", "Falcon 4",
-        "Linear 1", "Linear 2", "Zed", "Drivetrain", 
-        "Power", "Communication", "Autonomy"
-    };
+            "Talon 1", "Talon 2", "Talon 3", "Talon 4",
+            "Falcon 1", "Falcon 2", "Falcon 3", "Falcon 4",
+            "Linear 1", "Linear 2", "Zed", "Drivetrain", 
+            "Power", "Communication", "Autonomy", "Lidar"
+        };
     }
 
 
@@ -4051,6 +4426,7 @@ void processArguments(int argc, char** argv){
                 std::cout << "--alt_layout: Uses alternate joystick control mapping for robot" << std::endl;
                 std::cout << "--backup_bot: Sets the backup bot" << std::endl;
                 std::cout << "--dump_bot: Sets the dump bot" << std::endl;
+                std::cout << "--debug_glade_bounds: Draws red bounds and Glade IDs on widgets" << std::endl;
                 exit(0);
             }
             else if(!strcmp("--init", argv[i])){
@@ -4071,9 +4447,6 @@ void processArguments(int argc, char** argv){
                     darkBackgroundColor = argv[i+1];
                     i++;
                 }
-            }
-            else if(!strcmp("--set_map", argv[i])){
-                mapUsed = argv[i+1];
             }
             else if(!strcmp("--wsl", argv[i])){
                 wsl = true;
@@ -4106,12 +4479,17 @@ void processArguments(int argc, char** argv){
                 initVals = true;
             }
             else if(!strcmp("--backup_bot", argv[i])){
+                activeConfig = configs::backupBot();
                 backupBot = true;
                 primaryBot = false;
             }
             else if(!strcmp("--dump_bot", argv[i])){
+                activeConfig = configs::dumpBot();
                 dumpBot = true;
                 primaryBot = false;
+            }
+            else if(!strcmp("--debug_glade_bounds", argv[i])){
+                debugGladeBounds = true;
             }
         }
     }
@@ -4217,6 +4595,7 @@ int main(int argc, char** argv) {
     //Setup GUI
     Glib::RefPtr<Gtk::Application> application = Gtk::Application::create(argc, argv, "edu.uark.razorbotz");
     processArguments(argc, argv);
+    rebuildConfigDerivedGlobals();
     setup_local_key_vectors();
     checkSize();
     setupGUI(application);

@@ -1677,7 +1677,7 @@ void addElementToInfoFrame(std::string label, InfoFrame* frame, const Element& e
     addElementToInfoFrame(frame, element);
 }
 
-static void update_bucket_rotation_image() {
+void updateBucketRotationImage() {
     bucket_rotation_angle = -roll_rotation_angle + arm_angle_deg + bucket_angle_deg;
 
     if (bucketRot_init && bucket_rot_image && bucket_rot_pixbuf) {
@@ -1713,7 +1713,7 @@ void handleZedElements(const std::vector<Element>& elements) {
             roll_rotation_angle = std::round(value);
             if (attitudeIndicator) attitudeIndicator->set_roll(-roll_rotation_angle);
         
-            update_bucket_rotation_image();
+            updateBucketRotationImage();
         }
     }
 }
@@ -1751,7 +1751,7 @@ void handleTalonElements(const std::string& label, const std::vector<Element>& e
                 std::cout << "pos: " << pos << std::endl;
                 std::cout << "arm_angle_deg: " << arm_angle_deg << std::endl;
 
-                update_bucket_rotation_image();
+                updateBucketRotationImage();
 
                 if (!dumpBot) {
                     if (proximityBar) {
@@ -1771,7 +1771,7 @@ void handleTalonElements(const std::string& label, const std::vector<Element>& e
                 std::cout << "pos: " << pos << std::endl;
                 std::cout << "bucket_angle_deg: " << bucket_angle_deg << std::endl;
 
-                update_bucket_rotation_image();
+                updateBucketRotationImage();
             }
             else if (label == "Talon 4") {
                 right_bucket_pos = pos;

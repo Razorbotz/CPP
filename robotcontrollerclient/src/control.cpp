@@ -176,6 +176,7 @@ bool useAltLayout = false;
 bool isController = false;
 bool twoJoysticks = false;
 BotConfig activeConfig = configs::primaryBot();
+bool disableFoxgloveServer = false;
 
 // Backward-compatible flags — derived from activeConfig in processArguments().
 // Use these in code that hasn't been migrated to read activeConfig directly yet.
@@ -1335,6 +1336,9 @@ void create_motor_detail_window(const std::string& label){
     motorWindow->signal_hide().connect([]() {
         allowMotorsDoubleClick = true;
         updateMotorDetails = false;
+        motorWindow->hide();
+        delete motorWindow; 
+        motorWindow = nullptr;
     });
 
     motorWindow->show_all_children();
@@ -2121,6 +2125,10 @@ bool process_payload(const std::vector<uint8_t>& received_payload, std::vector<u
         original_size |= static_cast<uLong>(received_payload[3]) << 8;
         original_size |= static_cast<uLong>(received_payload[4]) << 0;
         
+        if (original_size > 5000000) { // Example: 5MB limit
+            std::cerr << "Payload too large, dropping packet." << std::endl;
+            return false;
+        }
         processed_data.resize(original_size);
         uLongf dest_len = processed_data.size();
 
@@ -3262,8 +3270,10 @@ void initFoxgloveServer() {
 
     foxglove_server->setHandlers(std::move(handlers));
 
-    foxglove_server->start("0.0.0.0", 8765);
-    std::cout << "Foxglove WebSocket Server started on ws://0.0.0.0:8765" << std::endl;
+    if(!disableFoxgloveServer){
+        foxglove_server->start("0.0.0.0", 8765);
+        std::cout << "Foxglove WebSocket Server started on ws://0.0.0.0:8766" << std::endl;
+    }
 }
 
 #include <glib.h>
@@ -3464,7 +3474,6 @@ void clear_sim_inputs() {
     auto children = simContentBox->get_children();
     for (auto* child : children) {
         simContentBox->remove(*child);
-        delete child;
     }
     activeSimWidgets.clear();
     activeSimTypes.clear();
@@ -3990,7 +3999,6 @@ static void clear_encode_inputs() {
     auto children = encodeContentBox->get_children();
     for (auto* child : children) {
         encodeContentBox->remove(*child);
-        delete child;
     }
     encodeWidgets.clear();
     encodeTypes.clear();
@@ -4485,6 +4493,9 @@ void processArguments(int argc, char** argv){
             else if(!strcmp("--debug_glade_bounds", argv[i])){
                 debugGladeBounds = true;
             }
+            else if(!strcmp("--disable_foxglove", argv[i])){
+                disableFoxgloveServer = true;
+            }
         }
     }
 }
@@ -4777,6 +4788,11 @@ int main(int argc, char** argv) {
             else {
                 break; 
             }
+        }
+
+        if (messageBytesList.size() > 100000) { 
+            std::cerr << "Buffer desynced. Purging to prevent leak." << std::endl;
+            messageBytesList.clear();
         }
 
         now = std::chrono::high_resolution_clock::now();

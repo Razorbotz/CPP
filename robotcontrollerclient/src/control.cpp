@@ -317,12 +317,13 @@ PositionBar* right_arm = nullptr;
 PositionBar* left_arm = nullptr;
 PositionBar* right_bucket = nullptr;
 PositionBar* left_bucket = nullptr;
+PositionBar* elevation_bar = nullptr;
 SyncStatusLabel* armSyncLabel = nullptr;
 SyncStatusLabel* bucketSyncLabel = nullptr;
 
-//DrawingArea* bucket_elevation
 Gtk::Box* armBox;
 Gtk::Box* bucketBox;
+Gtk::Box* elevationBox;
 bool arm_init = false, bucket_init = false, roll_init = false, pitch_init = false, bucketLevel_init = false;
 bool bucketRot_init = false, bucketElevation_init = false;
 
@@ -1609,15 +1610,31 @@ void initBucketPos() {
     }
 }
 
-/*
 void initBucketElevation() {
     if (!bucketElevation_init) {
-        . . .
+        if (dumpBot) {
+            bucketElevation_init = true;
+            return;
+        }
+
+        Gtk::Widget* elevation_widget;
+        if (backupBot) {
+            elevation_widget = createSinglePositionIndicator("Bucket Elevation", elevation_bar, 900, 40, 200);
+        }
+
+        else {
+            elevation_widget = createSinglePositionIndicator("Bucket Elevation", elevation_bar, 900, 40, 200);
+        }
+
+        if (noVideo)
+            sensorBox->add(*elevation_widget);
+        else
+            innerRightBox->add(*elevation_widget);
+
         bucketElevation_init = true;
-        window->show_all()
+        window->show_all();
     }
 }
-*/
 
 void initBucketRot() {
     if (!bucketRot_init) {
@@ -2054,10 +2071,10 @@ void updateGUI(BinaryMessage& message) {
 
     if ((label == "Talon 1" || label == "Talon 2") && !arm_init) 
         initArmPos();
-        //initBucketElevation();
     if ((label == "Talon 3" || label == "Talon 4") && !bucket_init){
         initBucketPos();
         initBucketRot();
+        initBucketElevation();
     }
     if (label == "Zed" && !roll_init) 
         initRoll();
@@ -2219,7 +2236,7 @@ void initGUI() {
         if (!dumpBot) {
             initBucketPos();
             initArmPos();
-            //initBucketElevation();
+            initBucketElevation();
             initBucketRot();
         }
         
@@ -3051,6 +3068,7 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
             pRight->add(*innerRightBox);
             if (!backupBot) {
                 initBucketPos();
+                initBucketElevation();
             }
         }
 

@@ -1452,18 +1452,18 @@ bool createImageIndicator(Gtk::Image*& image_widget, Glib::RefPtr<Gdk::Pixbuf>& 
                           const std::string& file_path, Gtk::Container* parent, double initial_rotation,
                           int high_angle, int low_angle, int target_size = 200)
 {
-    image_widget = Gtk::manage(new Gtk::Image());
-    try {
-        pixbuf = Gdk::Pixbuf::create_from_file(file_path);
-    } catch(const Glib::FileError& e) {
-        g_print("Failed to load image: %s\n", e.what().c_str());
-        return false;
+    if(activeConfig.findMechanism("Bucket")){
+        image_widget = Gtk::manage(new Gtk::Image());
+        try {
+            pixbuf = Gdk::Pixbuf::create_from_file(file_path);
+        } catch(const Glib::FileError& e) {
+            g_print("Failed to load image: %s\n", e.what().c_str());
+            return false;
+        }
+            parent->add(*image_widget);
+            Glib::RefPtr<Gdk::Pixbuf> new_pixbuf = rotate_image(pixbuf, initial_rotation, target_size, target_size, high_angle, low_angle);
+            image_widget->set(new_pixbuf);
     }
-    
-    parent->add(*image_widget);
-
-    Glib::RefPtr<Gdk::Pixbuf> new_pixbuf = rotate_image(pixbuf, initial_rotation, target_size, target_size, high_angle, low_angle);
-    image_widget->set(new_pixbuf);
     return true;
 }
 
@@ -1754,13 +1754,9 @@ void handleTalonElements(const std::string& label, const std::vector<Element>& e
                 arm_angle_deg = ((pos - 20) / 900.0) * -57.2 + 17.1;
                 std::cout << "pos: " << pos << std::endl;
                 std::cout << "arm_angle_deg: " << arm_angle_deg << std::endl;
-
                 updateBucketRotationImage();
-
-                if (!dumpBot) {
-                    if (proximityBar) {
-                        proximityBar->set_arm_position(pos);
-                    }
+                if (proximityBar) {
+                    proximityBar->set_arm_position(pos);
                 }
             }
             if(label == "Talon 2") {
@@ -2044,7 +2040,8 @@ void updateGUI(BinaryMessage& message) {
         else if(label == "Drivetrain"){
             handleDrivetrainElements(elements);
         }
-        else if (label == "Lidar" && !dumpBot) {
+        else if (label == "Lidar" && activeConfig.features.hasLidar) {
+            printf("Updating Lidar Elements\n");
             handleLidarElements(elements);
         }
         if(updateMotorDetails){
@@ -2215,20 +2212,22 @@ void initGUI() {
             createMessage("Lidar", "LIDAR");
         }
         else if(dumpBot){
-            createMessage("Neo 1", "NEO");
-            createMessage("Neo 2", "NEO");
-            createMessage("Neo 3", "NEO");
-            createMessage("Neo 4", "NEO");
             createMessage("Falcon 1", "FALCON");
+            createMessage("Falcon 2", "FALCON");
+            createMessage("Falcon 3", "FALCON");
+            createMessage("Falcon 4", "FALCON");
+            createMessage("Neo 1", "NEO");
         }
         
         initRoll();
         initPitch();
-        if (!dumpBot) {
+        if (!activeConfig.findMechanism("Bucket")) {
             initBucketPos();
-            initArmPos();
             //initBucketElevation();
             initBucketRot();
+        }
+        if(!activeConfig.findMechanism("Arm")) {
+            initArmPos();
         }
         
         createMessage("Communication", "COMMUNICATION");
@@ -4242,7 +4241,7 @@ void initSimulatorWindow() {
     }
     else if(dumpBot){
         targets = {
-            "Falcon 1", "Neo 1", "Neo 2", "Neo 3", "Neo 4",
+            "Falcon 1", "Falcon 2", "Falcon 3", "Falcon 4", "Neo 1",
             "Linear 1", "Linear 2", "Zed", "Drivetrain", 
             "Power", "Communication", "Autonomy"
         };

@@ -1514,12 +1514,10 @@ void initMechanisms() {
                 auto* widget = createPositionIndicator("Arm Positions", 4,
                     left_arm, right_arm, armBox, armSyncLabel,
                     mech.sensorMax, 90, 28, 200);
-                // ... add to placeholder ...
             }
             else if (mech.mode == MechanismMode::SINGLE) {
                 auto* widget = createSinglePositionIndicator(
                     "Arm Position", left_arm, mech.sensorMax, 40, 200);
-                // ... add to placeholder ...
             }
             // NONE mode: do nothing
             arm_init = true;
@@ -1593,10 +1591,10 @@ void initBucketPos() {
  
         Gtk::Widget* bucket_widget;
         if (backupBot) {
-            bucket_widget = createSinglePositionIndicator("Bucket Position", left_bucket, 700, 40, 180);
+            bucket_widget = createSinglePositionIndicator("Bucket Position", left_bucket, 920, 40, 180);
         }
         else {
-            bucket_widget = createSinglePositionIndicator("Bucket Position", left_bucket, 700, 40, 180);
+            bucket_widget = createSinglePositionIndicator("Bucket Position", left_bucket, 920, 40, 180);
             //bucket_widget = createPositionIndicator(
             //    "Bucket Positions", 20,
             //    left_bucket, right_bucket, bucketBox, bucketSyncLabel,

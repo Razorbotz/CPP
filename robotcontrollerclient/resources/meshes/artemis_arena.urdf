@@ -2,7 +2,7 @@
 <robot name="arena_mesh">
   <link name="map">
     <visual>
-      <origin xyz="-3.59 -2.65 0" rpy="0 0 0"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
         <mesh filename="artemis_arena.glb"/>
       </geometry>

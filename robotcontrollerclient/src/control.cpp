@@ -192,6 +192,8 @@ Gtk::Window* simulatorWindow = nullptr;
 Gtk::ComboBoxText* simTypeCombo = nullptr;
 Gtk::Box* simContentBox = nullptr;
 
+bool isFlightEngineer = false;
+
 std::map<std::string, Gtk::Widget*> activeSimWidgets;
 
 ProximityBar* proximityBar = nullptr;
@@ -2794,7 +2796,13 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
 
     auto builder = Gtk::Builder::create();
     try {
-        builder->add_from_file("../resources/mainLayout.glade");
+        auto builder = Gtk::Builder::create();
+        if (isFlightEngineer) {
+            builder->add_from_file("../resources/feLayout.glade");
+        }
+        else {
+            builder->add_from_file("../resources/mainLayout.glade");
+        }
     }
     catch(const Glib::Error& ex) {
         std::cerr << "CRITICAL: Failed to load mainLayout.glade: " << ex.what() << std::endl;
@@ -3080,7 +3088,7 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
         
         Gtk::Box* pSpeedLeft = nullptr;
         builder->get_widget("placeholder_speed_left", pSpeedLeft);
-        if (pSpeedLeft) {
+        if (pSpeedLeft && !isFlightEngineer) {
             std::cout << "Initializing left speedometer." << std::endl;
             leftSpeedometer = Gtk::manage(new Speedometer("Left Speedometer"));
             leftSpeedometer->set_size_request(300 * GUI_SCALE, 175 * GUI_SCALE);
@@ -3091,7 +3099,7 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
         }
 
         Gtk::Box* pSpeedRight = nullptr; builder->get_widget("placeholder_speed_right", pSpeedRight);
-        if(pSpeedRight) {
+        if(pSpeedRight && !isFlightEngineer) {
             std::cout << "Initializing right speedometer." << std::endl;
             rightSpeedometer = Gtk::manage(new Speedometer("Right Speedometer"));
             rightSpeedometer->set_size_request(300 * GUI_SCALE, 175 * GUI_SCALE);
@@ -3102,14 +3110,14 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
         }
 
         Gtk::Box* pGear = nullptr; builder->get_widget("placeholder_gear_dial", pGear);
-        if(pGear) {
+        if(pGear && !isFlightEngineer) {
             std::cout << "Initializing gear dial." << std::endl;
             gear_dial = create_gear_dial(currentGear, gears, gear_labels);
             pGear->add(*gear_dial);
             //highlight_gear(currentGear, gears, gear_labels, gear_dial);
         }
         
-        if (rollImagePlaceholder) {
+        if (rollImagePlaceholder && !isFlightEngineer) {
             std::cout << "Initializing combined attitude indicator (roll + pitch)." << std::endl;
             attitudeIndicator = Gtk::manage(new ArtificialHorizon("Attitude"));
             attitudeIndicator->set_size_request(ROLL_PITCH_IMAGE_SIZE * GUI_SCALE,
@@ -4493,6 +4501,21 @@ void processArguments(int argc, char** argv){
             else if(!strcmp("--disable_foxglove", argv[i])){
                 disableFoxgloveServer = true;
             }
+            else if(!strcmp("--fe", argv[i]) || !strcmp("--flight_engineer", argv[i])){
+                isFlightEngineer = true;
+            }
+            else if(!strcmp("--forward", argv[i])){
+                // Format: --forward <IP> <Telemetry_Port> <Video_Port>
+                if(i+3 < argc){
+                    std::string fe_ip = argv[i+1];
+                    int fe_port = std::stoi(argv[i+2]);
+                    int fe_video_port = std::stoi(argv[i+3]);
+                    setupForwarding(fe_ip, fe_port, fe_video_port);
+                    i += 3;
+                } else {
+                    std::cerr << "Error: --forward requires <IP> <Telemetry_Port> <Video_Port>\n";
+                }
+            }
         }
     }
 }
@@ -4612,6 +4635,11 @@ int main(int argc, char** argv) {
     moveWindows();
     initGUI();
     initFoxgloveServer();
+
+    if (isFlightEngineer) {
+        // Ports: Robot 1 Telemetry (5001), Robot 2 Telemetry (5002), Video (5010)
+        setupPassiveListening(5001, 5002, 5010, 5011);
+    }
     
     //Start a thread to listen to updates from the robot
     videoDisconnectDispatcher.connect([&]() {
@@ -4806,6 +4834,8 @@ int main(int argc, char** argv) {
             sendVideoHeartbeat();
         }
 
+        if(isFlightEngineer)
+            continue;
 
         /******************************Handle control events******************************/
         while(SDL_PollEvent(&event)){

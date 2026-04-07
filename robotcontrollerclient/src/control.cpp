@@ -1623,11 +1623,12 @@ void initBucketElevation() {
 
         Gtk::Widget* elevation_widget;
         if (backupBot) {
-            elevation_widget = createSinglePositionIndicator("Bucket Elevation", elevation_bar, 900, 40, 200);
+            elevation_widget = createSinglePositionIndicator("Bucket Elevation", elevation_bar, 50, 40, 200);
         }
 
+        // if primaryBot
         else {
-            elevation_widget = createSinglePositionIndicator("Bucket Elevation", elevation_bar, 900, 40, 200);
+            elevation_widget = createSinglePositionIndicator("Bucket Elevation", elevation_bar, 70, 40, 200);
         }
 
         if (noVideo)
@@ -1706,6 +1707,46 @@ void updateBucketRotationImage() {
     }
 }
 
+void updateBucketElevationBar() {
+    // Degrees to radians helper
+    auto degToRad = [](double deg){ return deg * (M_PI / 180.0); };
+
+    double bucket_height_cm = 0.0;
+
+    if (backupBot)
+    {
+        const double H  = 16.375;
+        const double L_arm = 80.0;
+        const double L_bucket = 38.1;
+
+        double armRad = degToRad(arm_angle_deg);
+        double bucketRad = degToRad(arm_angle_deg + bucket_angle_deg);
+
+        bucket_height_cm = H - L_arm * std::sin(armRad) - L_bucket * std::sin(bucketRad);
+
+        if (elevation_bar) elevation_bar->set_position(bucket_height_cm);
+    }
+    else if (primaryBot)
+    {
+        // UPDATE ONCE VALUES ARE MEASURED
+        /*
+        const double H  = 
+        const double L_arm = 
+        const double L_bucket =
+
+        double absolute_arm_deg = -roll_rotation_angle + arm_angle_deg;
+        double absolute_bucket_deg = absolute_arm_deg + bucket_angle_deg;
+
+        double absolute_arm_rad = degToRad(absolute_arm_deg);
+        double absolute_bucket_rad = degToRad(absolute_bucket_deg);
+
+        bucket_height_cm = H + L_arm * std::sin(absolute_arm_rad) + L_bucket * std::sin(absolute_bucket_rad);
+
+        if (elevation_bar) elevation_bar->set_position(bucket_height_cm);
+        */
+    }
+}
+
 /*
 The following functions with the names handleNodeElements handle any 
 specific logic that is required to update any widgets that use the 
@@ -1735,6 +1776,7 @@ void handleZedElements(const std::vector<Element>& elements) {
             if (attitudeIndicator) attitudeIndicator->set_roll(-roll_rotation_angle);
         
             updateBucketRotationImage();
+            updateBucketElevationBar();
         }
     }
 }
@@ -1773,6 +1815,7 @@ void handleTalonElements(const std::string& label, const std::vector<Element>& e
                 std::cout << "arm_angle_deg: " << arm_angle_deg << std::endl;
 
                 updateBucketRotationImage();
+                updateBucketElevationBar();
 
                 if (!dumpBot) {
                     if (proximityBar) {
@@ -1793,6 +1836,7 @@ void handleTalonElements(const std::string& label, const std::vector<Element>& e
                 std::cout << "bucket_angle_deg: " << bucket_angle_deg << std::endl;
 
                 updateBucketRotationImage();
+                updateBucketElevationBar();
             }
             else if (label == "Talon 4") {
                 right_bucket_pos = pos;
@@ -2435,7 +2479,7 @@ std::vector<std::string> local_falcon_keys = get_falcon_keys();
 std::vector<std::string> local_neo_keys = get_neo_keys();
 std::vector<std::string> local_kraken_keys = get_kraken_keys();
 std::vector<std::string> local_linear_keys = get_linear_keys();
-std::vector<std::string> local_autonomy_keys = get_autonomy_keys();
+std::vector<std::string> locaL_armutonomy_keys = get_autonomy_keys();
 std::vector<std::string> local_communication_keys = get_communication_keys();
 std::vector<std::string> local_power2_keys = get_power2_keys();
 std::vector<std::string> local_power_keys = get_power_keys();
@@ -2458,7 +2502,7 @@ void setup_local_key_vectors() {
         local_key_vectors["Kraken"] = &local_kraken_keys;
  
     local_key_vectors["Linear"] = &local_linear_keys;
-    local_key_vectors["Autonomy"] = &local_autonomy_keys;
+    local_key_vectors["Autonomy"] = &locaL_armutonomy_keys;
     local_key_vectors["Communication"] = &local_communication_keys;
     local_key_vectors["Power2"] = &local_power2_keys;
     local_key_vectors["Power"] = &local_power_keys;
@@ -3356,7 +3400,7 @@ void publishRobotTransform() {
     // --- SIMULATED WHEEL SPIN MATH ---
     static double prev_x = true_base_x;
     static double prev_y = true_base_y;
-    static double global_wheel_angle_rad = 0.0;
+    static double global_wheeL_armngle_rad = 0.0;
 
     double dx = true_base_x - prev_x;
     double dy = true_base_y - prev_y;
@@ -3374,7 +3418,7 @@ void publishRobotTransform() {
             distance = -distance; 
         }
 
-        global_wheel_angle_rad += (distance / 0.210439);
+        global_wheeL_armngle_rad += (distance / 0.210439);
         
         prev_x = true_base_x;
         prev_y = true_base_y;
@@ -3446,7 +3490,7 @@ void publishRobotTransform() {
     fl_tf["transform"]["translation"]["x"] = 0.8411;
     fl_tf["transform"]["translation"]["y"] = -0.019814;
     fl_tf["transform"]["translation"]["z"] = 0.235883; 
-    fl_tf["transform"]["rotation"] = euler_to_quat(0.0, global_wheel_angle_rad, 0.0);
+    fl_tf["transform"]["rotation"] = euler_to_quat(0.0, global_wheeL_armngle_rad, 0.0);
     tf_update["transforms"].push_back(fl_tf);
 
     // Front Right
@@ -3456,7 +3500,7 @@ void publishRobotTransform() {
     fr_tf["transform"]["translation"]["x"] = 0.8411;
     fr_tf["transform"]["translation"]["y"] = -0.538167;
     fr_tf["transform"]["translation"]["z"] = 0.235883; 
-    fr_tf["transform"]["rotation"] = euler_to_quat(0.0, global_wheel_angle_rad, 0.0);
+    fr_tf["transform"]["rotation"] = euler_to_quat(0.0, global_wheeL_armngle_rad, 0.0);
     tf_update["transforms"].push_back(fr_tf);
 
     // Back Left
@@ -3466,7 +3510,7 @@ void publishRobotTransform() {
     bl_tf["transform"]["translation"]["x"] = 0.18387;
     bl_tf["transform"]["translation"]["y"] = 0.0;
     bl_tf["transform"]["translation"]["z"] = 0.23588; 
-    bl_tf["transform"]["rotation"] = euler_to_quat(0.0, global_wheel_angle_rad, 0.0);
+    bl_tf["transform"]["rotation"] = euler_to_quat(0.0, global_wheeL_armngle_rad, 0.0);
     tf_update["transforms"].push_back(bl_tf);
 
     // Back Right
@@ -3476,7 +3520,7 @@ void publishRobotTransform() {
     br_tf["transform"]["translation"]["x"] = 0.183875;
     br_tf["transform"]["translation"]["y"] = -0.475667;
     br_tf["transform"]["translation"]["z"] = 0.235883; 
-    br_tf["transform"]["rotation"] = euler_to_quat(0.0, global_wheel_angle_rad, -3.1415);
+    br_tf["transform"]["rotation"] = euler_to_quat(0.0, global_wheeL_armngle_rad, -3.1415);
     tf_update["transforms"].push_back(br_tf);
 
     std::string json_str = tf_update.dump();

@@ -12,6 +12,7 @@
 #include <cstring>
 #include <cerrno>
 #include <poll.h>
+#include <thread>
 
 // GTK and System includes
 #include <gtkmm.h>
@@ -21,7 +22,6 @@
 #include <ifaddrs.h>
 #include <unistd.h>
 #include <fcntl.h>
-#include <thread>
 
 // OpenCV / FFmpeg
 #include <opencv2/opencv.hpp>
@@ -54,7 +54,7 @@ static void capture_udp_payload(const uint8_t* data, size_t len, bool from_orin)
     while (g_cap_q.size() > g_cap_max) g_cap_q.pop_front();
 }
 
-// Accessors used by the --encode_tool window (declare these in NetworkHandler.hpp)
+// Accessors used by the --encode_tool window
 bool getLatestCapturedUdpPacket(CapturedUdpPacket& out) {
     std::lock_guard<std::mutex> lk(g_cap_mtx);
     if (g_cap_q.empty()) return false;
@@ -66,7 +66,6 @@ std::vector<CapturedUdpPacket> getCapturedUdpPacketsSnapshot() {
     std::lock_guard<std::mutex> lk(g_cap_mtx);
     return std::vector<CapturedUdpPacket>(g_cap_q.begin(), g_cap_q.end());
 }
-
 
 // --- Helpers ---
 static inline void set_nonblocking(int fd) {
@@ -84,20 +83,44 @@ static inline void close_udp_socket(int& fd) {
     }
 }
 
-std::atomic<std::chrono::high_resolution_clock::time_point> last_rx_orin_ms{};
-std::atomic<std::chrono::high_resolution_clock::time_point> last_rx_nano_ms{};
+// --- Forwarding / Flight Engineer Globals ---
+int forwardSock = -1;
+int forwardVideoSock = -1; 
+struct sockaddr_in fe_addr;
+struct sockaddr_in fe_video_addr; 
+bool isForwarding = false;
+bool isFlightEngineerMode = false;
 
-std::atomic<bool> orin_ip_known{false};
-std::atomic<bool> nano_ip_known{false};
-in_addr orin_ip{};
-in_addr nano_ip{};
+// Split screen matrices for FE Mode
+cv::Mat fe_left_frame;
+cv::Mat fe_right_frame;
 
-std::chrono::high_resolution_clock::time_point lastPacketOrinMs() {
-    return last_rx_orin_ms.load(std::memory_order_relaxed);
-}
+void setupForwarding(const std::string& fe_ip, int fe_port, int fe_video_port) {
+    // 1. Setup Telemetry Forwarding
+    forwardSock = socket(AF_INET, SOCK_DGRAM, 0);
+    if (forwardSock < 0) {
+        perror("Forwarding telemetry socket creation failed");
+    } else {
+        memset(&fe_addr, 0, sizeof(fe_addr));
+        fe_addr.sin_family = AF_INET;
+        fe_addr.sin_port = htons(fe_port);
+        inet_pton(AF_INET, fe_ip.c_str(), &fe_addr.sin_addr);
+    }
+    
+    // 2. Setup Video Forwarding
+    forwardVideoSock = socket(AF_INET, SOCK_DGRAM, 0);
+    if (forwardVideoSock < 0) {
+        perror("Forwarding video socket creation failed");
+    } else {
+        memset(&fe_video_addr, 0, sizeof(fe_video_addr));
+        fe_video_addr.sin_family = AF_INET;
+        fe_video_addr.sin_port = htons(fe_video_port);
+        inet_pton(AF_INET, fe_ip.c_str(), &fe_video_addr.sin_addr);
+    }
 
-std::chrono::high_resolution_clock::time_point lastPacketNanoMs() {
-    return last_rx_nano_ms.load(std::memory_order_relaxed);
+    isForwarding = true;
+    std::cout << "Forwarding telemetry to " << fe_ip << ":" << fe_port 
+              << " and video to " << fe_ip << ":" << fe_video_port << "\n";
 }
 
 // --- Main Robot Server Globals & Implementation ---
@@ -114,6 +137,73 @@ struct sockaddr_in serv_addr;
 struct sockaddr_in serv_addr2;
 socklen_t addr_len = sizeof(serv_addr);
 socklen_t addr_len2 = sizeof(serv_addr2);
+
+void setupPassiveListening(int port1, int port2, int video_port1, int video_port2) {
+    isFlightEngineerMode = true;
+
+    auto bind_port = [](int& fd, int port) {
+        fd = socket(AF_INET, SOCK_DGRAM, 0);
+        if (fd < 0) return;
+        int opt = 1;
+        setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+        set_nonblocking(fd);
+
+        sockaddr_in addr{};
+        addr.sin_family = AF_INET;
+        addr.sin_addr.s_addr = INADDR_ANY;
+        addr.sin_port = htons(port);
+
+        if (bind(fd, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
+            perror("FE bind failed");
+        } else {
+            std::cout << "FE passively listening on port " << port << "\n";
+        }
+    };
+
+    // Close any existing sockets before rebinding
+    close_udp_socket(sock);
+    close_udp_socket(sock2);
+    extern int videoSock; 
+    extern int videoSock2;
+    close_udp_socket(videoSock);
+    close_udp_socket(videoSock2);
+
+    // Bind Telemetry Ports
+    bind_port(sock, port1);
+    bind_port(sock2, port2);
+    
+    // Bind Video Ports
+    bind_port(videoSock, video_port1);
+    bind_port(videoSock2, video_port2);
+    
+    // Trick the state machines into allowing the receive loops to run freely
+    connected = true;
+    connected2 = true;
+    initialized = true;
+    initialized2 = true;
+    
+    extern bool videoConnected;
+    extern bool isStreamingActive;
+    videoConnected = true;
+    isStreamingActive = true; 
+}
+
+
+std::atomic<std::chrono::high_resolution_clock::time_point> last_rx_orin_ms{};
+std::atomic<std::chrono::high_resolution_clock::time_point> last_rx_nano_ms{};
+
+std::atomic<bool> orin_ip_known{false};
+std::atomic<bool> nano_ip_known{false};
+in_addr orin_ip{};
+in_addr nano_ip{};
+
+std::chrono::high_resolution_clock::time_point lastPacketOrinMs() {
+    return last_rx_orin_ms.load(std::memory_order_relaxed);
+}
+
+std::chrono::high_resolution_clock::time_point lastPacketNanoMs() {
+    return last_rx_nano_ms.load(std::memory_order_relaxed);
+}
 
 std::chrono::high_resolution_clock::time_point lastHeartbeatTime;
 std::chrono::high_resolution_clock::time_point lastHeartbeatTime2;
@@ -139,6 +229,8 @@ bool isServerInitialized2() { return initialized2; }
 bool isSilentRunning2() { return silentRunning2; }
 
 static inline void send_to_both(const uint8_t* buf, size_t len) {
+    if (isFlightEngineerMode) return; // FE never transmits control data
+
     if (connected && sock > 0) {
         sendto(sock, buf, len, 0, (struct sockaddr *)&serv_addr, addr_len);
     }
@@ -220,6 +312,7 @@ std::atomic<ConnStatus> connection_status = ConnStatus::PENDING;
 std::atomic<ConnStatus> connection_status2 = ConnStatus::PENDING;
 
 void connectToServer(ServerUI& ui, bool useOrin, Glib::Dispatcher& dispatcher) {
+    if (isFlightEngineerMode) return; // Block manual connections in FE mode
     const bool is_orin = useOrin;
 
     int& sock_ref = is_orin ? sock : sock2;
@@ -301,8 +394,8 @@ void connectToServer(ServerUI& ui, bool useOrin, Glib::Dispatcher& dispatcher) {
 
             if (is_orin) {
                 connection_status = ConnStatus::SUCCESS;
-                lastHeartbeatTime = now;                    // change type if needed
-                last_rx_orin_ms    = now;                   // ideally steady_clock too
+                lastHeartbeatTime = now;                    
+                last_rx_orin_ms    = now;                   
             }
             else {
                 connection_status2 = ConnStatus::SUCCESS;
@@ -355,10 +448,11 @@ void update_connection_status2(ServerUI& ui) {
 }
 
 void connectOrDisconnect(ServerUI& ui, bool useOrin, Glib::Dispatcher& dispatcher) {
+    if (isFlightEngineerMode) return;
     const bool is_orin = useOrin;
 
     Gtk::Button* btn = is_orin ? ui.connectButton : ui.connectButton2;
-    Gtk::Label*  lbl = is_orin ? ui.connectionStatusLabel : ui.connectionStatusLabel2;
+    Gtk::Label* lbl = is_orin ? ui.connectionStatusLabel : ui.connectionStatusLabel2;
 
     if (!btn || !lbl) return;
 
@@ -407,7 +501,7 @@ namespace {
 }
 
 void silentRun(ServerUI& ui) {
-    if (!connected || !ui.silentRunButton) return;
+    if (!connected || !ui.silentRunButton || isFlightEngineerMode) return;
 
     std::string currentButtonState = ui.silentRunButton->get_label();
 
@@ -430,7 +524,7 @@ void silentRun(ServerUI& ui) {
 }
 
 void silentRun2(ServerUI& ui) {
-    if (!connected2 || !ui.silentRunButton2) return;
+    if (!connected2 || !ui.silentRunButton2 || isFlightEngineerMode) return;
 
     std::string currentButtonState = ui.silentRunButton2->get_label();
 
@@ -464,6 +558,7 @@ void rowActivated(Gtk::ListBoxRow* listBoxRow, ServerUI& ui) {
 }
 
 static void shutdownRobot() {
+    if (isFlightEngineerMode) return;
     uint8_t message[2];
     message[0] = 2; // messageSize
     message[1] = 8; // command (shutdown)
@@ -535,11 +630,11 @@ void broadcastListen() {
 }
 
 void adjustRobotList(Gtk::ListBox* addressListBox) {
+    if (!addressListBox) return;
     std::lock_guard<std::mutex> lock(robotListMutex);
     time_t now = time(nullptr);
     std::vector<std::string> robots_in_gui;
     
-    // Build a list of robots currently in the GUI
     for (auto* child : addressListBox->get_children()) {
         if (auto* row = dynamic_cast<Gtk::ListBoxRow*>(child)) {
             auto* label = static_cast<Gtk::Label*>(row->get_child());
@@ -547,11 +642,9 @@ void adjustRobotList(Gtk::ListBox* addressListBox) {
         }
     }
 
-    // Remove stale robots from the GUI and the data list
     robotList.erase(std::remove_if(robotList.begin(), robotList.end(),
         [&](const RemoteRobot& robot) {
             if (now - robot.lastSeenTime > 12) {
-                // Find and remove the corresponding row from the ListBox
                 for (auto* child : addressListBox->get_children()) {
                      if (auto* row = dynamic_cast<Gtk::ListBoxRow*>(child)) {
                         auto* label = static_cast<Gtk::Label*>(row->get_child());
@@ -561,13 +654,12 @@ void adjustRobotList(Gtk::ListBox* addressListBox) {
                         }
                     }
                 }
-                return true; // Remove from robotList
+                return true; 
             }
             return false;
         }),
         robotList.end());
 
-    // Add new robots to the GUI
     for (const auto& robot : robotList) {
         if (std::find(robots_in_gui.begin(), robots_in_gui.end(), robot.tag) == robots_in_gui.end()) {
             addressListBox->append(*Gtk::manage(new Gtk::Label(robot.tag)));
@@ -579,6 +671,7 @@ void adjustRobotList(Gtk::ListBox* addressListBox) {
 // --- Video Server Globals & Implementation ---
 
 int videoSock = -1;
+int videoSock2 = -1; 
 bool videoConnected = false;
 bool isStreamingActive = false;
 struct sockaddr_in video_serv_addr;
@@ -627,7 +720,7 @@ std::atomic<ConnStatus> video_connection_status = ConnStatus::PENDING;
 
 // --- Connection Logic ---
 static void connectToVideoServer(VideoServerUI& ui, Glib::Dispatcher& dispatcher) {
-    if (videoConnected) return;
+    if (videoConnected || isFlightEngineerMode) return;
 
     memset(&video_serv_addr, 0, sizeof(video_serv_addr));
     video_serv_addr.sin_family = AF_INET;
@@ -705,6 +798,7 @@ static void disconnectFromVideoServer(VideoServerUI& ui) {
 }
 
 void videoConnectOrDisconnect(VideoServerUI& ui, Glib::Dispatcher& dispatcher) {
+    if (isFlightEngineerMode) return;
     if (ui.connectButton->get_label() == "Connect") {
         ui.connectButton->set_sensitive(false);
         ui.connectionStatusLabel->set_text("Connecting...");
@@ -719,7 +813,7 @@ void videoConnectOrDisconnect(VideoServerUI& ui, Glib::Dispatcher& dispatcher) {
 
 // --- UI Interaction Functions ---
 void videoStream(VideoServerUI& ui) {
-    if (!videoConnected) return;
+    if (!videoConnected || isFlightEngineerMode) return; // Guard FE
     
     uint8_t message[3];
     message[0] = 3;
@@ -857,13 +951,10 @@ struct FrameChunkHeader {
     uint16_t total_chunks;
 } __attribute__((packed));
 
-std::unordered_map<uint16_t, std::vector<std::vector<uint8_t>>> frameChunks;
-std::unordered_map<uint16_t, size_t> frameSizes;
-uint16_t lastFrameID = 0;
 
-void videoMain(cv::Mat& latestFrame, std::mutex& frameMutex, std::atomic<bool>& newFrameAvailable, Glib::Dispatcher& videoDisconnectDispatcher, std::atomic<bool>& shouldVideoDisconnect) {
+// Decoded separately for each stream to prevent frame merging issues
+void videoDecoderThread(int& targetSock, int side, cv::Mat& latestFrame, std::mutex& frameMutex, std::atomic<bool>& newFrameAvailable, Glib::Dispatcher& videoDisconnectDispatcher, std::atomic<bool>& shouldVideoDisconnect) {
     const AVCodec* codec = avcodec_find_decoder(AV_CODEC_ID_H264);
-
     if (!codec) {
         std::cerr << "H.264 decoder not found" << std::endl;
         return;
@@ -896,16 +987,19 @@ void videoMain(cv::Mat& latestFrame, std::mutex& frameMutex, std::atomic<bool>& 
     uint8_t* bgr_buffer = nullptr;
 
     std::vector<uint8_t> frameDataBuffer(1000000);
+    
+    // Kept local to thread to prevent collision between multiple streams
+    std::unordered_map<uint16_t, std::vector<std::vector<uint8_t>>> frameChunks;
 
     bool running = true;
     while (running) {
-        if (!videoConnected || !isStreamingActive) {
+        if ((!videoConnected || !isStreamingActive) && !isFlightEngineerMode) {
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
             continue;
         }
 
         auto now = std::chrono::high_resolution_clock::now();
-        if (std::chrono::duration_cast<std::chrono::seconds>(now - last_packet_time).count() >= 3) {
+        if (std::chrono::duration_cast<std::chrono::seconds>(now - last_packet_time).count() >= 3 && !isFlightEngineerMode) {
             std::cerr << "Video stream timed out." << std::endl;
             isStreamingActive = false;
             shouldVideoDisconnect = true;
@@ -913,9 +1007,16 @@ void videoMain(cv::Mat& latestFrame, std::mutex& frameMutex, std::atomic<bool>& 
             continue;
         }
 
-        ssize_t bytesRead = recvfrom(videoSock, frameDataBuffer.data(), frameDataBuffer.size(), 0, NULL, NULL);
+        ssize_t bytesRead = recvfrom(targetSock, frameDataBuffer.data(), frameDataBuffer.size(), 0, NULL, NULL);
         if (bytesRead > 0) {
             last_packet_time = std::chrono::high_resolution_clock::now();
+            
+            // --- FE VIDEO PACKET FORWARDING (Only executes on Pilot client) ---
+            if (isForwarding && forwardVideoSock > 0) {
+                sendto(forwardVideoSock, frameDataBuffer.data(), bytesRead, 0, 
+                       (struct sockaddr*)&fe_video_addr, sizeof(fe_video_addr));
+            }
+            // ------------------------------------------------------------------
         }
         if (bytesRead < (ssize_t)sizeof(FrameChunkHeader))
             continue;
@@ -974,7 +1075,8 @@ void videoMain(cv::Mat& latestFrame, std::mutex& frameMutex, std::atomic<bool>& 
 
                         cv::Mat decoded_mat(codec_ctx->height, codec_ctx->width, CV_8UC1, bgr_frame->data[0], bgr_frame->linesize[0]);
 
-                        int target_width = 1600 * GUI_SCALE;
+                        // If in FE mode, resize each frame to half width for split screen
+                        int target_width = (isFlightEngineerMode) ? (800 * GUI_SCALE) : (1600 * GUI_SCALE);
                         int target_height = 1000 * GUI_SCALE;
 
                         cv::Mat display_img;
@@ -982,7 +1084,25 @@ void videoMain(cv::Mat& latestFrame, std::mutex& frameMutex, std::atomic<bool>& 
 
                         {
                             std::lock_guard<std::mutex> lock(frameMutex);
-                            latestFrame = display_img.clone();
+                            
+                            // FE Mode Split Screen Sticher
+                            if (isFlightEngineerMode) {
+                                if (side == 1) fe_left_frame = display_img.clone();
+                                else fe_right_frame = display_img.clone();
+
+                                if (!fe_left_frame.empty() && !fe_right_frame.empty()) {
+                                    cv::hconcat(fe_left_frame, fe_right_frame, latestFrame);
+                                } else if (!fe_left_frame.empty()) {
+                                    latestFrame = fe_left_frame.clone();
+                                } else if (!fe_right_frame.empty()) {
+                                    latestFrame = fe_right_frame.clone();
+                                }
+                            } 
+                            // Pilot Mode Full Screen
+                            else {
+                                latestFrame = display_img.clone();
+                            }
+                            
                             newFrameAvailable = true;
                         }
                     }
@@ -999,6 +1119,19 @@ void videoMain(cv::Mat& latestFrame, std::mutex& frameMutex, std::atomic<bool>& 
     av_packet_free(&pkt);
     avcodec_free_context(&codec_ctx);
     av_parser_close(parser);
+}
+
+void videoMain(cv::Mat& latestFrame, std::mutex& frameMutex, std::atomic<bool>& newFrameAvailable, Glib::Dispatcher& videoDisconnectDispatcher, std::atomic<bool>& shouldVideoDisconnect) {
+    if (isFlightEngineerMode) {
+        // Spawn two decoder threads for both FE video sockets
+        std::thread t1(videoDecoderThread, std::ref(videoSock), 1, std::ref(latestFrame), std::ref(frameMutex), std::ref(newFrameAvailable), std::ref(videoDisconnectDispatcher), std::ref(shouldVideoDisconnect));
+        std::thread t2(videoDecoderThread, std::ref(videoSock2), 2, std::ref(latestFrame), std::ref(frameMutex), std::ref(newFrameAvailable), std::ref(videoDisconnectDispatcher), std::ref(shouldVideoDisconnect));
+        t1.join();
+        t2.join();
+    } else {
+        // Standard Pilot decoding
+        videoDecoderThread(videoSock, 0, latestFrame, frameMutex, newFrameAvailable, videoDisconnectDispatcher, shouldVideoDisconnect);
+    }
 }
 
 // --- Functions to send data  ---
@@ -1058,12 +1191,18 @@ int receiveRobotData(std::vector<uint8_t>& buffer) {
                            (struct sockaddr*)&from, &from_len);
         if (n <= 0) return;
 
+        // --- FE PACKET FORWARDING ---
+        if (isForwarding && forwardSock > 0) {
+            sendto(forwardSock, recv_buffer, n, 0, (struct sockaddr*)&fe_addr, sizeof(fe_addr));
+        }
+        // ----------------------------
+
         std::chrono::high_resolution_clock::time_point t = std::chrono::high_resolution_clock::now();
         if (from.sin_addr.s_addr == orin_ip.s_addr) last_rx_orin_ms.store(t, std::memory_order_relaxed);
         else if (from.sin_addr.s_addr == nano_ip.s_addr) last_rx_nano_ms.store(t, std::memory_order_relaxed);
 
         buffer.assign(recv_buffer, recv_buffer + n);
-        // Capture raw UDP payload for encode-tool inspection
+        
         bool from_orin = false;
         if (orin_ip_known.load(std::memory_order_relaxed) && from.sin_addr.s_addr == orin_ip.s_addr) from_orin = true;
         else if (nano_ip_known.load(std::memory_order_relaxed) && from.sin_addr.s_addr == nano_ip.s_addr) from_orin = false;
@@ -1121,6 +1260,7 @@ void sendJoystickHat(uint8_t which, uint8_t hat, uint8_t value) {
 
 void sendHeartbeat() {
     if (!connected && !connected2) return;
+    if (isFlightEngineerMode) return;
 
     auto t = std::chrono::high_resolution_clock::now();
     lastHeartbeatTime = t;
@@ -1134,6 +1274,7 @@ void sendHeartbeat() {
 
 void sendVideoHeartbeat() {
     if (!videoConnected) return;
+    if (isFlightEngineerMode) return;
     uint8_t message[2];
     message[0] = 2;
     message[1] = 0;

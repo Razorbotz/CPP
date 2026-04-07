@@ -261,9 +261,10 @@ inline BotConfig dumpBot() {
 
     cfg.motors = {
         // Conveyor belt motor
-        {"Falcon 1", "Dump Bucket", MotorType::FALCON, MotorRole::CONVEYOR, PanelPosition::UPPER_LEFT, true},
+        {"Neo 1", "Dump Bucket", MotorType::FALCON, MotorRole::CONVEYOR, PanelPosition::UPPER_LEFT, true},
         // Drive motors (Falcons)
-        {"Falcon 2", "Falcon 2", MotorType::FALCON, MotorRole::DRIVE, PanelPosition::LOWER_LEFT,  false},
+        {"Falcon 1", "Falcon 1", MotorType::FALCON, MotorRole::DRIVE, PanelPosition::LOWER_LEFT,  false},
+        {"Falcon 2", "Falcon 2", MotorType::FALCON, MotorRole::DRIVE, PanelPosition::LOWER_RIGHT,  false},
         {"Falcon 3", "Falcon 3", MotorType::FALCON, MotorRole::DRIVE, PanelPosition::LOWER_LEFT,  false},
         {"Falcon 4", "Falcon 4", MotorType::FALCON, MotorRole::DRIVE, PanelPosition::LOWER_RIGHT, false},
         // You can add more here as the dump bot design evolves

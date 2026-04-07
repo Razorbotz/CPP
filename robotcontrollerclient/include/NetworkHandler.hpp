@@ -107,6 +107,10 @@ bool isSilentRunning2();
 bool isVideoStreamActive();
 bool isVideoConnected();
 
+extern bool isFlightEngineerMode;
+extern bool isForwarding;
+void setupForwarding(const std::string& fe_ip, int fe_port, int fe_video_port);
+void setupPassiveListening(int port1, int port2, int video_port1, int video_port2);
 
 extern std::atomic<std::chrono::high_resolution_clock::time_point> last_rx_orin_ms;
 extern std::atomic<std::chrono::high_resolution_clock::time_point> last_rx_nano_ms;

@@ -176,11 +176,18 @@ void setupPassiveListening(int port1, int port2, int video_port1, int video_port
     bind_port(videoSock, video_port1);
     bind_port(videoSock2, video_port2);
     
-    // Trick the state machines into allowing the receive loops to run freely
-    connected = true;
-    connected2 = true;
+    // FE mode listens passively on both sockets, but that must not imply the
+    // robots are currently connected. Connection health is derived from recent
+    // packet timestamps instead of these manual-connect flags.
+    connected = false;
+    connected2 = false;
     initialized = true;
     initialized2 = true;
+
+    last_rx_orin_ms.store(std::chrono::high_resolution_clock::time_point{}, std::memory_order_relaxed);
+    last_rx_nano_ms.store(std::chrono::high_resolution_clock::time_point{}, std::memory_order_relaxed);
+    fe_left_frame.release();
+    fe_right_frame.release();
     
     extern bool videoConnected;
     extern bool isStreamingActive;
@@ -952,7 +959,9 @@ struct FrameChunkHeader {
 } __attribute__((packed));
 
 
-// Decoded separately for each stream to prevent frame merging issues
+// Decode one video stream per thread. In Flight Engineer mode, each stream updates
+// its own global frame buffer instead of building a stitched composite frame.
+// side: 0 = pilot/single stream, 1 = FE Robot 1 pane, 2 = FE Robot 2 pane.
 void videoDecoderThread(int& targetSock, int side, cv::Mat& latestFrame, std::mutex& frameMutex, std::atomic<bool>& newFrameAvailable, Glib::Dispatcher& videoDisconnectDispatcher, std::atomic<bool>& shouldVideoDisconnect) {
     const AVCodec* codec = avcodec_find_decoder(AV_CODEC_ID_H264);
     if (!codec) {
@@ -1075,7 +1084,8 @@ void videoDecoderThread(int& targetSock, int side, cv::Mat& latestFrame, std::mu
 
                         cv::Mat decoded_mat(codec_ctx->height, codec_ctx->width, CV_8UC1, bgr_frame->data[0], bgr_frame->linesize[0]);
 
-                        // If in FE mode, resize each frame to half width for split screen
+                        // In FE mode, size each stream for its own pane. In pilot mode,
+                        // preserve the existing full-size single-stream path.
                         int target_width = (isFlightEngineerMode) ? (800 * GUI_SCALE) : (1600 * GUI_SCALE);
                         int target_height = 1000 * GUI_SCALE;
 
@@ -1084,25 +1094,22 @@ void videoDecoderThread(int& targetSock, int side, cv::Mat& latestFrame, std::mu
 
                         {
                             std::lock_guard<std::mutex> lock(frameMutex);
-                            
-                            // FE Mode Split Screen Sticher
-                            if (isFlightEngineerMode) {
-                                if (side == 1) fe_left_frame = display_img.clone();
-                                else fe_right_frame = display_img.clone();
 
-                                if (!fe_left_frame.empty() && !fe_right_frame.empty()) {
-                                    cv::hconcat(fe_left_frame, fe_right_frame, latestFrame);
-                                } else if (!fe_left_frame.empty()) {
-                                    latestFrame = fe_left_frame.clone();
-                                } else if (!fe_right_frame.empty()) {
-                                    latestFrame = fe_right_frame.clone();
+                            if (isFlightEngineerMode) {
+                                if (side == 1) {
+                                    fe_left_frame = display_img.clone();
                                 }
-                            } 
-                            // Pilot Mode Full Screen
+                                else if (side == 2) {
+                                    fe_right_frame = display_img.clone();
+                                }
+                                // Leave latestFrame untouched in FE mode. The FE UI now reads
+                                // fe_left_frame and fe_right_frame directly for its two panes.
+                            }
                             else {
+                                // Pilot mode keeps the original single-frame behavior.
                                 latestFrame = display_img.clone();
                             }
-                            
+
                             newFrameAvailable = true;
                         }
                     }
@@ -1123,7 +1130,14 @@ void videoDecoderThread(int& targetSock, int side, cv::Mat& latestFrame, std::mu
 
 void videoMain(cv::Mat& latestFrame, std::mutex& frameMutex, std::atomic<bool>& newFrameAvailable, Glib::Dispatcher& videoDisconnectDispatcher, std::atomic<bool>& shouldVideoDisconnect) {
     if (isFlightEngineerMode) {
-        // Spawn two decoder threads for both FE video sockets
+        {
+            std::lock_guard<std::mutex> lock(frameMutex);
+            fe_left_frame.release();
+            fe_right_frame.release();
+        }
+
+        // Spawn one decoder thread per FE stream. Each thread updates its own
+        // FE frame buffer instead of creating a combined frame.
         std::thread t1(videoDecoderThread, std::ref(videoSock), 1, std::ref(latestFrame), std::ref(frameMutex), std::ref(newFrameAvailable), std::ref(videoDisconnectDispatcher), std::ref(shouldVideoDisconnect));
         std::thread t2(videoDecoderThread, std::ref(videoSock2), 2, std::ref(latestFrame), std::ref(frameMutex), std::ref(newFrameAvailable), std::ref(videoDisconnectDispatcher), std::ref(shouldVideoDisconnect));
         t1.join();
@@ -1158,8 +1172,15 @@ void sendJoystickAxis(uint8_t which, uint8_t axis, float value) {
     send_to_both(message, length);
 }
 
+/* Tracks which robot the last received packet came from.
+ * true = Robot 1 (Orin / sock), false = Robot 2 (Nano / sock2).
+ * Set in receiveRobotData, read by the main loop to tag messages. */
+static bool g_last_packet_robot1 = true;
+
+bool lastPacketFromRobot1() { return g_last_packet_robot1; }
+
 int receiveRobotData(std::vector<uint8_t>& buffer) {
-    if (!connected && !connected2) return -1;
+    if (!connected && !connected2 && !isFlightEngineerMode) return -1;
 
     char recv_buffer[16384];
 
@@ -1173,8 +1194,8 @@ int receiveRobotData(std::vector<uint8_t>& buffer) {
         nfds++;
     };
 
-    if (connected && sock > 0)  add_fd(sock);
-    if (connected2 && sock2 > 0) add_fd(sock2);
+    if ((connected || isFlightEngineerMode) && sock > 0)  add_fd(sock);
+    if ((connected2 || isFlightEngineerMode) && sock2 > 0) add_fd(sock2);
     if (nfds == 0) return -1;
 
     int pr = ::poll(fds, nfds, 1);
@@ -1198,15 +1219,25 @@ int receiveRobotData(std::vector<uint8_t>& buffer) {
         // ----------------------------
 
         std::chrono::high_resolution_clock::time_point t = std::chrono::high_resolution_clock::now();
-        if (from.sin_addr.s_addr == orin_ip.s_addr) last_rx_orin_ms.store(t, std::memory_order_relaxed);
-        else if (from.sin_addr.s_addr == nano_ip.s_addr) last_rx_nano_ms.store(t, std::memory_order_relaxed);
 
         buffer.assign(recv_buffer, recv_buffer + n);
         
         bool from_orin = false;
-        if (orin_ip_known.load(std::memory_order_relaxed) && from.sin_addr.s_addr == orin_ip.s_addr) from_orin = true;
-        else if (nano_ip_known.load(std::memory_order_relaxed) && from.sin_addr.s_addr == nano_ip.s_addr) from_orin = false;
-        else from_orin = (fd == sock);
+        if (orin_ip_known.load(std::memory_order_relaxed) && from.sin_addr.s_addr == orin_ip.s_addr) {
+            from_orin = true;
+        }
+        else if (nano_ip_known.load(std::memory_order_relaxed) && from.sin_addr.s_addr == nano_ip.s_addr) {
+            from_orin = false;
+        }
+        else {
+            from_orin = (fd == sock);
+        }
+
+        if (from_orin) last_rx_orin_ms.store(t, std::memory_order_relaxed);
+        else           last_rx_nano_ms.store(t, std::memory_order_relaxed);
+
+        g_last_packet_robot1 = from_orin;
+
         capture_udp_payload(reinterpret_cast<const uint8_t*>(recv_buffer), (size_t)n, from_orin);
         got_any = true;
         got_n = n;
@@ -1279,4 +1310,188 @@ void sendVideoHeartbeat() {
     message[0] = 2;
     message[1] = 0;
     sendto(videoSock, message, sizeof(message), 0, (struct sockaddr *)&video_serv_addr, video_addr_len);
+}
+
+
+/* ================================================================== */
+/*  ESP32 Diagnostics Tool - UDP Receiver                             */
+/*  Listens on port 3333 (telemetry) and 3334 (heartbeat)            */
+/* ================================================================== */
+
+#define DIAG_TELEMETRY_PORT 3333
+#define DIAG_HEARTBEAT_PORT 3334
+#define DIAG_MAX_MOTORS     10
+
+/* Must match the ESP32 packed structs exactly */
+#pragma pack(push, 1)
+struct DiagMotorData {
+    uint8_t  can_id;
+    uint8_t  motor_type;   // 0=Talon, 1=Falcon, 2=Kraken, 3=NEO
+    uint8_t  status;       // 0=Disconnected, 1=Unplugged, 2=Connected
+    float    percent;
+    float    current;
+    float    voltage;
+    int32_t  position;
+    int32_t  temperature;
+};
+
+struct DiagTelemetryPacket {
+    uint32_t timestamp_ms;
+    uint8_t  active_motors;
+    DiagMotorData motors[DIAG_MAX_MOTORS];
+};
+
+struct DiagHeartbeatPacket {
+    uint32_t timestamp_ms;
+    uint8_t  active_motors;
+    uint8_t  config_index;
+    uint8_t  wifi_rssi;
+    uint8_t  can_active;
+};
+#pragma pack(pop)
+
+/* Thread-safe snapshot of diagnostics state */
+struct DiagState {
+    bool     connected = false;
+    uint64_t last_heartbeat_ms = 0;
+    uint64_t last_telemetry_ms = 0;
+    uint8_t  active_motors = 0;
+    uint8_t  config_index = 0;
+    uint8_t  wifi_rssi = 0;
+    bool     can_active = false;
+    DiagMotorData motors[DIAG_MAX_MOTORS] = {};
+    std::string esp32_ip;
+};
+
+static std::mutex diag_mutex;
+static DiagState diag_state;
+static std::atomic<bool> diag_dirty{false};
+static std::atomic<bool> diag_running{false};
+
+DiagState getDiagState() {
+    std::lock_guard<std::mutex> lk(diag_mutex);
+    return diag_state;
+}
+
+bool isDiagDirty() {
+    return diag_dirty.exchange(false);
+}
+
+bool isDiagConnected() {
+    std::lock_guard<std::mutex> lk(diag_mutex);
+    return diag_state.connected;
+}
+
+static void diag_listener_thread() {
+    /* Create sockets for telemetry and heartbeat */
+    int telem_sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_IP);
+    int hb_sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_IP);
+    if (telem_sock < 0 || hb_sock < 0) {
+        std::cerr << "Diagnostics: failed to create sockets" << std::endl;
+        return;
+    }
+
+    int opt = 1;
+    setsockopt(telem_sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+    setsockopt(hb_sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+
+    sockaddr_in telem_addr{}, hb_addr{};
+    telem_addr.sin_family = AF_INET;
+    telem_addr.sin_addr.s_addr = INADDR_ANY;
+    telem_addr.sin_port = htons(DIAG_TELEMETRY_PORT);
+
+    hb_addr.sin_family = AF_INET;
+    hb_addr.sin_addr.s_addr = INADDR_ANY;
+    hb_addr.sin_port = htons(DIAG_HEARTBEAT_PORT);
+
+    if (bind(telem_sock, (sockaddr*)&telem_addr, sizeof(telem_addr)) < 0) {
+        std::cerr << "Diagnostics: bind telemetry port " << DIAG_TELEMETRY_PORT << " failed" << std::endl;
+        close(telem_sock); close(hb_sock);
+        return;
+    }
+    if (bind(hb_sock, (sockaddr*)&hb_addr, sizeof(hb_addr)) < 0) {
+        std::cerr << "Diagnostics: bind heartbeat port " << DIAG_HEARTBEAT_PORT << " failed" << std::endl;
+        close(telem_sock); close(hb_sock);
+        return;
+    }
+
+    std::cout << "Diagnostics listener started (telemetry:" << DIAG_TELEMETRY_PORT
+              << " heartbeat:" << DIAG_HEARTBEAT_PORT << ")" << std::endl;
+
+    struct pollfd fds[2];
+    fds[0].fd = telem_sock;  fds[0].events = POLLIN;
+    fds[1].fd = hb_sock;     fds[1].events = POLLIN;
+
+    char buf[2048];
+
+    while (diag_running.load()) {
+        int pr = ::poll(fds, 2, 200); /* 200ms timeout for connection detection */
+        if (pr <= 0) {
+            /* Check for connection timeout (no heartbeat in 500ms) */
+            uint64_t now_ms = steady_now_ms();
+            std::lock_guard<std::mutex> lk(diag_mutex);
+            if (diag_state.connected && (now_ms - diag_state.last_heartbeat_ms > 500)) {
+                diag_state.connected = false;
+                diag_dirty.store(true);
+            }
+            continue;
+        }
+
+        uint64_t now_ms = steady_now_ms();
+
+        /* Heartbeat */
+        if (fds[1].revents & POLLIN) {
+            sockaddr_in from{};
+            socklen_t from_len = sizeof(from);
+            int n = recvfrom(hb_sock, buf, sizeof(buf), 0, (sockaddr*)&from, &from_len);
+            if (n >= (int)sizeof(DiagHeartbeatPacket)) {
+                DiagHeartbeatPacket hb;
+                memcpy(&hb, buf, sizeof(hb));
+                std::lock_guard<std::mutex> lk(diag_mutex);
+                diag_state.connected = true;
+                diag_state.last_heartbeat_ms = now_ms;
+                diag_state.active_motors = hb.active_motors;
+                diag_state.config_index = hb.config_index;
+                diag_state.wifi_rssi = hb.wifi_rssi;
+                diag_state.can_active = (hb.can_active != 0);
+                diag_state.esp32_ip = inet_ntoa(from.sin_addr);
+                diag_dirty.store(true);
+            }
+        }
+
+        /* Telemetry */
+        if (fds[0].revents & POLLIN) {
+            sockaddr_in from{};
+            socklen_t from_len = sizeof(from);
+            int n = recvfrom(telem_sock, buf, sizeof(buf), 0, (sockaddr*)&from, &from_len);
+            if (n >= (int)sizeof(uint32_t) + 1) { /* at least timestamp + motor_count */
+                DiagTelemetryPacket pkt;
+                memcpy(&pkt, buf, std::min((size_t)n, sizeof(pkt)));
+                int count = std::min((int)pkt.active_motors, DIAG_MAX_MOTORS);
+                std::lock_guard<std::mutex> lk(diag_mutex);
+                diag_state.connected = true;
+                diag_state.last_telemetry_ms = now_ms;
+                diag_state.active_motors = count;
+                memcpy(diag_state.motors, pkt.motors, count * sizeof(DiagMotorData));
+                diag_dirty.store(true);
+            }
+        }
+    }
+
+    close(telem_sock);
+    close(hb_sock);
+    std::cout << "Diagnostics listener stopped." << std::endl;
+}
+
+static std::thread diag_thread;
+
+void startDiagListener() {
+    if (diag_running.load()) return;
+    diag_running.store(true);
+    diag_thread = std::thread(diag_listener_thread);
+    diag_thread.detach();
+}
+
+void stopDiagListener() {
+    diag_running.store(false);
 }

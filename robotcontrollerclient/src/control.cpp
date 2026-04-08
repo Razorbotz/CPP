@@ -829,6 +829,111 @@ MultiMotorGraph* falconOutputGraph;
 MultiMotorGraph* linearSpeedGraph;
 MultiMotorGraph* linearPotentiometerGraph;
 
+/* Diagnostics Tool (ESP32) tab */
+Gtk::Label* diagConnectionLabel = nullptr;
+Gtk::Label* diagRssiLabel = nullptr;
+Gtk::Label* diagCanLabel = nullptr;
+Gtk::Grid*  diagMotorGrid = nullptr;
+Gtk::Label* diagMotorLabels[10][7]; /* [motor_index][field] — name, type, status, percent, current, voltage, temp */
+int diagLastMotorCount = 0;
+
+/* Diagnostics structs - must match NetworkHandler.cpp exactly */
+#pragma pack(push, 1)
+struct DiagMotorData {
+    uint8_t  can_id;
+    uint8_t  motor_type;
+    uint8_t  status;
+    float    percent;
+    float    current;
+    float    voltage;
+    int32_t  position;
+    int32_t  temperature;
+};
+#pragma pack(pop)
+
+struct DiagState {
+    bool     connected = false;
+    uint64_t last_heartbeat_ms = 0;
+    uint64_t last_telemetry_ms = 0;
+    uint8_t  active_motors = 0;
+    uint8_t  config_index = 0;
+    uint8_t  wifi_rssi = 0;
+    bool     can_active = false;
+    DiagMotorData motors[10] = {};
+    std::string esp32_ip;
+};
+
+/* Functions from NetworkHandler.cpp */
+DiagState getDiagState();
+bool isDiagDirty();
+bool isDiagConnected();
+void startDiagListener();
+void stopDiagListener();
+
+/* ============================================================
+ *  FLIGHT ENGINEER dashboard widgets
+ *  Populated from feLayout.glade when --fe flag is used
+ * ============================================================ */
+Gtk::Label* feConnRobot1 = nullptr;
+Gtk::Label* feLatencyRobot1 = nullptr;
+Gtk::Label* feConnRobot2 = nullptr;
+Gtk::Label* feLatencyRobot2 = nullptr;
+Gtk::Label* feConnEsp32 = nullptr;
+Gtk::Label* feRssiEsp32 = nullptr;
+Gtk::Label* feClock = nullptr;
+
+/* Motor telemetry grid */
+Gtk::Grid* feMotorGrid = nullptr;
+Gtk::Label* feMotorLabels[16][6]; /* up to 16 motors, 6 fields: name, voltage, current, output%, position, status */
+int feMotorRowCount = 0;
+std::map<std::string, int> feMotorRowMap; /* label -> row index */
+
+/* ESP32 section */
+Gtk::Label* feEsp32CanStatus = nullptr;
+Gtk::Label* feEsp32Config = nullptr;
+Gtk::Label* feEsp32MotorCount = nullptr;
+Gtk::Grid*  feEsp32MotorGrid = nullptr;
+Gtk::Label* feEsp32MotorLabels[10][7];
+
+/* Navigation */
+Gtk::Label* feNavR1Roll = nullptr;
+Gtk::Label* feNavR1Pitch = nullptr;
+Gtk::Label* feNavR1Yaw = nullptr;
+Gtk::Label* feNavR1X = nullptr;
+Gtk::Label* feNavR1Y = nullptr;
+Gtk::Label* feNavR2Roll = nullptr;
+Gtk::Label* feNavR2Pitch = nullptr;
+Gtk::Label* feNavR2Yaw = nullptr;
+Gtk::Label* feNavR2X = nullptr;
+Gtk::Label* feNavR2Y = nullptr;
+
+/* Autonomy */
+Gtk::Label* feAutoR1State = nullptr;
+Gtk::Label* feAutoR1DestX = nullptr;
+Gtk::Label* feAutoR1DestZ = nullptr;
+Gtk::Label* feAutoR2State = nullptr;
+Gtk::Label* feAutoR2DestX = nullptr;
+Gtk::Label* feAutoR2DestZ = nullptr;
+
+/* Lidar */
+Gtk::Label* feLidarR1 = nullptr;
+Gtk::Label* feLidarR2 = nullptr;
+
+/* Communication */
+Gtk::Label* feCommR1Wifi = nullptr;
+Gtk::Label* feCommR1Can = nullptr;
+Gtk::Label* feCommR2Wifi = nullptr;
+Gtk::Label* feCommR2Can = nullptr;
+
+std::chrono::high_resolution_clock::time_point feStartTime;
+
+/* Forward declarations for FE update functions */
+void feUpdateMotorRow(const std::string& label, float voltage, float current, float output_pct, int position, bool error, bool lowVoltage);
+void updateFEDashboard();
+
+/* From NetworkHandler.cpp — which robot sent the last received packet */
+bool lastPacketFromRobot1();
+
 Speedometer* leftSpeedometer;
 Speedometer* rightSpeedometer;
 bool displaySpeed = true;
@@ -954,6 +1059,11 @@ private:
 };
 
 VideoWidget* videoArea;
+VideoWidget* feVideoAreaRobot1 = nullptr;
+VideoWidget* feVideoAreaRobot2 = nullptr;
+
+extern cv::Mat fe_left_frame;
+extern cv::Mat fe_right_frame;
 
 std::map<std::string, CircleDrawingArea*> motorCircles;
 
@@ -1479,6 +1589,10 @@ static void center_image_widget(Gtk::Image* image_widget) {
 
 void initRoll() {
     if (!roll_init) {
+        if (isFlightEngineer) {
+            roll_init = true;
+            return;
+        }
         attitudeIndicator = Gtk::manage(new ArtificialHorizon("Attitude"));
         attitudeIndicator->set_size_request(ROLL_PITCH_IMAGE_SIZE * GUI_SCALE,
                                              (ROLL_PITCH_IMAGE_SIZE + 30) * GUI_SCALE);
@@ -1552,6 +1666,10 @@ void initBucketLvl() {
 
 void initArmPos() {
     if (!arm_init) {
+        if (isFlightEngineer) {
+            arm_init = true;
+            return;
+        }
         if (dumpBot) {
             arm_init = true;
             return;
@@ -1586,6 +1704,10 @@ void initArmPos() {
 
 void initBucketPos() {
     if (!bucket_init) {
+        if (isFlightEngineer) {
+            bucket_init = true;
+            return;
+        }
         if (dumpBot) {
             bucket_init = true;
             return;
@@ -1625,7 +1747,9 @@ void initBucketElevation() {
 
 void initBucketRot() {
     if (!bucketRot_init) {
-
+        if (isFlightEngineer) {
+            return;
+        }
         Gtk::Container* parent = noVideo ? static_cast<Gtk::Container*>(sensorBox)
                                          : (bucketTiltPlaceholder ? static_cast<Gtk::Container*>(bucketTiltPlaceholder)
                                                                   : static_cast<Gtk::Container*>(innerLeftBox));
@@ -1737,19 +1861,23 @@ values from the node. The Generic elements function then updates the
 values displayed in the sensors tab.
 */
 void handleZedElements(const std::vector<Element>& elements) {
+    float yaw_val = 0, x_val = 0, y_val = 0;
     for (const auto& element : elements) {
         if (element.type != TYPE::FLOAT32) continue;
         float value = element.data.front().float32;
 
         if (element.label == "yaw") {
             pitch_rotation_angle = std::round(value);
+            yaw_val = value;
             if (attitudeIndicator) attitudeIndicator->set_pitch(pitch_rotation_angle);
         }
         else if (element.label == "Z") {
-            robot_y_m = -value; 
+            robot_y_m = -value;
+            y_val = -value;
         }
         else if (element.label == "X") {
-            robot_x_m = -value; 
+            robot_x_m = -value;
+            x_val = -value;
         }
         else if (element.label == "pitch") {
             robot_pitch_rad = value * (M_PI / 180.0);
@@ -1761,6 +1889,22 @@ void handleZedElements(const std::vector<Element>& elements) {
             updateBucketRotationImage();
             updateBucketElevationBar();
         }
+    }
+
+    /* FE: update navigation labels — route to R1 or R2 based on source */
+    if (isFlightEngineer) {
+        bool r1 = lastPacketFromRobot1();
+        char buf[16];
+        Gtk::Label* lRoll  = r1 ? feNavR1Roll  : feNavR2Roll;
+        Gtk::Label* lPitch = r1 ? feNavR1Pitch : feNavR2Pitch;
+        Gtk::Label* lYaw   = r1 ? feNavR1Yaw   : feNavR2Yaw;
+        Gtk::Label* lX     = r1 ? feNavR1X     : feNavR2X;
+        Gtk::Label* lY     = r1 ? feNavR1Y     : feNavR2Y;
+        if (lRoll)  { snprintf(buf, sizeof(buf), "%.1f", roll_rotation_angle); lRoll->set_text(std::string(buf) + "\u00B0"); }
+        if (lPitch) { snprintf(buf, sizeof(buf), "%.1f", (float)(robot_pitch_rad * 180.0 / M_PI)); lPitch->set_text(std::string(buf) + "\u00B0"); }
+        if (lYaw)   { snprintf(buf, sizeof(buf), "%.1f", yaw_val); lYaw->set_text(std::string(buf) + "\u00B0"); }
+        if (lX)     { snprintf(buf, sizeof(buf), "%.3f", x_val); lX->set_text(buf); }
+        if (lY)     { snprintf(buf, sizeof(buf), "%.3f", y_val); lY->set_text(buf); }
     }
 }
 
@@ -1779,6 +1923,15 @@ void handleLidarElements(const std::vector<Element>& elements) {
             if (proximityBar) {
                 proximityBar->set_distance(distance_m);
             }
+
+            if (isFlightEngineer) {
+                Gtk::Label* lbl = lastPacketFromRobot1() ? feLidarR1 : feLidarR2;
+                if (lbl) {
+                    char buf[16];
+                    snprintf(buf, sizeof(buf), "%.3f m", distance_m);
+                    lbl->set_text(buf);
+                }
+            }
         }
     }
 }
@@ -1787,9 +1940,12 @@ void handleTalonElements(const std::string& label, const std::vector<Element>& e
     bool lowVoltage = false;
     float voltage_val = 0.0f;
     float current_val = 0.0f;
+    float output_pct = 0.0f;
+    int position_val = 0;
     for (const auto& element : elements) {
         if (element.label == "Sensor Position") {
             int pos = element.data.front().uint16;
+            position_val = pos;
             if (label == "Talon 1") {
                 left_arm_pos = pos;
                 if (left_arm) left_arm->set_position(pos);
@@ -1844,6 +2000,7 @@ void handleTalonElements(const std::string& label, const std::vector<Element>& e
         }
         else if (element.label == "Output Percent") {
             float percent = element.data.front().float32;
+            output_pct = percent;
             if (!noVideo) talonOutputGraph->update_data(label, percent);
         }
     }
@@ -1852,6 +2009,10 @@ void handleTalonElements(const std::string& label, const std::vector<Element>& e
     auto nameIt = displayNameMap.find(label);
     if (nameIt != displayNameMap.end()) {
         updateMotorTelemetry(nameIt->second, voltage_val, current_val);
+    }
+    if (isFlightEngineer) {
+        std::string feLabel = (lastPacketFromRobot1() ? "R1 " : "R2 ") + label;
+        feUpdateMotorRow(feLabel, voltage_val, current_val, output_pct, position_val, false, lowVoltage);
     }
 }
 
@@ -1865,6 +2026,7 @@ std::map<std::string, MotorState> motorStates;
 void handleFalconElements(const std::string& label, const std::vector<Element>& elements) {
     float voltage_val = 0.0f;
     float current_val = 0.0f;
+    float output_pct = 0.0f;
     for (const auto& element : elements) {
         if (element.label == "Bus Voltage") {
             float voltage = element.data.front().uint16 / 100.0f;
@@ -1881,6 +2043,7 @@ void handleFalconElements(const std::string& label, const std::vector<Element>& 
         }
         else if (element.label == "Output Percent") {
             float percent = element.data.front().float32;
+            output_pct = percent;
             if (!noVideo && falconOutputGraph) falconOutputGraph->update_data(label, percent);
             if ((label == "Falcon 2" || label == "Falcon 4") && leftSpeedometer) {
                 leftSpeedometer->set_speed(percent * 100.0);
@@ -1900,11 +2063,16 @@ void handleFalconElements(const std::string& label, const std::vector<Element>& 
     if (nameIt != displayNameMap.end()) {
         updateMotorTelemetry(nameIt->second, voltage_val, current_val);
     }
+    if (isFlightEngineer) {
+        std::string feLabel = (lastPacketFromRobot1() ? "R1 " : "R2 ") + label;
+        feUpdateMotorRow(feLabel, voltage_val, current_val, output_pct, 0, motorStates[label].error, motorStates[label].lowVoltage);
+    }
 }
 
 void handleNeoElements(const std::string& label, const std::vector<Element>& elements) {
     float voltage_val = 0.0f;
     float current_val = 0.0f;
+    float output_pct = 0.0f;
     for (const auto& element : elements) {
         if (element.label == "Bus Voltage") {
             float voltage = element.data.front().uint16 / 100.0f;
@@ -1920,6 +2088,7 @@ void handleNeoElements(const std::string& label, const std::vector<Element>& ele
         }
         else if (element.label == "Output Percent") {
             float percent = element.data.front().float32;
+            output_pct = percent;
             if (!noVideo) falconOutputGraph->update_data(label, percent);
             if(label == "Neo 2" || label == "Neo 4"){
                 leftSpeedometer->set_speed(percent * 100.0);
@@ -1938,11 +2107,16 @@ void handleNeoElements(const std::string& label, const std::vector<Element>& ele
     if (neoNameIt != displayNameMap.end()) {
         updateMotorTelemetry(neoNameIt->second, voltage_val, current_val);
     }
+    if (isFlightEngineer) {
+        std::string feLabel = (lastPacketFromRobot1() ? "R1 " : "R2 ") + label;
+        feUpdateMotorRow(feLabel, voltage_val, current_val, output_pct, 0, motorStates[label].error, motorStates[label].lowVoltage);
+    }
 }
 
 void handleKrakenElements(const std::string& label, const std::vector<Element>& elements) {
     float voltage_val = 0.0f;
     float current_val = 0.0f;
+    float output_pct = 0.0f;
     for (const auto& element : elements) {
         if (element.label == "Bus Voltage") {
             float voltage = element.data.front().uint16 / 100.0f;
@@ -1959,6 +2133,7 @@ void handleKrakenElements(const std::string& label, const std::vector<Element>& 
         }
         else if (element.label == "Output Percent") {
             float percent = element.data.front().float32;
+            output_pct = percent;
             if (!noVideo) falconOutputGraph->update_data(label, percent);
             if(label == "Kraken 2" || label == "Kraken 4"){
                 leftSpeedometer->set_speed(percent * 100.0);
@@ -1977,6 +2152,10 @@ void handleKrakenElements(const std::string& label, const std::vector<Element>& 
     if (krakenNameIt != displayNameMap.end()) {
         updateMotorTelemetry(krakenNameIt->second, voltage_val, current_val);
     }
+    if (isFlightEngineer) {
+        std::string feLabel = (lastPacketFromRobot1() ? "R1 " : "R2 ") + label;
+        feUpdateMotorRow(feLabel, voltage_val, current_val, output_pct, 0, motorStates[label].error, motorStates[label].lowVoltage);
+    }
 }
 
 void handleCommunicationElements(InfoFrame* frame, const std::vector<Element>& elements) {
@@ -1993,6 +2172,22 @@ void handleCommunicationElements(InfoFrame* frame, const std::vector<Element>& e
         else {
             updateBackgroundColor(frame, element.label);
         }
+
+        /* FE: update communication labels — route to R1 or R2 based on source */
+        if (isFlightEngineer) {
+            bool r1 = lastPacketFromRobot1();
+            bool bad = (text == "NON-FUNCTIONAL" || text == "INTERFERENCE" || text == "DOWN");
+            std::string color = bad ? "#cc0000" : "#00cc00";
+            std::string markup = "<span foreground='" + color + "'>" + text + "</span>";
+            if (element.label == "Wi-Fi") {
+                Gtk::Label* lbl = r1 ? feCommR1Wifi : feCommR2Wifi;
+                if (lbl) lbl->set_markup(markup);
+            }
+            if (element.label == "CAN Bus") {
+                Gtk::Label* lbl = r1 ? feCommR1Can : feCommR2Can;
+                if (lbl) lbl->set_markup(markup);
+            }
+        }
     }
 }
 
@@ -2002,12 +2197,18 @@ void handleAutonomyElements(const std::string& label, const std::vector<Element>
     for (const auto& element : elements) {
         if (element.label == "Dest X") {
             destX = element.data.front().float32;
-            // TODO: Add destination to Foxglove
         }
         else if(element.label == "Dest Z"){
             destY = element.data.front().float32;
-            // TODO: Add destination to Foxglove
         }
+    }
+
+    if (isFlightEngineer) {
+        bool r1 = lastPacketFromRobot1();
+        Gtk::Label* lDestX = r1 ? feAutoR1DestX : feAutoR2DestX;
+        Gtk::Label* lDestZ = r1 ? feAutoR1DestZ : feAutoR2DestZ;
+        if (lDestX && destX >= 0) lDestX->set_text(std::to_string(destX));
+        if (lDestZ && destY >= 0) lDestZ->set_text(std::to_string(destY));
     }
 }
 
@@ -2840,7 +3041,6 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
 
     auto builder = Gtk::Builder::create();
     try {
-        auto builder = Gtk::Builder::create();
         if (isFlightEngineer) {
             builder->add_from_file("../resources/feLayout.glade");
         }
@@ -2849,7 +3049,7 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
         }
     }
     catch(const Glib::Error& ex) {
-        std::cerr << "CRITICAL: Failed to load mainLayout.glade: " << ex.what() << std::endl;
+        std::cerr << "CRITICAL: Failed to load layout glade: " << ex.what() << std::endl;
         exit(1); 
     }
 
@@ -2862,54 +3062,58 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
 
     Gtk::Box* topLevelBox = nullptr;
     builder->get_widget("topLevelBox", topLevelBox);
-    if (topLevelBox) {
-        window->remove();
-        
-        // Create video widget
-        videoArea = Gtk::manage(new VideoWidget());
-        videoArea->set_size_request(1600 * GUI_SCALE, 1000 * GUI_SCALE);
-        
-        // Create overlay with video as background
-        Gtk::Overlay* mainOverlay = Gtk::manage(new Gtk::Overlay());
-        mainOverlay->add(*videoArea);  // Video as base
-        mainOverlay->add_overlay(*topLevelBox);  // UI on top
 
-        // Proximity bar floating on the video feed, left side
-        if (!dumpBot) {
-            std::cout << "Initializing proximity bar for dump bot." << std::endl;
-            proximityBar = Gtk::manage(new ProximityBar());
-            proximityBar->set_size_request(100 * GUI_SCALE, 380 * GUI_SCALE);
-            proximityBar->set_light_mode(isLightMode);
-            proximityBar->set_warning_threshold(0.6);
-            proximityBar->set_optimal_threshold(0.9);
-            proximityBar->set_max_distance(1.5);
-            proximityBar->set_arm_show_threshold(500);
-            proximityBar->set_halign(Gtk::ALIGN_START);
-            proximityBar->set_valign(Gtk::ALIGN_CENTER);
-            proximityBar->set_margin_left(EDGE_PANEL_WIDTH + 50);
-            mainOverlay->add_overlay(*proximityBar);
+    if (!isFlightEngineer) {
+        /* ============================================================
+         *  PILOT MODE: Video overlay, edge panels, motor columns, etc.
+         *  These widgets only exist in mainLayout.glade.
+         * ============================================================ */
+        if (topLevelBox) {
+            window->remove();
+            
+            // Create video widget
+            videoArea = Gtk::manage(new VideoWidget());
+            videoArea->set_size_request(1600 * GUI_SCALE, 1000 * GUI_SCALE);
+            
+            // Create overlay with video as background
+            Gtk::Overlay* mainOverlay = Gtk::manage(new Gtk::Overlay());
+            mainOverlay->add(*videoArea);  // Video as base
+            mainOverlay->add_overlay(*topLevelBox);  // UI on top
+
+            // Proximity bar floating on the video feed, left side
+            if (!dumpBot) {
+                std::cout << "Initializing proximity bar for dump bot." << std::endl;
+                proximityBar = Gtk::manage(new ProximityBar());
+                proximityBar->set_size_request(100 * GUI_SCALE, 380 * GUI_SCALE);
+                proximityBar->set_light_mode(isLightMode);
+                proximityBar->set_warning_threshold(0.6);
+                proximityBar->set_optimal_threshold(0.9);
+                proximityBar->set_max_distance(1.5);
+                proximityBar->set_arm_show_threshold(500);
+                proximityBar->set_halign(Gtk::ALIGN_START);
+                proximityBar->set_valign(Gtk::ALIGN_CENTER);
+                proximityBar->set_margin_left(EDGE_PANEL_WIDTH + 50);
+                mainOverlay->add_overlay(*proximityBar);
+            }
+
+            // Add overlay to window
+            window->add(*mainOverlay);
         }
-
-        // Add overlay to window
-        window->add(*mainOverlay);
         
-        // Add overlay to window
-        window->add(*mainOverlay);
-    }
-    
-    // Get topControlsBox and set its CSS name for styling
-    builder->get_widget("topControlsBox", topControlsBox);
-    if (topControlsBox) {
-        topControlsBox->set_name("topControlsBox");
+        // Get topControlsBox and set its CSS name for styling
+        builder->get_widget("topControlsBox", topControlsBox);
+        if (topControlsBox) {
+            topControlsBox->set_name("topControlsBox");
 
-        batteryBar = Gtk::manage(new BatteryBar());
-        batteryBar->set_size_request(-1, 28);
-        batteryBar->set_hexpand(true);
-        batteryBar->set_warning_voltage(LOW_VOLTAGE);
-        batteryBar->set_critical_voltage(LOW_VOLTAGE - 1.0f);
-        batteryBar->set_light_mode(isLightMode);
-        topControlsBox->pack_end(*batteryBar, Gtk::PACK_SHRINK);
-    }
+            batteryBar = Gtk::manage(new BatteryBar());
+            batteryBar->set_size_request(-1, 28);
+            batteryBar->set_hexpand(true);
+            batteryBar->set_warning_voltage(LOW_VOLTAGE);
+            batteryBar->set_critical_voltage(LOW_VOLTAGE - 1.0f);
+            batteryBar->set_light_mode(isLightMode);
+            topControlsBox->pack_end(*batteryBar, Gtk::PACK_SHRINK);
+        }
+    } /* end !isFlightEngineer pilot-only overlay block */
 
     try {window->set_icon_from_file("../resources/razorbotz.png"); } catch (...) {}
 
@@ -2917,30 +3121,38 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
     window->signal_key_press_event().connect(sigc::ptr_fun(&on_key_press_event));
     window->signal_key_release_event().connect(sigc::ptr_fun(&on_key_release_event));
 
-    builder->get_widget("list_robot_address", addressListBox);
-    builder->get_widget("entry_robot_ip", ipAddressEntry);
-    builder->get_widget("btn_robot_connect", connectButton);
-    builder->get_widget("lbl_robot_status", connectionStatusLabel);
-    builder->get_widget("btn_silent_run", silentRunButton);
-    builder->get_widget("entry_robot_ip2", ipAddressEntry2);
-    builder->get_widget("btn_robot_connect2", connectButton2);
-    builder->get_widget("lbl_robot_status2", connectionStatusLabel2);
-    builder->get_widget("btn_silent_run2", silentRunButton2);
+    if (!isFlightEngineer) {
+        /* Pilot-only controls — these IDs only exist in mainLayout.glade */
+        builder->get_widget("list_robot_address", addressListBox);
+        builder->get_widget("entry_robot_ip", ipAddressEntry);
+        builder->get_widget("btn_robot_connect", connectButton);
+        builder->get_widget("lbl_robot_status", connectionStatusLabel);
+        builder->get_widget("btn_silent_run", silentRunButton);
+        builder->get_widget("entry_robot_ip2", ipAddressEntry2);
+        builder->get_widget("btn_robot_connect2", connectButton2);
+        builder->get_widget("lbl_robot_status2", connectionStatusLabel2);
+        builder->get_widget("btn_silent_run2", silentRunButton2);
+        
+        builder->get_widget("list_video_address", videoAddressListBox);
+        builder->get_widget("entry_video_ip", videoIPAddressEntry);
+        builder->get_widget("btn_video_connect", videoConnectButton);
+        builder->get_widget("lbl_video_status", videoConnectionStatusLabel);
+        builder->get_widget("btn_video_stream", videoStreamButton);
+        
+        builder->get_widget("btn_toggle_mode", toggleModeButton);
+        builder->get_widget("btn_settings", settingsButton);
+    }
     
-    builder->get_widget("list_video_address", videoAddressListBox);
-    builder->get_widget("entry_video_ip", videoIPAddressEntry);
-    builder->get_widget("btn_video_connect", videoConnectButton);
-    builder->get_widget("lbl_video_status", videoConnectionStatusLabel);
-    builder->get_widget("btn_video_stream", videoStreamButton);
-    
-    builder->get_widget("btn_toggle_mode", toggleModeButton);
-    builder->get_widget("btn_settings", settingsButton);
-    
-    sensorBox = Gtk::manage(new Gtk::FlowBox());
-    sensorBox->set_orientation(Gtk::ORIENTATION_HORIZONTAL);
-    
-    if (topLevelBox) {
-        topLevelBox->pack_end(*sensorBox, Gtk::PACK_SHRINK);
+    if (isFlightEngineer) {
+        /* In FE mode, sensorBox is defined in feLayout.glade */
+        builder->get_widget("sensorBox", sensorBox);
+    }
+    if (!sensorBox) {
+        sensorBox = Gtk::manage(new Gtk::FlowBox());
+        sensorBox->set_orientation(Gtk::ORIENTATION_HORIZONTAL);
+        if (topLevelBox) {
+            topLevelBox->pack_end(*sensorBox, Gtk::PACK_SHRINK);
+        }
     }
 
     if(ipAddressEntry) ipAddressEntry->set_text(ORIN_IP);
@@ -3013,26 +3225,27 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
     if (videoStreamButton) videoStreamButton->signal_clicked().connect([&](){ videoStream(video_server_ui); });
     if (videoAddressListBox) videoAddressListBox->signal_row_activated().connect([&](Gtk::ListBoxRow* row){ videoRowActivated(row, video_server_ui); });
 
-    if(connectButton) {
-        connectButton->set_can_focus(false);
-        connectButton->set_focus_on_click(false);
-    }
-    if(connectButton2){
-        connectButton2->set_can_focus(false);
-        connectButton2->set_focus_on_click(false);
-    }
-    if(silentRunButton) {
-        silentRunButton->set_can_focus(false);
-        silentRunButton->set_focus_on_click(false);
-    }
-    
-    if(videoConnectButton) {
-        videoConnectButton->set_can_focus(false);
-        videoConnectButton->set_focus_on_click(false);
-    }
+    if (!isFlightEngineer) {
+        if(connectButton) {
+            connectButton->set_can_focus(false);
+            connectButton->set_focus_on_click(false);
+        }
+        if(connectButton2){
+            connectButton2->set_can_focus(false);
+            connectButton2->set_focus_on_click(false);
+        }
+        if(silentRunButton) {
+            silentRunButton->set_can_focus(false);
+            silentRunButton->set_focus_on_click(false);
+        }
+        
+        if(videoConnectButton) {
+            videoConnectButton->set_can_focus(false);
+            videoConnectButton->set_focus_on_click(false);
+        }
 
-    if (!noVideo) {
-        sensorBox->set_visible(false);
+        if (!noVideo) {
+            sensorBox->set_visible(false);
 
         Gtk::Box* bottomInnerBox = nullptr;
         builder->get_widget("box_bottom_inner", bottomInnerBox); 
@@ -3187,6 +3400,7 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
         initRoll();
         initPitch();
     }
+    } /* end !isFlightEngineer pilot-only widget setup */
 
     if (window) {
         if (debugGladeBounds) {
@@ -3198,6 +3412,350 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
         window->signal_delete_event().connect(sigc::ptr_fun(quit));
         window->show_all();
     }
+
+    /* ============================================================
+     *  FLIGHT ENGINEER: Load all dashboard widgets from feLayout.glade
+     * ============================================================ */
+    if (isFlightEngineer) {
+        feStartTime = std::chrono::high_resolution_clock::now();
+
+        /* Top bar — connection status */
+        builder->get_widget("fe_conn_robot1", feConnRobot1);
+        builder->get_widget("fe_latency_robot1", feLatencyRobot1);
+        builder->get_widget("fe_conn_robot2", feConnRobot2);
+        builder->get_widget("fe_latency_robot2", feLatencyRobot2);
+        builder->get_widget("fe_conn_esp32", feConnEsp32);
+        builder->get_widget("fe_rssi_esp32", feRssiEsp32);
+        builder->get_widget("fe_clock", feClock);
+
+        /* Navigation */
+        builder->get_widget("fe_nav_r1_roll", feNavR1Roll);
+        builder->get_widget("fe_nav_r1_pitch", feNavR1Pitch);
+        builder->get_widget("fe_nav_r1_yaw", feNavR1Yaw);
+        builder->get_widget("fe_nav_r1_x", feNavR1X);
+        builder->get_widget("fe_nav_r1_y", feNavR1Y);
+        builder->get_widget("fe_nav_r2_roll", feNavR2Roll);
+        builder->get_widget("fe_nav_r2_pitch", feNavR2Pitch);
+        builder->get_widget("fe_nav_r2_yaw", feNavR2Yaw);
+        builder->get_widget("fe_nav_r2_x", feNavR2X);
+        builder->get_widget("fe_nav_r2_y", feNavR2Y);
+
+        /* Autonomy */
+        builder->get_widget("fe_auto_r1_state", feAutoR1State);
+        builder->get_widget("fe_auto_r1_destx", feAutoR1DestX);
+        builder->get_widget("fe_auto_r1_destz", feAutoR1DestZ);
+        builder->get_widget("fe_auto_r2_state", feAutoR2State);
+        builder->get_widget("fe_auto_r2_destx", feAutoR2DestX);
+        builder->get_widget("fe_auto_r2_destz", feAutoR2DestZ);
+
+        /* Lidar */
+        builder->get_widget("fe_lidar_r1", feLidarR1);
+        builder->get_widget("fe_lidar_r2", feLidarR2);
+
+        /* Communication */
+        builder->get_widget("fe_comm_r1_wifi", feCommR1Wifi);
+        builder->get_widget("fe_comm_r1_can", feCommR1Can);
+        builder->get_widget("fe_comm_r2_wifi", feCommR2Wifi);
+        builder->get_widget("fe_comm_r2_can", feCommR2Can);
+
+        /* ESP32 diagnostics */
+        builder->get_widget("fe_esp32_can_status", feEsp32CanStatus);
+        builder->get_widget("fe_esp32_config", feEsp32Config);
+        builder->get_widget("fe_esp32_motor_count", feEsp32MotorCount);
+        builder->get_widget("fe_esp32_motor_grid", feEsp32MotorGrid);
+
+        /* Motor telemetry grid — populate headers */
+        builder->get_widget("fe_motor_grid", feMotorGrid);
+        if (feMotorGrid) {
+            const char* headers[] = {"Motor", "Voltage (V)", "Current (A)", "Output %", "Position", "Status"};
+            for (int col = 0; col < 6; col++) {
+                Gtk::Label* hdr = Gtk::manage(new Gtk::Label());
+                hdr->set_markup(std::string("<b>") + headers[col] + "</b>");
+                hdr->set_halign(Gtk::ALIGN_START);
+                feMotorGrid->attach(*hdr, col, 0, 1, 1);
+            }
+            /* Pre-create 16 rows of labels */
+            for (int row = 0; row < 16; row++) {
+                for (int col = 0; col < 6; col++) {
+                    feMotorLabels[row][col] = Gtk::manage(new Gtk::Label("--"));
+                    feMotorLabels[row][col]->set_halign(Gtk::ALIGN_START);
+                    feMotorLabels[row][col]->set_visible(false);
+                    feMotorGrid->attach(*feMotorLabels[row][col], col, row + 1, 1, 1);
+                }
+            }
+        }
+
+        /* ESP32 motor grid headers */
+        if (feEsp32MotorGrid) {
+            const char* esp_headers[] = {"Motor", "Type", "Status", "Output %", "Current (A)", "Voltage (V)", "Temp (\u00B0C)"};
+            for (int col = 0; col < 7; col++) {
+                Gtk::Label* hdr = Gtk::manage(new Gtk::Label());
+                hdr->set_markup(std::string("<b>") + esp_headers[col] + "</b>");
+                hdr->set_halign(Gtk::ALIGN_START);
+                feEsp32MotorGrid->attach(*hdr, col, 0, 1, 1);
+            }
+            for (int row = 0; row < 10; row++) {
+                for (int col = 0; col < 7; col++) {
+                    feEsp32MotorLabels[row][col] = Gtk::manage(new Gtk::Label("--"));
+                    feEsp32MotorLabels[row][col]->set_halign(Gtk::ALIGN_START);
+                    feEsp32MotorLabels[row][col]->set_visible(false);
+                    feEsp32MotorGrid->attach(*feEsp32MotorLabels[row][col], col, row + 1, 1, 1);
+                }
+            }
+        }
+
+        /* Inject FE video widgets into both placeholders */
+        Gtk::Box* videoPlaceholder = nullptr;
+        Gtk::Box* videoPlaceholderRobot2 = nullptr;
+        builder->get_widget("placeholder_video", videoPlaceholder);
+        builder->get_widget("placeholder_video_robot2", videoPlaceholderRobot2);
+
+        if (videoPlaceholder && !feVideoAreaRobot1) {
+            feVideoAreaRobot1 = Gtk::manage(new VideoWidget());
+            feVideoAreaRobot1->set_size_request(640 * GUI_SCALE, 400 * GUI_SCALE);
+            videoPlaceholder->pack_start(*feVideoAreaRobot1, Gtk::PACK_EXPAND_WIDGET);
+        } else if (videoPlaceholder && feVideoAreaRobot1) {
+            videoPlaceholder->pack_start(*feVideoAreaRobot1, Gtk::PACK_EXPAND_WIDGET);
+        }
+
+        if (videoPlaceholderRobot2 && !feVideoAreaRobot2) {
+            feVideoAreaRobot2 = Gtk::manage(new VideoWidget());
+            feVideoAreaRobot2->set_size_request(640 * GUI_SCALE, 400 * GUI_SCALE);
+            videoPlaceholderRobot2->pack_start(*feVideoAreaRobot2, Gtk::PACK_EXPAND_WIDGET);
+        } else if (videoPlaceholderRobot2 && feVideoAreaRobot2) {
+            videoPlaceholderRobot2->pack_start(*feVideoAreaRobot2, Gtk::PACK_EXPAND_WIDGET);
+        }
+
+        if (window) window->show_all();
+        std::cout << "Flight Engineer dashboard initialized." << std::endl;
+    }
+}
+
+void updateDiagnosticsTab() {
+    if (!isDiagDirty()) return;
+    if (!diagConnectionLabel) return;
+
+    DiagState ds = getDiagState();
+
+    /* Connection status */
+    if (ds.connected) {
+        diagConnectionLabel->set_markup("<span foreground='#00cc00'>● ESP32 Connected</span>  (" + ds.esp32_ip + ")");
+        diagRssiLabel->set_text("RSSI: -" + std::to_string(ds.wifi_rssi) + " dBm");
+        diagCanLabel->set_markup(ds.can_active
+            ? "<span foreground='#00cc00'>CAN: Active</span>"
+            : "<span foreground='#cc0000'>CAN: Inactive</span>");
+    } else {
+        diagConnectionLabel->set_markup("<span foreground='#cc0000'>● ESP32 Disconnected</span>");
+        diagRssiLabel->set_text("RSSI: --");
+        diagCanLabel->set_text("CAN: --");
+    }
+
+    /* Motor data */
+    const char* typeNames[] = {"Talon", "Falcon", "Kraken", "NEO"};
+    const char* statusNames[] = {"Disconnected", "Unplugged", "Connected"};
+    const char* statusColors[] = {"#cc0000", "#cc8800", "#00cc00"};
+
+    int count = std::min((int)ds.active_motors, 10);
+    for (int i = 0; i < 10; i++) {
+        bool visible = (i < count);
+        for (int col = 0; col < 7; col++) {
+            diagMotorLabels[i][col]->set_visible(visible);
+        }
+        if (!visible) continue;
+
+        const auto& m = ds.motors[i];
+        int type_idx = std::min((int)m.motor_type, 3);
+        int status_idx = std::min((int)m.status, 2);
+
+        diagMotorLabels[i][0]->set_text("CAN " + std::to_string(m.can_id));
+        diagMotorLabels[i][1]->set_text(typeNames[type_idx]);
+        diagMotorLabels[i][2]->set_markup(
+            std::string("<span foreground='") + statusColors[status_idx] + "'>" + statusNames[status_idx] + "</span>");
+
+        char buf[32];
+        snprintf(buf, sizeof(buf), "%.1f%%", m.percent * 100.0f);
+        diagMotorLabels[i][3]->set_text(buf);
+
+        snprintf(buf, sizeof(buf), "%.2f", m.current);
+        diagMotorLabels[i][4]->set_text(buf);
+
+        snprintf(buf, sizeof(buf), "%.2f", m.voltage);
+        diagMotorLabels[i][5]->set_text(buf);
+
+        snprintf(buf, sizeof(buf), "%d", m.temperature);
+        diagMotorLabels[i][6]->set_text(buf);
+    }
+    diagLastMotorCount = count;
+}
+
+/* ============================================================
+ *  FLIGHT ENGINEER: Dashboard update function
+ *  Called from the main loop to push live data into FE widgets.
+ * ============================================================ */
+static bool feRobotRecentlySeen(const std::chrono::high_resolution_clock::time_point& lastPacket,
+                                double staleAfterSeconds = 2.0) {
+    if (lastPacket.time_since_epoch().count() == 0) {
+        return false;
+    }
+
+    auto now = std::chrono::high_resolution_clock::now();
+    double age = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastPacket).count();
+    return age >= 0.0 && age <= staleAfterSeconds;
+}
+
+void updateFEDashboard() {
+    if (!isFlightEngineer) return;
+
+    /* --- Mission clock --- */
+    if (feClock) {
+        auto now = std::chrono::high_resolution_clock::now();
+        int secs = (int)std::chrono::duration_cast<std::chrono::seconds>(now - feStartTime).count();
+        int h = secs / 3600, m = (secs % 3600) / 60, s = secs % 60;
+        char buf[32];
+        snprintf(buf, sizeof(buf), "Uptime: %02d:%02d:%02d", h, m, s);
+        feClock->set_text(buf);
+    }
+
+    /* --- Connection status labels --- */
+    auto now = std::chrono::high_resolution_clock::now();
+    const auto lastR1 = lastPacketOrinMs();
+    const auto lastR2 = lastPacketNanoMs();
+    const bool robot1Connected = feRobotRecentlySeen(lastR1);
+    const bool robot2Connected = feRobotRecentlySeen(lastR2);
+
+    if (feConnRobot1) {
+        feConnRobot1->set_markup(robot1Connected
+            ? "<span foreground='#00cc00'>● Robot 1: Connected</span>"
+            : "<span foreground='#cc0000'>● Robot 1: Disconnected</span>");
+    }
+    if (feConnRobot2) {
+        feConnRobot2->set_markup(robot2Connected
+            ? "<span foreground='#00cc00'>● Robot 2: Connected</span>"
+            : "<span foreground='#cc0000'>● Robot 2: Disconnected</span>");
+    }
+
+    /* Latency: time since last received packet */
+    if (feLatencyRobot1) {
+        if (robot1Connected) {
+            double ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastR1).count();
+            char buf[32];
+            snprintf(buf, sizeof(buf), "%.0fms", ms);
+            feLatencyRobot1->set_text(std::string("Latency: ") + buf);
+        } else {
+            feLatencyRobot1->set_text("Latency: --");
+        }
+    }
+    if (feLatencyRobot2) {
+        if (robot2Connected) {
+            double ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastR2).count();
+            char buf[32];
+            snprintf(buf, sizeof(buf), "%.0fms", ms);
+            feLatencyRobot2->set_text(std::string("Latency: ") + buf);
+        } else {
+            feLatencyRobot2->set_text("Latency: --");
+        }
+    }
+
+    /* --- ESP32 diagnostics section --- */
+    if (isDiagDirty() || isDiagConnected()) {
+        DiagState ds = getDiagState();
+
+        if (feConnEsp32) {
+            feConnEsp32->set_markup(ds.connected
+                ? ("<span foreground='#00cc00'>● ESP32: " + ds.esp32_ip + "</span>")
+                : "<span foreground='#cc0000'>● ESP32: Disconnected</span>");
+        }
+        if (feRssiEsp32) {
+            feRssiEsp32->set_text(ds.connected
+                ? ("RSSI: -" + std::to_string(ds.wifi_rssi) + " dBm")
+                : "RSSI: --");
+        }
+        if (feEsp32CanStatus) {
+            feEsp32CanStatus->set_markup(ds.can_active
+                ? "<span foreground='#00cc00'>CAN Bus: Active</span>"
+                : "<span foreground='#cc0000'>CAN Bus: Inactive</span>");
+        }
+        if (feEsp32Config) {
+            feEsp32Config->set_text("Config: " + std::to_string(ds.config_index));
+        }
+        if (feEsp32MotorCount) {
+            feEsp32MotorCount->set_text("Motors: " + std::to_string(ds.active_motors));
+        }
+
+        /* ESP32 motor grid */
+        if (feEsp32MotorGrid) {
+            const char* typeNames[] = {"Talon", "Falcon", "Kraken", "NEO"};
+            const char* statusNames[] = {"Disconnected", "Unplugged", "Connected"};
+            const char* statusColors[] = {"#cc0000", "#cc8800", "#00cc00"};
+            int count = std::min((int)ds.active_motors, 10);
+
+            for (int i = 0; i < 10; i++) {
+                bool visible = (i < count);
+                for (int col = 0; col < 7; col++)
+                    feEsp32MotorLabels[i][col]->set_visible(visible);
+                if (!visible) continue;
+
+                const auto& em = ds.motors[i];
+                int type_idx = std::min((int)em.motor_type, 3);
+                int status_idx = std::min((int)em.status, 2);
+                char buf[32];
+
+                feEsp32MotorLabels[i][0]->set_text("CAN " + std::to_string(em.can_id));
+                feEsp32MotorLabels[i][1]->set_text(typeNames[type_idx]);
+                feEsp32MotorLabels[i][2]->set_markup(
+                    std::string("<span foreground='") + statusColors[status_idx] + "'>" + statusNames[status_idx] + "</span>");
+                snprintf(buf, sizeof(buf), "%.1f%%", em.percent * 100.0f);
+                feEsp32MotorLabels[i][3]->set_text(buf);
+                snprintf(buf, sizeof(buf), "%.2f", em.current);
+                feEsp32MotorLabels[i][4]->set_text(buf);
+                snprintf(buf, sizeof(buf), "%.2f", em.voltage);
+                feEsp32MotorLabels[i][5]->set_text(buf);
+                snprintf(buf, sizeof(buf), "%d", em.temperature);
+                feEsp32MotorLabels[i][6]->set_text(buf);
+            }
+        }
+    }
+}
+
+/* Helper: update a motor row in the FE motor telemetry grid.
+ * Called from handleTalonElements/handleFalconElements/etc when in FE mode. */
+void feUpdateMotorRow(const std::string& label, float voltage, float current, float output_pct, int position, bool error, bool lowVoltage) {
+    if (!feMotorGrid) return;
+
+    /* Find or allocate a row */
+    auto it = feMotorRowMap.find(label);
+    int row;
+    if (it == feMotorRowMap.end()) {
+        if (feMotorRowCount >= 16) return;
+        row = feMotorRowCount++;
+        feMotorRowMap[label] = row;
+        for (int col = 0; col < 6; col++)
+            feMotorLabels[row][col]->set_visible(true);
+    } else {
+        row = it->second;
+    }
+
+    char buf[32];
+    feMotorLabels[row][0]->set_text(label);
+
+    snprintf(buf, sizeof(buf), "%.2f", voltage);
+    feMotorLabels[row][1]->set_text(buf);
+    if (lowVoltage)
+        feMotorLabels[row][1]->set_markup(std::string("<span foreground='#cc0000'><b>") + buf + "</b></span>");
+
+    snprintf(buf, sizeof(buf), "%.2f", current);
+    feMotorLabels[row][2]->set_text(buf);
+
+    snprintf(buf, sizeof(buf), "%.1f%%", output_pct * 100.0f);
+    feMotorLabels[row][3]->set_text(buf);
+
+    snprintf(buf, sizeof(buf), "%d", position);
+    feMotorLabels[row][4]->set_text(buf);
+
+    if (error)
+        feMotorLabels[row][5]->set_markup("<span foreground='#cc0000'>ERROR</span>");
+    else
+        feMotorLabels[row][5]->set_markup("<span foreground='#00cc00'>OK</span>");
 }
 
 void initSensorsWindow() {
@@ -3279,6 +3837,69 @@ void initSensorsWindow() {
 
     linearPotentiometerGraph = Gtk::manage(new MultiMotorGraph("Linear Actuator Position", MultiMotorGraph::POTENTIOMETER, linearNames));
     inject("holder_linear_pot", linearPotentiometerGraph);
+
+    /* ============================================================
+     *  DIAGNOSTICS TAB (ESP32 handheld tool data)
+     *  Injects into the existing box_tab_diagnostics from Glade
+     * ============================================================ */
+    {
+        Gtk::Box* diagPage = nullptr;
+        builder->get_widget("box_tab_diagnostics", diagPage);
+
+        if (diagPage) {
+            diagPage->set_spacing(10);
+
+            /* Connection status bar */
+            Gtk::Box* statusBar = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 20));
+            statusBar->property_margin().set_value(5);
+
+            diagConnectionLabel = Gtk::manage(new Gtk::Label("ESP32: Waiting..."));
+            diagConnectionLabel->set_halign(Gtk::ALIGN_START);
+            statusBar->pack_start(*diagConnectionLabel, Gtk::PACK_SHRINK);
+
+            diagRssiLabel = Gtk::manage(new Gtk::Label("RSSI: --"));
+            statusBar->pack_start(*diagRssiLabel, Gtk::PACK_SHRINK);
+
+            diagCanLabel = Gtk::manage(new Gtk::Label("CAN: --"));
+            statusBar->pack_start(*diagCanLabel, Gtk::PACK_SHRINK);
+
+            diagPage->pack_start(*statusBar, Gtk::PACK_SHRINK);
+
+            /* Separator */
+            diagPage->pack_start(*Gtk::manage(new Gtk::Separator(Gtk::ORIENTATION_HORIZONTAL)), Gtk::PACK_SHRINK);
+
+            /* Motor data grid */
+            diagMotorGrid = Gtk::manage(new Gtk::Grid());
+            diagMotorGrid->set_row_spacing(6);
+            diagMotorGrid->set_column_spacing(15);
+            diagMotorGrid->property_margin().set_value(10);
+
+            /* Header row */
+            const char* headers[] = {"Motor", "Type", "Status", "Output %", "Current (A)", "Voltage (V)", "Temp (\u00B0C)"};
+            for (int col = 0; col < 7; col++) {
+                Gtk::Label* hdr = Gtk::manage(new Gtk::Label());
+                hdr->set_markup(std::string("<b>") + headers[col] + "</b>");
+                hdr->set_halign(Gtk::ALIGN_START);
+                diagMotorGrid->attach(*hdr, col, 0, 1, 1);
+            }
+
+            /* Pre-create label slots for up to 10 motors */
+            for (int row = 0; row < 10; row++) {
+                for (int col = 0; col < 7; col++) {
+                    diagMotorLabels[row][col] = Gtk::manage(new Gtk::Label("--"));
+                    diagMotorLabels[row][col]->set_halign(Gtk::ALIGN_START);
+                    diagMotorLabels[row][col]->set_visible(false);
+                    diagMotorGrid->attach(*diagMotorLabels[row][col], col, row + 1, 1, 1);
+                }
+            }
+
+            Gtk::ScrolledWindow* scrolled = Gtk::manage(new Gtk::ScrolledWindow());
+            scrolled->set_policy(Gtk::POLICY_AUTOMATIC, Gtk::POLICY_AUTOMATIC);
+            scrolled->set_vexpand(true);
+            scrolled->add(*diagMotorGrid);
+            diagPage->pack_start(*scrolled, Gtk::PACK_EXPAND_WIDGET);
+        }
+    }
 
     builder->get_widget("sensorBox", sensorBox);
     if (!sensorBox) {
@@ -4668,8 +5289,9 @@ int main(int argc, char** argv) {
     setup_local_key_vectors();
     checkSize();
     setupGUI(application);
-    if(!noVideo)
+    if(!noVideo && !isFlightEngineer)
         initSensorsWindow();
+    startDiagListener();
     if(simulateNetwork) {
         initSimulatorWindow();
     }
@@ -4784,8 +5406,19 @@ int main(int argc, char** argv) {
             Gtk::Main::iteration();
         }
 
+        updateDiagnosticsTab();
+        updateFEDashboard();
+
         if (newFrameAvailable) {
-            if (videoArea) {
+            if (isFlightEngineer) {
+                std::lock_guard<std::mutex> lock(frameMutex);
+                if (feVideoAreaRobot1 && !fe_left_frame.empty()) {
+                    feVideoAreaRobot1->setFrame(fe_left_frame);
+                }
+                if (feVideoAreaRobot2 && !fe_right_frame.empty()) {
+                    feVideoAreaRobot2->setFrame(fe_right_frame);
+                }
+            } else if (videoArea) {
                 videoArea->setFrame(latestFrame);
             }
             newFrameAvailable = false;
@@ -4841,7 +5474,7 @@ int main(int argc, char** argv) {
             }
         }
 
-        if(!isServerConnected() && !isServerConnected2()){
+        if (!isFlightEngineer && !isServerConnected() && !isServerConnected2()) {
             resetUIOnDisconnect();
         }
         

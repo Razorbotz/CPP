@@ -1689,6 +1689,47 @@ void updateBucketRotationImage() {
     }
 }
 
+void updateBucketElevationBar() {
+    // Degrees to radians helper
+    auto degToRad = [](double deg){ return deg * (M_PI / 180.0); };
+
+    double bucket_height_cm = 0.0;
+
+    if (backupBot)
+    {
+        // Values are in centimeters
+        const double H  = 16.375;
+        const double L_arm = 80.0;
+        const double L_bucket = 38.1;
+
+        double armRad = degToRad(arm_angle_deg);
+        double bucketRad = degToRad(arm_angle_deg + bucket_angle_deg);
+
+        bucket_height_cm = H - L_arm * std::sin(armRad) - L_bucket * std::sin(bucketRad);
+
+        //if (elevation_bar) elevation_bar->set_position(bucket_height_cm);
+    }
+    else if (primaryBot)
+    {
+        // UPDATE ONCE VALUES ARE MEASURED
+        /*
+        const double H  = 
+        const double L_arm = 
+        const double L_bucket =
+
+        double absolute_arm_deg = -roll_rotation_angle + arm_angle_deg;
+        double absolute_bucket_deg = absolute_arm_deg + bucket_angle_deg;
+
+        double absolute_arm_rad = degToRad(absolute_arm_deg);
+        double absolute_bucket_rad = degToRad(absolute_bucket_deg);
+
+        bucket_height_cm = H + L_arm * std::sin(absolute_arm_rad) + L_bucket * std::sin(absolute_bucket_rad);
+
+        if (elevation_bar) elevation_bar->set_position(bucket_height_cm);
+        */
+    }
+}
+
 /*
 The following functions with the names handleNodeElements handle any 
 specific logic that is required to update any widgets that use the 
@@ -1718,6 +1759,7 @@ void handleZedElements(const std::vector<Element>& elements) {
             if (attitudeIndicator) attitudeIndicator->set_roll(-roll_rotation_angle);
         
             updateBucketRotationImage();
+            updateBucketElevationBar();
         }
     }
 }
@@ -1755,6 +1797,7 @@ void handleTalonElements(const std::string& label, const std::vector<Element>& e
                 std::cout << "pos: " << pos << std::endl;
                 std::cout << "arm_angle_deg: " << arm_angle_deg << std::endl;
                 updateBucketRotationImage();
+                updateBucketElevationBar();
                 if (proximityBar) {
                     proximityBar->set_arm_position(pos);
                 }
@@ -1772,6 +1815,7 @@ void handleTalonElements(const std::string& label, const std::vector<Element>& e
                 std::cout << "bucket_angle_deg: " << bucket_angle_deg << std::endl;
 
                 updateBucketRotationImage();
+                updateBucketElevationBar();
             }
             else if (label == "Talon 4") {
                 right_bucket_pos = pos;

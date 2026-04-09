@@ -1,0 +1,602 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <requires lib="gtk+" version="3.20"/>
+
+  <object class="GtkWindow" id="mainWindow">
+    <property name="title" translatable="yes">Flight Engineer — System Monitor</property>
+    <property name="default_width">1920</property>
+    <property name="default_height">1080</property>
+
+    <child>
+      <object class="GtkBox" id="topLevelBox">
+        <property name="visible">True</property>
+        <property name="orientation">vertical</property>
+        <property name="spacing">8</property>
+        <property name="margin">8</property>
+
+        <!-- ============================================================ -->
+        <!--  TOP HEALTH STRIP                                            -->
+        <!-- ============================================================ -->
+        <child>
+          <object class="GtkBox" id="fe_top_bar">
+            <property name="visible">True</property>
+            <property name="orientation">horizontal</property>
+            <property name="spacing">10</property>
+            <property name="hexpand">True</property>
+
+            <child>
+              <object class="GtkFrame" id="fe_conn_robot1_card">
+                <property name="visible">True</property>
+                <property name="hexpand">True</property>
+                <property name="label">Robot 1 Health</property>
+                <property name="label_xalign">0.03</property>
+                <child>
+                  <object class="GtkBox" id="fe_conn_robot1_box">
+                    <property name="visible">True</property>
+                    <property name="orientation">vertical</property>
+                    <property name="spacing">4</property>
+                    <property name="margin">8</property>
+                    <child>
+                      <object class="GtkLabel" id="fe_conn_robot1">
+                        <property name="visible">True</property>
+                        <property name="halign">start</property>
+                        <property name="label">Robot 1: Disconnected</property>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkLabel" id="fe_latency_robot1">
+                        <property name="visible">True</property>
+                        <property name="halign">start</property>
+                        <property name="label">Latency: --</property>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+              </object>
+            </child>
+
+            <child>
+              <object class="GtkFrame" id="fe_conn_robot2_card">
+                <property name="visible">True</property>
+                <property name="hexpand">True</property>
+                <property name="label">Robot 2 Health</property>
+                <property name="label_xalign">0.03</property>
+                <child>
+                  <object class="GtkBox" id="fe_conn_robot2_box">
+                    <property name="visible">True</property>
+                    <property name="orientation">vertical</property>
+                    <property name="spacing">4</property>
+                    <property name="margin">8</property>
+                    <child>
+                      <object class="GtkLabel" id="fe_conn_robot2">
+                        <property name="visible">True</property>
+                        <property name="halign">start</property>
+                        <property name="label">Robot 2: Disconnected</property>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkLabel" id="fe_latency_robot2">
+                        <property name="visible">True</property>
+                        <property name="halign">start</property>
+                        <property name="label">Latency: --</property>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+              </object>
+            </child>
+
+            <child>
+              <object class="GtkFrame" id="fe_conn_esp32_card">
+                <property name="visible">True</property>
+                <property name="hexpand">True</property>
+                <property name="label">ESP32 / Diagnostics</property>
+                <property name="label_xalign">0.03</property>
+                <child>
+                  <object class="GtkBox" id="fe_conn_esp32_box">
+                    <property name="visible">True</property>
+                    <property name="orientation">vertical</property>
+                    <property name="spacing">4</property>
+                    <property name="margin">8</property>
+                    <child>
+                      <object class="GtkLabel" id="fe_conn_esp32">
+                        <property name="visible">True</property>
+                        <property name="halign">start</property>
+                        <property name="label">ESP32: Disconnected</property>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkLabel" id="fe_rssi_esp32">
+                        <property name="visible">True</property>
+                        <property name="halign">start</property>
+                        <property name="label">RSSI: --</property>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+              </object>
+            </child>
+
+            <child>
+              <object class="GtkFrame" id="fe_mission_card">
+                <property name="visible">True</property>
+                <property name="label">Mission</property>
+                <property name="label_xalign">0.03</property>
+                <child>
+                  <object class="GtkBox" id="fe_mission_box">
+                    <property name="visible">True</property>
+                    <property name="orientation">vertical</property>
+                    <property name="spacing">4</property>
+                    <property name="margin">8</property>
+                    <child>
+                      <object class="GtkLabel" id="fe_clock">
+                        <property name="visible">True</property>
+                        <property name="halign">start</property>
+                        <property name="label">Uptime: 00:00:00</property>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkLabel" id="fe_alert_summary">
+                        <property name="visible">True</property>
+                        <property name="halign">start</property>
+                        <property name="label">Alerts: review robot cards and diagnostics below</property>
+                        <property name="wrap">True</property>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+              </object>
+            </child>
+          </object>
+        </child>
+
+        <child>
+          <object class="GtkSeparator">
+            <property name="visible">True</property>
+            <property name="orientation">horizontal</property>
+          </object>
+        </child>
+
+        <!-- ============================================================ -->
+        <!--  MAIN CONTENT                                                -->
+        <!-- ============================================================ -->
+        <child>
+          <object class="GtkBox" id="fe_main_content">
+            <property name="visible">True</property>
+            <property name="orientation">horizontal</property>
+            <property name="spacing">10</property>
+            <property name="hexpand">True</property>
+            <property name="vexpand">True</property>
+
+            <!-- LEFT: dashboard and diagnostics -->
+            <child>
+              <object class="GtkScrolledWindow" id="fe_scroll">
+                <property name="visible">True</property>
+                <property name="hexpand">True</property>
+                <property name="vexpand">True</property>
+                <property name="hscrollbar_policy">never</property>
+                <property name="vscrollbar_policy">automatic</property>
+
+                <child>
+                  <object class="GtkBox" id="fe_dashboard">
+                    <property name="visible">True</property>
+                    <property name="orientation">vertical</property>
+                    <property name="spacing">12</property>
+                    <property name="margin">4</property>
+
+                    <child>
+                      <object class="GtkFrame" id="fe_frame_alerts">
+                        <property name="visible">True</property>
+                        <property name="label">Flight Engineer Focus</property>
+                        <property name="label_xalign">0.02</property>
+                        <child>
+                          <object class="GtkBox" id="fe_alerts_content">
+                            <property name="visible">True</property>
+                            <property name="orientation">vertical</property>
+                            <property name="spacing">4</property>
+                            <property name="margin">8</property>
+                            <child>
+                              <object class="GtkLabel" id="fe_alerts_hint">
+                                <property name="visible">True</property>
+                                <property name="halign">start</property>
+                                <property name="wrap">True</property>
+                                <property name="label">Use the top health strip for immediate triage. Compare Robot 1 and Robot 2 below, then drop into the detailed diagnostics tabs only when you need root-cause data.</property>
+                              </object>
+                            </child>
+                          </object>
+                        </child>
+                      </object>
+                    </child>
+
+                    <child>
+                      <object class="GtkBox" id="fe_robot_cards_row">
+                        <property name="visible">True</property>
+                        <property name="orientation">horizontal</property>
+                        <property name="spacing">12</property>
+                        <property name="homogeneous">True</property>
+
+                        <!-- Robot 1 summary -->
+                        <child>
+                          <object class="GtkFrame" id="fe_frame_robot1_summary">
+                            <property name="visible">True</property>
+                            <property name="label">Robot 1 Summary</property>
+                            <property name="label_xalign">0.02</property>
+                            <child>
+                              <object class="GtkBox" id="fe_robot1_summary_box">
+                                <property name="visible">True</property>
+                                <property name="orientation">vertical</property>
+                                <property name="spacing">8</property>
+                                <property name="margin">8</property>
+
+                                <child>
+                                  <object class="GtkLabel">
+                                    <property name="visible">True</property>
+                                    <property name="halign">start</property>
+                                    <property name="use_markup">True</property>
+                                    <property name="label">&lt;b&gt;Mission / Autonomy&lt;/b&gt;</property>
+                                  </object>
+                                </child>
+                                <child>
+                                  <object class="GtkGrid" id="fe_robot1_auto_grid">
+                                    <property name="visible">True</property>
+                                    <property name="row_spacing">4</property>
+                                    <property name="column_spacing">12</property>
+                                    <child>
+                                      <object class="GtkLabel"><property name="visible">True</property><property name="halign">start</property><property name="label">State</property></object>
+                                      <packing><property name="left_attach">0</property><property name="top_attach">0</property></packing>
+                                    </child>
+                                    <child>
+                                      <object class="GtkLabel" id="fe_auto_r1_state"><property name="visible">True</property><property name="halign">start</property><property name="label">--</property></object>
+                                      <packing><property name="left_attach">1</property><property name="top_attach">0</property></packing>
+                                    </child>
+                                    <child>
+                                      <object class="GtkLabel"><property name="visible">True</property><property name="halign">start</property><property name="label">Dest X</property></object>
+                                      <packing><property name="left_attach">0</property><property name="top_attach">1</property></packing>
+                                    </child>
+                                    <child>
+                                      <object class="GtkLabel" id="fe_auto_r1_destx"><property name="visible">True</property><property name="halign">start</property><property name="label">--</property></object>
+                                      <packing><property name="left_attach">1</property><property name="top_attach">1</property></packing>
+                                    </child>
+                                    <child>
+                                      <object class="GtkLabel"><property name="visible">True</property><property name="halign">start</property><property name="label">Dest Z</property></object>
+                                      <packing><property name="left_attach">0</property><property name="top_attach">2</property></packing>
+                                    </child>
+                                    <child>
+                                      <object class="GtkLabel" id="fe_auto_r1_destz"><property name="visible">True</property><property name="halign">start</property><property name="label">--</property></object>
+                                      <packing><property name="left_attach">1</property><property name="top_attach">2</property></packing>
+                                    </child>
+                                  </object>
+                                </child>
+
+                                <child>
+                                  <object class="GtkSeparator"><property name="visible">True</property><property name="orientation">horizontal</property></object>
+                                </child>
+
+                                <child>
+                                  <object class="GtkLabel">
+                                    <property name="visible">True</property>
+                                    <property name="halign">start</property>
+                                    <property name="use_markup">True</property>
+                                    <property name="label">&lt;b&gt;Pose / Navigation&lt;/b&gt;</property>
+                                  </object>
+                                </child>
+                                <child>
+                                  <object class="GtkGrid" id="fe_robot1_nav_grid">
+                                    <property name="visible">True</property>
+                                    <property name="row_spacing">4</property>
+                                    <property name="column_spacing">12</property>
+                                    <child><object class="GtkLabel"><property name="visible">True</property><property name="halign">start</property><property name="label">Roll</property></object><packing><property name="left_attach">0</property><property name="top_attach">0</property></packing></child>
+                                    <child><object class="GtkLabel" id="fe_nav_r1_roll"><property name="visible">True</property><property name="halign">start</property><property name="label">--</property></object><packing><property name="left_attach">1</property><property name="top_attach">0</property></packing></child>
+                                    <child><object class="GtkLabel"><property name="visible">True</property><property name="halign">start</property><property name="label">Pitch</property></object><packing><property name="left_attach">0</property><property name="top_attach">1</property></packing></child>
+                                    <child><object class="GtkLabel" id="fe_nav_r1_pitch"><property name="visible">True</property><property name="halign">start</property><property name="label">--</property></object><packing><property name="left_attach">1</property><property name="top_attach">1</property></packing></child>
+                                    <child><object class="GtkLabel"><property name="visible">True</property><property name="halign">start</property><property name="label">Yaw</property></object><packing><property name="left_attach">0</property><property name="top_attach">2</property></packing></child>
+                                    <child><object class="GtkLabel" id="fe_nav_r1_yaw"><property name="visible">True</property><property name="halign">start</property><property name="label">--</property></object><packing><property name="left_attach">1</property><property name="top_attach">2</property></packing></child>
+                                    <child><object class="GtkLabel"><property name="visible">True</property><property name="halign">start</property><property name="label">X (m)</property></object><packing><property name="left_attach">0</property><property name="top_attach">3</property></packing></child>
+                                    <child><object class="GtkLabel" id="fe_nav_r1_x"><property name="visible">True</property><property name="halign">start</property><property name="label">--</property></object><packing><property name="left_attach">1</property><property name="top_attach">3</property></packing></child>
+                                    <child><object class="GtkLabel"><property name="visible">True</property><property name="halign">start</property><property name="label">Y (m)</property></object><packing><property name="left_attach">0</property><property name="top_attach">4</property></packing></child>
+                                    <child><object class="GtkLabel" id="fe_nav_r1_y"><property name="visible">True</property><property name="halign">start</property><property name="label">--</property></object><packing><property name="left_attach">1</property><property name="top_attach">4</property></packing></child>
+                                  </object>
+                                </child>
+
+                                <child>
+                                  <object class="GtkSeparator"><property name="visible">True</property><property name="orientation">horizontal</property></object>
+                                </child>
+
+                                <child>
+                                  <object class="GtkLabel">
+                                    <property name="visible">True</property>
+                                    <property name="halign">start</property>
+                                    <property name="use_markup">True</property>
+                                    <property name="label">&lt;b&gt;Sensors / Communications&lt;/b&gt;</property>
+                                  </object>
+                                </child>
+                                <child>
+                                  <object class="GtkGrid" id="fe_robot1_comm_grid">
+                                    <property name="visible">True</property>
+                                    <property name="row_spacing">4</property>
+                                    <property name="column_spacing">12</property>
+                                    <child><object class="GtkLabel"><property name="visible">True</property><property name="halign">start</property><property name="label">Lidar</property></object><packing><property name="left_attach">0</property><property name="top_attach">0</property></packing></child>
+                                    <child><object class="GtkLabel" id="fe_lidar_r1"><property name="visible">True</property><property name="halign">start</property><property name="label">-- m</property></object><packing><property name="left_attach">1</property><property name="top_attach">0</property></packing></child>
+                                    <child><object class="GtkLabel"><property name="visible">True</property><property name="halign">start</property><property name="label">Wi-Fi</property></object><packing><property name="left_attach">0</property><property name="top_attach">1</property></packing></child>
+                                    <child><object class="GtkLabel" id="fe_comm_r1_wifi"><property name="visible">True</property><property name="halign">start</property><property name="label">--</property></object><packing><property name="left_attach">1</property><property name="top_attach">1</property></packing></child>
+                                    <child><object class="GtkLabel"><property name="visible">True</property><property name="halign">start</property><property name="label">CAN Bus</property></object><packing><property name="left_attach">0</property><property name="top_attach">2</property></packing></child>
+                                    <child><object class="GtkLabel" id="fe_comm_r1_can"><property name="visible">True</property><property name="halign">start</property><property name="label">--</property></object><packing><property name="left_attach">1</property><property name="top_attach">2</property></packing></child>
+                                  </object>
+                                </child>
+                              </object>
+                            </child>
+                          </object>
+                        </child>
+
+                        <!-- Robot 2 summary -->
+                        <child>
+                          <object class="GtkFrame" id="fe_frame_robot2_summary">
+                            <property name="visible">True</property>
+                            <property name="label">Robot 2 Summary</property>
+                            <property name="label_xalign">0.02</property>
+                            <child>
+                              <object class="GtkBox" id="fe_robot2_summary_box">
+                                <property name="visible">True</property>
+                                <property name="orientation">vertical</property>
+                                <property name="spacing">8</property>
+                                <property name="margin">8</property>
+
+                                <child>
+                                  <object class="GtkLabel">
+                                    <property name="visible">True</property>
+                                    <property name="halign">start</property>
+                                    <property name="use_markup">True</property>
+                                    <property name="label">&lt;b&gt;Mission / Autonomy&lt;/b&gt;</property>
+                                  </object>
+                                </child>
+                                <child>
+                                  <object class="GtkGrid" id="fe_robot2_auto_grid">
+                                    <property name="visible">True</property>
+                                    <property name="row_spacing">4</property>
+                                    <property name="column_spacing">12</property>
+                                    <child><object class="GtkLabel"><property name="visible">True</property><property name="halign">start</property><property name="label">State</property></object><packing><property name="left_attach">0</property><property name="top_attach">0</property></packing></child>
+                                    <child><object class="GtkLabel" id="fe_auto_r2_state"><property name="visible">True</property><property name="halign">start</property><property name="label">--</property></object><packing><property name="left_attach">1</property><property name="top_attach">0</property></packing></child>
+                                    <child><object class="GtkLabel"><property name="visible">True</property><property name="halign">start</property><property name="label">Dest X</property></object><packing><property name="left_attach">0</property><property name="top_attach">1</property></packing></child>
+                                    <child><object class="GtkLabel" id="fe_auto_r2_destx"><property name="visible">True</property><property name="halign">start</property><property name="label">--</property></object><packing><property name="left_attach">1</property><property name="top_attach">1</property></packing></child>
+                                    <child><object class="GtkLabel"><property name="visible">True</property><property name="halign">start</property><property name="label">Dest Z</property></object><packing><property name="left_attach">0</property><property name="top_attach">2</property></packing></child>
+                                    <child><object class="GtkLabel" id="fe_auto_r2_destz"><property name="visible">True</property><property name="halign">start</property><property name="label">--</property></object><packing><property name="left_attach">1</property><property name="top_attach">2</property></packing></child>
+                                  </object>
+                                </child>
+
+                                <child><object class="GtkSeparator"><property name="visible">True</property><property name="orientation">horizontal</property></object></child>
+
+                                <child>
+                                  <object class="GtkLabel">
+                                    <property name="visible">True</property>
+                                    <property name="halign">start</property>
+                                    <property name="use_markup">True</property>
+                                    <property name="label">&lt;b&gt;Pose / Navigation&lt;/b&gt;</property>
+                                  </object>
+                                </child>
+                                <child>
+                                  <object class="GtkGrid" id="fe_robot2_nav_grid">
+                                    <property name="visible">True</property>
+                                    <property name="row_spacing">4</property>
+                                    <property name="column_spacing">12</property>
+                                    <child><object class="GtkLabel"><property name="visible">True</property><property name="halign">start</property><property name="label">Roll</property></object><packing><property name="left_attach">0</property><property name="top_attach">0</property></packing></child>
+                                    <child><object class="GtkLabel" id="fe_nav_r2_roll"><property name="visible">True</property><property name="halign">start</property><property name="label">--</property></object><packing><property name="left_attach">1</property><property name="top_attach">0</property></packing></child>
+                                    <child><object class="GtkLabel"><property name="visible">True</property><property name="halign">start</property><property name="label">Pitch</property></object><packing><property name="left_attach">0</property><property name="top_attach">1</property></packing></child>
+                                    <child><object class="GtkLabel" id="fe_nav_r2_pitch"><property name="visible">True</property><property name="halign">start</property><property name="label">--</property></object><packing><property name="left_attach">1</property><property name="top_attach">1</property></packing></child>
+                                    <child><object class="GtkLabel"><property name="visible">True</property><property name="halign">start</property><property name="label">Yaw</property></object><packing><property name="left_attach">0</property><property name="top_attach">2</property></packing></child>
+                                    <child><object class="GtkLabel" id="fe_nav_r2_yaw"><property name="visible">True</property><property name="halign">start</property><property name="label">--</property></object><packing><property name="left_attach">1</property><property name="top_attach">2</property></packing></child>
+                                    <child><object class="GtkLabel"><property name="visible">True</property><property name="halign">start</property><property name="label">X (m)</property></object><packing><property name="left_attach">0</property><property name="top_attach">3</property></packing></child>
+                                    <child><object class="GtkLabel" id="fe_nav_r2_x"><property name="visible">True</property><property name="halign">start</property><property name="label">--</property></object><packing><property name="left_attach">1</property><property name="top_attach">3</property></packing></child>
+                                    <child><object class="GtkLabel"><property name="visible">True</property><property name="halign">start</property><property name="label">Y (m)</property></object><packing><property name="left_attach">0</property><property name="top_attach">4</property></packing></child>
+                                    <child><object class="GtkLabel" id="fe_nav_r2_y"><property name="visible">True</property><property name="halign">start</property><property name="label">--</property></object><packing><property name="left_attach">1</property><property name="top_attach">4</property></packing></child>
+                                  </object>
+                                </child>
+
+                                <child><object class="GtkSeparator"><property name="visible">True</property><property name="orientation">horizontal</property></object></child>
+
+                                <child>
+                                  <object class="GtkLabel">
+                                    <property name="visible">True</property>
+                                    <property name="halign">start</property>
+                                    <property name="use_markup">True</property>
+                                    <property name="label">&lt;b&gt;Sensors / Communications&lt;/b&gt;</property>
+                                  </object>
+                                </child>
+                                <child>
+                                  <object class="GtkGrid" id="fe_robot2_comm_grid">
+                                    <property name="visible">True</property>
+                                    <property name="row_spacing">4</property>
+                                    <property name="column_spacing">12</property>
+                                    <child><object class="GtkLabel"><property name="visible">True</property><property name="halign">start</property><property name="label">Lidar</property></object><packing><property name="left_attach">0</property><property name="top_attach">0</property></packing></child>
+                                    <child><object class="GtkLabel" id="fe_lidar_r2"><property name="visible">True</property><property name="halign">start</property><property name="label">-- m</property></object><packing><property name="left_attach">1</property><property name="top_attach">0</property></packing></child>
+                                    <child><object class="GtkLabel"><property name="visible">True</property><property name="halign">start</property><property name="label">Wi-Fi</property></object><packing><property name="left_attach">0</property><property name="top_attach">1</property></packing></child>
+                                    <child><object class="GtkLabel" id="fe_comm_r2_wifi"><property name="visible">True</property><property name="halign">start</property><property name="label">--</property></object><packing><property name="left_attach">1</property><property name="top_attach">1</property></packing></child>
+                                    <child><object class="GtkLabel"><property name="visible">True</property><property name="halign">start</property><property name="label">CAN Bus</property></object><packing><property name="left_attach">0</property><property name="top_attach">2</property></packing></child>
+                                    <child><object class="GtkLabel" id="fe_comm_r2_can"><property name="visible">True</property><property name="halign">start</property><property name="label">--</property></object><packing><property name="left_attach">1</property><property name="top_attach">2</property></packing></child>
+                                  </object>
+                                </child>
+                              </object>
+                            </child>
+                          </object>
+                        </child>
+                      </object>
+                    </child>
+
+                    <child>
+                      <object class="GtkFrame" id="fe_frame_diagnostics">
+                        <property name="visible">True</property>
+                        <property name="label">Detailed Diagnostics</property>
+                        <property name="label_xalign">0.02</property>
+                        <child>
+                          <object class="GtkNotebook" id="fe_diagnostics_notebook">
+                            <property name="visible">True</property>
+                            <property name="margin">8</property>
+
+                            <child>
+                              <object class="GtkScrolledWindow" id="fe_motor_scroller">
+                                <property name="visible">True</property>
+                                <property name="hexpand">True</property>
+                                <property name="vexpand">True</property>
+                                <property name="hscrollbar_policy">automatic</property>
+                                <property name="vscrollbar_policy">automatic</property>
+                                <child>
+                                  <object class="GtkBox" id="fe_motors_content">
+                                    <property name="visible">True</property>
+                                    <property name="orientation">vertical</property>
+                                    <property name="spacing">6</property>
+                                    <property name="margin">8</property>
+                                    <child>
+                                      <object class="GtkLabel" id="fe_motor_hint">
+                                        <property name="visible">True</property>
+                                        <property name="halign">start</property>
+                                        <property name="wrap">True</property>
+                                        <property name="label">Expanded motor telemetry for both robots. Use this when the summary cards show an issue or you need per-motor voltage/current/output details.</property>
+                                      </object>
+                                    </child>
+                                    <child>
+                                      <object class="GtkGrid" id="fe_motor_grid">
+                                        <property name="visible">True</property>
+                                        <property name="row_spacing">4</property>
+                                        <property name="column_spacing">12</property>
+                                      </object>
+                                    </child>
+                                  </object>
+                                </child>
+                              </object>
+                            </child>
+                            <child type="tab">
+                              <object class="GtkLabel"><property name="visible">True</property><property name="label">Motors</property></object>
+                            </child>
+
+                            <child>
+                              <object class="GtkScrolledWindow" id="fe_esp32_scroller">
+                                <property name="visible">True</property>
+                                <property name="hexpand">True</property>
+                                <property name="vexpand">True</property>
+                                <property name="hscrollbar_policy">automatic</property>
+                                <property name="vscrollbar_policy">automatic</property>
+                                <child>
+                                  <object class="GtkBox" id="fe_esp32_content">
+                                    <property name="visible">True</property>
+                                    <property name="orientation">vertical</property>
+                                    <property name="spacing">6</property>
+                                    <property name="margin">8</property>
+                                    <child>
+                                      <object class="GtkBox" id="fe_esp32_status_row">
+                                        <property name="visible">True</property>
+                                        <property name="orientation">horizontal</property>
+                                        <property name="spacing">20</property>
+                                        <child><object class="GtkLabel" id="fe_esp32_can_status"><property name="visible">True</property><property name="halign">start</property><property name="label">CAN Bus: --</property></object></child>
+                                        <child><object class="GtkLabel" id="fe_esp32_config"><property name="visible">True</property><property name="halign">start</property><property name="label">Config: --</property></object></child>
+                                        <child><object class="GtkLabel" id="fe_esp32_motor_count"><property name="visible">True</property><property name="halign">start</property><property name="label">Motors: 0</property></object></child>
+                                      </object>
+                                    </child>
+                                    <child>
+                                      <object class="GtkGrid" id="fe_esp32_motor_grid">
+                                        <property name="visible">True</property>
+                                        <property name="row_spacing">4</property>
+                                        <property name="column_spacing">12</property>
+                                      </object>
+                                    </child>
+                                  </object>
+                                </child>
+                              </object>
+                            </child>
+                            <child type="tab">
+                              <object class="GtkLabel"><property name="visible">True</property><property name="label">ESP32</property></object>
+                            </child>
+
+                            <child>
+                              <object class="GtkScrolledWindow" id="fe_raw_scroller">
+                                <property name="visible">True</property>
+                                <property name="hexpand">True</property>
+                                <property name="vexpand">True</property>
+                                <property name="hscrollbar_policy">automatic</property>
+                                <property name="vscrollbar_policy">automatic</property>
+                                <child>
+                                  <object class="GtkBox" id="fe_raw_content">
+                                    <property name="visible">True</property>
+                                    <property name="orientation">vertical</property>
+                                    <property name="spacing">6</property>
+                                    <property name="margin">8</property>
+                                    <child>
+                                      <object class="GtkLabel" id="fe_raw_hint">
+                                        <property name="visible">True</property>
+                                        <property name="halign">start</property>
+                                        <property name="wrap">True</property>
+                                        <property name="label">Raw sensor InfoFrames remain available here for debugging and verification without crowding the primary FE mission view.</property>
+                                      </object>
+                                    </child>
+                                    <child>
+                                      <object class="GtkFlowBox" id="sensorBox">
+                                        <property name="visible">True</property>
+                                        <property name="orientation">horizontal</property>
+                                        <property name="selection_mode">none</property>
+                                        <property name="margin">5</property>
+                                      </object>
+                                    </child>
+                                  </object>
+                                </child>
+                              </object>
+                            </child>
+                            <child type="tab">
+                              <object class="GtkLabel"><property name="visible">True</property><property name="label">Raw Sensors</property></object>
+                            </child>
+                          </object>
+                        </child>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+              </object>
+            </child>
+
+            <!-- RIGHT: video column -->
+            <child>
+              <object class="GtkBox" id="fe_video_container">
+                <property name="visible">True</property>
+                <property name="orientation">vertical</property>
+                <property name="spacing">10</property>
+                <property name="width_request">700</property>
+                <property name="vexpand">True</property>
+
+                <child>
+                  <object class="GtkFrame" id="fe_video_frame_r1">
+                    <property name="visible">True</property>
+                    <property name="label">Robot 1 Video</property>
+                    <property name="label_xalign">0.02</property>
+                    <property name="vexpand">True</property>
+                    <child>
+                      <object class="GtkBox" id="placeholder_video">
+                        <property name="visible">True</property>
+                        <property name="vexpand">True</property>
+                        <property name="hexpand">True</property>
+                        <property name="margin">6</property>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+
+                <child>
+                  <object class="GtkFrame" id="fe_video_frame_r2">
+                    <property name="visible">True</property>
+                    <property name="label">Robot 2 Video</property>
+                    <property name="label_xalign">0.02</property>
+                    <property name="vexpand">True</property>
+                    <child>
+                      <object class="GtkBox" id="placeholder_video_robot2">
+                        <property name="visible">True</property>
+                        <property name="vexpand">True</property>
+                        <property name="hexpand">True</property>
+                        <property name="margin">6</property>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+              </object>
+            </child>
+          </object>
+        </child>
+      </object>
+    </child>
+  </object>
+</interface>

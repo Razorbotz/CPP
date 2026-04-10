@@ -578,7 +578,11 @@ BinaryMessage::BinaryMessage(std::list<uint8_t>& bytes){
     std::list<uint8_t>::iterator currentByte = bytes.begin();
 
     uint64_t size = decodeSizeBytes(currentByte);
-    this->topObject = decodeObject(currentByte);
+    try {
+    	this->topObject = decodeObject(currentByte);
+    } 	catch (const std::exception& e) {
+    		std::cout << "Out of Sync Error: " << e.what() << std::endl;
+    	}
 }
 
 
@@ -605,6 +609,7 @@ Object BinaryMessage::decodeObject(std::list<uint8_t>::iterator& currentByte){
     if(object.type!=TYPE::OBJECT){
         std::cout << "data not in sync OBJECT" << std::endl;
         std::cout << "Data of type : " << object.type << std::endl;
+        throw std::runtime_error("Data out of Sync");
     }
     else{
         uint64_t elementCount = decodeSizeBytes(currentByte);

@@ -186,6 +186,7 @@ bool primaryBot = true;
 bool backupBot = false;
 bool dumpBot = false;
 
+bool debugMotors = false;
 
 bool simulateNetwork = false;
 Gtk::Window* simulatorWindow = nullptr;
@@ -2027,6 +2028,31 @@ void handleFalconElements(const std::string& label, const std::vector<Element>& 
     float voltage_val = 0.0f;
     float current_val = 0.0f;
     float output_pct = 0.0f;
+    //Prints fields for debugging purposes, can be removed later
+    if(debugMotors){
+        std::cerr << "\n[" << label << "]  Packet contents:" << std::endl;
+        for (const auto& e : elements) {
+            std::cerr << "  - " << std::setw(20) << std::left << e.label << ": ";
+            
+            if (e.label == "Error") {
+                std::cerr << (e.data.front().boolean ? "TRUE" : "FALSE");
+            }
+            else if (e.label == "Device ID" || e.label == "Temperature") {
+                std::cerr << (int)e.data.front().uint8;
+            }
+            else if (e.label == "Bus Voltage" || e.label == "Output Current") {
+                std::cerr << std::fixed << std::setprecision(2) 
+                        << (e.data.front().uint16 / 100.0f);
+            }
+            else {
+                std::cerr << std::fixed << std::setprecision(2) 
+                        << e.data.front().float32;
+            }
+            
+            std::cerr << std::endl;
+        }
+    }
+    motorStates[label].error = false;  // Reset at start of each update
     for (const auto& element : elements) {
         if (element.label == "Bus Voltage") {
             float voltage = element.data.front().uint16 / 100.0f;
@@ -2073,6 +2099,32 @@ void handleNeoElements(const std::string& label, const std::vector<Element>& ele
     float voltage_val = 0.0f;
     float current_val = 0.0f;
     float output_pct = 0.0f;
+    //Prints fields for debugging purposes, can be removed later
+    if(debugMotors){
+        std::cerr << "\n[" << label << "]  Packet contents:" << std::endl;
+        for (const auto& e : elements) {
+            std::cerr << "  - " << std::setw(20) << std::left << e.label << ": ";
+            
+            if (e.label == "Error") {
+                std::cerr << (e.data.front().boolean ? "TRUE" : "FALSE");
+            }
+            else if (e.label == "Device ID" || e.label == "Temperature") {
+                std::cerr << (int)e.data.front().uint8;
+            }
+            else if (e.label == "Bus Voltage" || e.label == "Output Current") {
+                std::cerr << std::fixed << std::setprecision(2) 
+                        << (e.data.front().uint16 / 100.0f);
+            }
+            else {
+                std::cerr << std::fixed << std::setprecision(2) 
+                        << e.data.front().float32;
+            }
+            
+            std::cerr << std::endl;
+        }
+    }
+
+    motorStates[label].error = false;  // Reset at start of each update
     for (const auto& element : elements) {
         if (element.label == "Bus Voltage") {
             float voltage = element.data.front().uint16 / 100.0f;
@@ -2117,6 +2169,32 @@ void handleKrakenElements(const std::string& label, const std::vector<Element>& 
     float voltage_val = 0.0f;
     float current_val = 0.0f;
     float output_pct = 0.0f;
+    //Prints fields for debugging purposes, can be removed later
+    if(debugMotors){
+        std::cerr << "\n[" << label << "]  Packet contents:" << std::endl;
+        for (const auto& e : elements) {
+            std::cerr << "  - " << std::setw(20) << std::left << e.label << ": ";
+            
+            if (e.label == "Error") {
+                std::cerr << (e.data.front().boolean ? "TRUE" : "FALSE");
+            }
+            else if (e.label == "Device ID" || e.label == "Temperature") {
+                std::cerr << (int)e.data.front().uint8;
+            }
+            else if (e.label == "Bus Voltage" || e.label == "Output Current") {
+                std::cerr << std::fixed << std::setprecision(2) 
+                        << (e.data.front().uint16 / 100.0f);
+            }
+            else {
+                std::cerr << std::fixed << std::setprecision(2) 
+                        << e.data.front().float32;
+            }
+            
+            std::cerr << std::endl;
+        }
+    }
+    
+    motorStates[label].error = false;  // Reset at start of each update
     for (const auto& element : elements) {
         if (element.label == "Bus Voltage") {
             float voltage = element.data.front().uint16 / 100.0f;
@@ -5099,6 +5177,7 @@ void processArguments(int argc, char** argv){
                 std::cout << "--backup_bot: Sets the backup bot" << std::endl;
                 std::cout << "--dump_bot: Sets the dump bot" << std::endl;
                 std::cout << "--debug_glade_bounds: Draws red bounds and Glade IDs on widgets" << std::endl;
+                std::cout << "--debug_motors: Prints motor packets to console" << std::endl;
                 exit(0);
             }
             else if(!strcmp("--init", argv[i])){
@@ -5157,6 +5236,7 @@ void processArguments(int argc, char** argv){
             }
             else if(!strcmp("--dump_bot", argv[i])){
                 activeConfig = configs::dumpBot();
+                //printf("Dump Bot Config Loaded:\n%s\n", activeConfig.name.c_str());
                 dumpBot = true;
                 primaryBot = false;
             }
@@ -5165,6 +5245,9 @@ void processArguments(int argc, char** argv){
             }
             else if(!strcmp("--disable_foxglove", argv[i])){
                 disableFoxgloveServer = true;
+            }
+            else if(!strcmp("--debug_motors", argv[i])){
+                debugMotors = true;
             }
             else if(!strcmp("--fe", argv[i]) || !strcmp("--flight_engineer", argv[i])){
                 isFlightEngineer = true;

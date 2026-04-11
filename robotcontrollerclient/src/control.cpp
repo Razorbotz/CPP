@@ -63,6 +63,7 @@ extern "C" {
 #include "ArtificialHorizon.hpp"
 #include "BatteryBar.hpp"
 #include "BotConfig.hpp"
+#include "InputMapper.hpp"
 
 /*
 TODO: 
@@ -177,6 +178,11 @@ bool isController = false;
 bool twoJoysticks = false;
 BotConfig activeConfig = configs::primaryBot();
 bool disableFoxgloveServer = false;
+
+// Input rebinding config — loaded from JSON file at startup
+InputConfig inputConfig;
+std::string inputConfigFile; // Set via --input_config flag
+bool useInputConfig = false; // True when a valid JSON config was loaded
 
 // Backward-compatible flags — derived from activeConfig in processArguments().
 // Use these in code that hasn't been migrated to read activeConfig directly yet.
@@ -5113,6 +5119,7 @@ void processArguments(int argc, char** argv){
                 std::cout << "--nano: Switches IP address used to connect to the Jetson Nano" << std::endl;
                 std::cout << "--test_input: Allows for testing inputs without being connected to robot" << std::endl;
                 std::cout << "--alt_layout: Uses alternate joystick control mapping for robot" << std::endl;
+                std::cout << "--input_config <file>: Load joystick mapping from a JSON config file (created by input_rebind_tool)" << std::endl;
                 std::cout << "--backup_bot: Sets the backup bot" << std::endl;
                 std::cout << "--dump_bot: Sets the dump bot" << std::endl;
                 std::cout << "--debug_glade_bounds: Draws red bounds and Glade IDs on widgets" << std::endl;
@@ -5158,6 +5165,21 @@ void processArguments(int argc, char** argv){
             }
             else if(!strcmp("--alt_layout", argv[i])){
                 useAltLayout = true;
+            }
+            else if(!strcmp("--input_config", argv[i])){
+                if(i+1 < argc){
+                    inputConfigFile = argv[++i];
+                    inputConfig = InputConfig::loadFromFile(inputConfigFile);
+                    inputConfig.buildLookup();
+                    useInputConfig = true;
+                    // Apply global settings from the input config
+                    isController  = inputConfig.isController;
+                    twoJoysticks  = inputConfig.twoJoysticks;
+                    useAltLayout  = inputConfig.useAltLayout;
+                    std::cout << "Loaded input config from: " << inputConfigFile << std::endl;
+                } else {
+                    std::cerr << "--input_config requires a JSON file path" << std::endl;
+                }
             }
             else if(!strcmp("--simulate", argv[i])){
                 simulateNetwork = true;
@@ -5244,6 +5266,15 @@ void moveWindows(){
 
 
 void remapJoystickInputs(uint8_t* which, uint8_t* axis){
+    // If a JSON input config was loaded, use data-driven remapping
+    if(useInputConfig){
+        // inputConfig.remap() looks up the (which, axis) pair in the JSON-derived
+        // table and overwrites them with the output mapping. If no mapping is found,
+        // the values pass through unchanged.
+        inputConfig.remap(which, axis);
+        return;
+    }
+
     // Expected values are as follows:
     // Joystick 0:
     // Axis 0 - Roll
@@ -5547,7 +5578,7 @@ int main(int argc, char** argv) {
                     break;
                 }
                 case SDL_JOYAXISMOTION: {
-                    int deadZone=4000;
+                    int deadZone = useInputConfig ? inputConfig.deadZone : 4000;
                     if(event.jaxis.value < -deadZone || deadZone < event.jaxis.value ) {
                         axisEventList->at(event.jaxis.which)->at(event.jaxis.axis)->isSet = true;
                         axisEventList->at(event.jaxis.which)->at(event.jaxis.axis)->value = event.jaxis.value;
@@ -5577,7 +5608,15 @@ int main(int argc, char** argv) {
                         float value = ((float)axisEventList->at(joystickIndex)->at(axisIndex)->value) / -32768.0;
                         uint8_t which = joystickIndex;
                         uint8_t axis  = axisIndex;
-                        remapJoystickInputs(&which, &axis);
+                        bool invert = false;
+                        if(useInputConfig){
+                            inputConfig.remap(&which, &axis, &invert);
+                            if(invert) value = -value;
+                            if(inputConfig.invertY && (axis == 1)) value = -value;
+                        }
+                        else {
+                            remapJoystickInputs(&which, &axis);
+                        }
                         sendJoystickAxis(which, axis, value);
                     }
                 }

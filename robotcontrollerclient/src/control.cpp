@@ -1831,6 +1831,16 @@ void updateBucketRotationImage() {
 }
 
 void updateBucketElevationBar() {
+    /*
+    H = height of arm pivot above ground
+    L_arm = length from arm pivot to bucket pivot
+    L_bucket = length from bucket pivot to bucket edge
+    θ_a = absolute angle of arm
+    θ_b = absolute angle of bucket
+
+    bucket height = H - L_arm * sin(θ_a) - L_bucket * sin(θ_b)
+    */
+
     // Degrees to radians helper
     auto degToRad = [](double deg){ return deg * (M_PI / 180.0); };
 
@@ -1852,22 +1862,16 @@ void updateBucketElevationBar() {
     }
     else if (primaryBot)
     {
-        // UPDATE ONCE VALUES ARE MEASURED
-        /*
-        const double H  = 
-        const double L_arm = 
-        const double L_bucket =
+        const double H  = 17.0;
+        const double L_arm = 68.3;
+        const double L_bucket = 30.9;
 
-        double absolute_arm_deg = -roll_rotation_angle + arm_angle_deg;
-        double absolute_bucket_deg = absolute_arm_deg + bucket_angle_deg;
+        double armRad = degToRad(arm_angle_deg);
+        double bucketRad = degToRad(arm_angle_deg + bucket_angle_deg);
 
-        double absolute_arm_rad = degToRad(absolute_arm_deg);
-        double absolute_bucket_rad = degToRad(absolute_bucket_deg);
-
-        bucket_height_cm = H + L_arm * std::sin(absolute_arm_rad) + L_bucket * std::sin(absolute_bucket_rad);
+        bucket_height_cm = H - L_arm * std::sin(armRad) - L_bucket * std::sin(bucketRad);
 
         if (elevation_bar) elevation_bar->set_position(bucket_height_cm);
-        */
     }
 }
 

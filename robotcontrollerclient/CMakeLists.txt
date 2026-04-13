@@ -148,3 +148,20 @@ target_link_libraries(control
   OpenSSL::Crypto
 )
 
+add_executable(input_rebind_tool
+  src/InputRebindTool.cpp
+)
+
+target_include_directories(input_rebind_tool PRIVATE
+  include
+  ${GTKMM_INCLUDE_DIRS}
+  ${CAIRO_INCLUDE_DIRS}
+  ${foxglove_websocket_SOURCE_DIR}/cpp/foxglove-websocket/include
+)
+
+target_link_libraries(input_rebind_tool
+  SDL2
+  ${GTKMM_LIBRARIES}
+  ${CAIRO_LIBRARIES}
+  pthread
+)

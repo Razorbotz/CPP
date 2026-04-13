@@ -581,7 +581,7 @@ BinaryMessage::BinaryMessage(std::list<uint8_t>& bytes){
     try {
     	this->topObject = decodeObject(currentByte);
     } 	catch (const std::exception& e) {
-    		std::cout << "Out of Sync Error: " << e.what() << std::endl;
+    		std::cout << "Out of Sync: " << e.what() << std::endl;
     	}
 }
 

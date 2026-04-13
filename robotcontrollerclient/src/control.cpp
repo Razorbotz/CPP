@@ -63,6 +63,7 @@ extern "C" {
 #include "ArtificialHorizon.hpp"
 #include "BatteryBar.hpp"
 #include "BotConfig.hpp"
+#include "InputMapper.hpp"
 
 /*
 TODO: 
@@ -178,6 +179,11 @@ bool twoJoysticks = false;
 BotConfig activeConfig = configs::primaryBot();
 bool disableFoxgloveServer = false;
 
+// Input rebinding config — loaded from JSON file at startup
+InputConfig inputConfig;
+std::string inputConfigFile; // Set via --input_config flag
+bool useInputConfig = false; // True when a valid JSON config was loaded
+
 // Backward-compatible flags — derived from activeConfig in processArguments().
 // Use these in code that hasn't been migrated to read activeConfig directly yet.
 // Once all if(primaryBot)/if(backupBot)/if(dumpBot) branches are converted to
@@ -186,6 +192,7 @@ bool primaryBot = true;
 bool backupBot = false;
 bool dumpBot = false;
 
+bool debugMotors = false;
 
 bool simulateNetwork = false;
 Gtk::Window* simulatorWindow = nullptr;
@@ -833,7 +840,7 @@ MultiMotorGraph* linearPotentiometerGraph;
 Gtk::Label* diagConnectionLabel = nullptr;
 Gtk::Label* diagRssiLabel = nullptr;
 Gtk::Label* diagCanLabel = nullptr;
-Gtk::Grid*  diagMotorGrid = nullptr;
+Gtk::Grid* diagMotorGrid = nullptr;
 Gtk::Label* diagMotorLabels[10][7]; /* [motor_index][field] — name, type, status, percent, current, voltage, temp */
 int diagLastMotorCount = 0;
 
@@ -871,8 +878,8 @@ void startDiagListener();
 void stopDiagListener();
 
 /* ============================================================
- *  FLIGHT ENGINEER dashboard widgets
- *  Populated from feLayout.glade when --fe flag is used
+ * FLIGHT ENGINEER dashboard widgets
+ * Populated from feLayout.glade when --fe flag is used
  * ============================================================ */
 Gtk::Label* feConnRobot1 = nullptr;
 Gtk::Label* feLatencyRobot1 = nullptr;
@@ -892,7 +899,7 @@ std::map<std::string, int> feMotorRowMap; /* label -> row index */
 Gtk::Label* feEsp32CanStatus = nullptr;
 Gtk::Label* feEsp32Config = nullptr;
 Gtk::Label* feEsp32MotorCount = nullptr;
-Gtk::Grid*  feEsp32MotorGrid = nullptr;
+Gtk::Grid* feEsp32MotorGrid = nullptr;
 Gtk::Label* feEsp32MotorLabels[10][7];
 
 /* Navigation */
@@ -921,6 +928,7 @@ Gtk::Label* feLidarR2 = nullptr;
 
 /* Communication */
 Gtk::Label* feCommR1Wifi = nullptr;
+Gtk::Label* feCommR1Wifi2 = nullptr;
 Gtk::Label* feCommR1Can = nullptr;
 Gtk::Label* feCommR2Wifi = nullptr;
 Gtk::Label* feCommR2Can = nullptr;
@@ -2047,6 +2055,31 @@ void handleFalconElements(const std::string& label, const std::vector<Element>& 
     float voltage_val = 0.0f;
     float current_val = 0.0f;
     float output_pct = 0.0f;
+    //Prints fields for debugging purposes, can be removed later
+    if(debugMotors){
+        std::cerr << "\n[" << label << "]  Packet contents:" << std::endl;
+        for (const auto& e : elements) {
+            std::cerr << "  - " << std::setw(20) << std::left << e.label << ": ";
+            
+            if (e.label == "Error") {
+                std::cerr << (e.data.front().boolean ? "TRUE" : "FALSE");
+            }
+            else if (e.label == "Device ID" || e.label == "Temperature") {
+                std::cerr << (int)e.data.front().uint8;
+            }
+            else if (e.label == "Bus Voltage" || e.label == "Output Current") {
+                std::cerr << std::fixed << std::setprecision(2) 
+                        << (e.data.front().uint16 / 100.0f);
+            }
+            else {
+                std::cerr << std::fixed << std::setprecision(2) 
+                        << e.data.front().float32;
+            }
+            
+            std::cerr << std::endl;
+        }
+    }
+    motorStates[label].error = false;  // Reset at start of each update
     for (const auto& element : elements) {
         if (element.label == "Bus Voltage") {
             float voltage = element.data.front().uint16 / 100.0f;
@@ -2093,6 +2126,32 @@ void handleNeoElements(const std::string& label, const std::vector<Element>& ele
     float voltage_val = 0.0f;
     float current_val = 0.0f;
     float output_pct = 0.0f;
+    //Prints fields for debugging purposes, can be removed later
+    if(debugMotors){
+        std::cerr << "\n[" << label << "]  Packet contents:" << std::endl;
+        for (const auto& e : elements) {
+            std::cerr << "  - " << std::setw(20) << std::left << e.label << ": ";
+            
+            if (e.label == "Error") {
+                std::cerr << (e.data.front().boolean ? "TRUE" : "FALSE");
+            }
+            else if (e.label == "Device ID" || e.label == "Temperature") {
+                std::cerr << (int)e.data.front().uint8;
+            }
+            else if (e.label == "Bus Voltage" || e.label == "Output Current") {
+                std::cerr << std::fixed << std::setprecision(2) 
+                        << (e.data.front().uint16 / 100.0f);
+            }
+            else {
+                std::cerr << std::fixed << std::setprecision(2) 
+                        << e.data.front().float32;
+            }
+            
+            std::cerr << std::endl;
+        }
+    }
+
+    motorStates[label].error = false;  // Reset at start of each update
     for (const auto& element : elements) {
         if (element.label == "Bus Voltage") {
             float voltage = element.data.front().uint16 / 100.0f;
@@ -2137,6 +2196,32 @@ void handleKrakenElements(const std::string& label, const std::vector<Element>& 
     float voltage_val = 0.0f;
     float current_val = 0.0f;
     float output_pct = 0.0f;
+    //Prints fields for debugging purposes, can be removed later
+    if(debugMotors){
+        std::cerr << "\n[" << label << "]  Packet contents:" << std::endl;
+        for (const auto& e : elements) {
+            std::cerr << "  - " << std::setw(20) << std::left << e.label << ": ";
+            
+            if (e.label == "Error") {
+                std::cerr << (e.data.front().boolean ? "TRUE" : "FALSE");
+            }
+            else if (e.label == "Device ID" || e.label == "Temperature") {
+                std::cerr << (int)e.data.front().uint8;
+            }
+            else if (e.label == "Bus Voltage" || e.label == "Output Current") {
+                std::cerr << std::fixed << std::setprecision(2) 
+                        << (e.data.front().uint16 / 100.0f);
+            }
+            else {
+                std::cerr << std::fixed << std::setprecision(2) 
+                        << e.data.front().float32;
+            }
+            
+            std::cerr << std::endl;
+        }
+    }
+    
+    motorStates[label].error = false;  // Reset at start of each update
     for (const auto& element : elements) {
         if (element.label == "Bus Voltage") {
             float voltage = element.data.front().uint16 / 100.0f;
@@ -3085,8 +3170,8 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
 
     if (!isFlightEngineer) {
         /* ============================================================
-         *  PILOT MODE: Video overlay, edge panels, motor columns, etc.
-         *  These widgets only exist in mainLayout.glade.
+         * PILOT MODE: Video overlay, edge panels, motor columns, etc.
+         * These widgets only exist in mainLayout.glade.
          * ============================================================ */
         if (topLevelBox) {
             window->remove();
@@ -3435,7 +3520,7 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
     }
 
     /* ============================================================
-     *  FLIGHT ENGINEER: Load all dashboard widgets from feLayout.glade
+     * FLIGHT ENGINEER: Load all dashboard widgets from feLayout.glade
      * ============================================================ */
     if (isFlightEngineer) {
         feStartTime = std::chrono::high_resolution_clock::now();
@@ -3610,8 +3695,8 @@ void updateDiagnosticsTab() {
 }
 
 /* ============================================================
- *  FLIGHT ENGINEER: Dashboard update function
- *  Called from the main loop to push live data into FE widgets.
+ * FLIGHT ENGINEER: Dashboard update function
+ * Called from the main loop to push live data into FE widgets.
  * ============================================================ */
 static bool feRobotRecentlySeen(const std::chrono::high_resolution_clock::time_point& lastPacket,
                                 double staleAfterSeconds = 2.0) {
@@ -3860,8 +3945,8 @@ void initSensorsWindow() {
     inject("holder_linear_pot", linearPotentiometerGraph);
 
     /* ============================================================
-     *  DIAGNOSTICS TAB (ESP32 handheld tool data)
-     *  Injects into the existing box_tab_diagnostics from Glade
+     * DIAGNOSTICS TAB (ESP32 handheld tool data)
+     * Injects into the existing box_tab_diagnostics from Glade
      * ============================================================ */
     {
         Gtk::Box* diagPage = nullptr;
@@ -5117,9 +5202,11 @@ void processArguments(int argc, char** argv){
                 std::cout << "--nano: Switches IP address used to connect to the Jetson Nano" << std::endl;
                 std::cout << "--test_input: Allows for testing inputs without being connected to robot" << std::endl;
                 std::cout << "--alt_layout: Uses alternate joystick control mapping for robot" << std::endl;
+                std::cout << "--input_config <file>: Load joystick mapping from a JSON config file (created by input_rebind_tool)" << std::endl;
                 std::cout << "--backup_bot: Sets the backup bot" << std::endl;
                 std::cout << "--dump_bot: Sets the dump bot" << std::endl;
                 std::cout << "--debug_glade_bounds: Draws red bounds and Glade IDs on widgets" << std::endl;
+                std::cout << "--debug_motors: Prints motor packets to console" << std::endl;
                 exit(0);
             }
             else if(!strcmp("--init", argv[i])){
@@ -5163,6 +5250,21 @@ void processArguments(int argc, char** argv){
             else if(!strcmp("--alt_layout", argv[i])){
                 useAltLayout = true;
             }
+            else if(!strcmp("--input_config", argv[i])){
+                if(i+1 < argc){
+                    inputConfigFile = argv[++i];
+                    inputConfig = InputConfig::loadFromFile(inputConfigFile);
+                    inputConfig.buildLookup();
+                    useInputConfig = true;
+                    // Apply global settings from the input config
+                    isController  = inputConfig.isController;
+                    twoJoysticks  = inputConfig.twoJoysticks;
+                    useAltLayout  = inputConfig.useAltLayout;
+                    std::cout << "Loaded input config from: " << inputConfigFile << std::endl;
+                } else {
+                    std::cerr << "--input_config requires a JSON file path" << std::endl;
+                }
+            }
             else if(!strcmp("--simulate", argv[i])){
                 simulateNetwork = true;
                 initVals = true; 
@@ -5178,6 +5280,7 @@ void processArguments(int argc, char** argv){
             }
             else if(!strcmp("--dump_bot", argv[i])){
                 activeConfig = configs::dumpBot();
+                //printf("Dump Bot Config Loaded:\n%s\n", activeConfig.name.c_str());
                 dumpBot = true;
                 primaryBot = false;
             }
@@ -5186,6 +5289,9 @@ void processArguments(int argc, char** argv){
             }
             else if(!strcmp("--disable_foxglove", argv[i])){
                 disableFoxgloveServer = true;
+            }
+            else if(!strcmp("--debug_motors", argv[i])){
+                debugMotors = true;
             }
             else if(!strcmp("--fe", argv[i]) || !strcmp("--flight_engineer", argv[i])){
                 isFlightEngineer = true;
@@ -5248,35 +5354,42 @@ void moveWindows(){
 
 
 void remapJoystickInputs(uint8_t* which, uint8_t* axis){
-    // Expected values are as follows:
-    // Joystick 0:
-    // Axis 0 - Roll
-    // Axis 1 - Pitch
-    // Joystick 1:
-    // Axis 0 - Bucket
-    // Axis 1 - Arm
-    if(isController){
-        // If a controller is used, axes 0 and 1 should be mapped to joystick 0
-        // Axes 2 and 3 should be mapped to joystick 1
-        if(*axis == 2){
-            *which = 1;
-            *axis = 0;
-        }
-        if(*axis == 3){
-            *which = 1;
-            *axis = 1;
-        }
+    if(useInputConfig){
+        bool invert = false;
+        inputConfig.remap(which, axis, &invert);
+        return;
     }
+
+    if(isController){
+        // --- TANK DRIVE MAPPING ---
+        // Left Joystick Y (Axis 1) controls Left Wheels
+        if(*axis == 1){
+            *which = 0;
+            *axis = 1; // Mapped to left drive
+        }
+        // Right Joystick Y (Axis 4) controls Right Wheels
+        // Note: Some drivers map the Right Stick Y to Axis 3 instead of 4
+        else if(*axis == 4 || *axis == 3){
+            *which = 0;
+            *axis = 3; // Mapped to right drive
+        }
+
+        // --- MECHANISM MAPPING (TRIGGERS) ---
+        // Left Trigger (Axis 2) -> Bucket Down 
+        else if(*axis == 2){
+            *which = 1;
+            *axis = 0; // Mechanism Joystick, Bucket Axis
+        }
+        // Right Trigger (Axis 5) -> Arm Down
+        else if(*axis == 5){
+            *which = 1;
+            *axis = 1; // Mechanism Joystick, Arm Axis
+        }
+        return; // Exit early to bypass the fallback layout logic
+    }
+
+    // --- FALLBACK / ALT LAYOUT LOGIC ---
     if(useAltLayout){
-        // Alt layout is as follows:
-        // Joystick 0:
-        // Axis 0 - Left Speed
-        // Axis 1 - Arm
-        // Joystick 1:
-        // Axis 0 - Right Speed
-        // Axis 1 - Bucket
-        // Note: This probably isn't going to respond as expected. The speed calculations aren't meant
-        // to have individual speed components like this
         if(*which == 0){
             if(*axis == 1){
                 *which = 1;
@@ -5291,8 +5404,6 @@ void remapJoystickInputs(uint8_t* which, uint8_t* axis){
         }
     }
     if(!twoJoysticks){
-        // If a single joystick is used, control the bucket speed with twist of axis 2
-        // Buttons 
         if(*axis == 2){
             *which = 1;
             *axis = 0;
@@ -5339,201 +5450,48 @@ int main(int argc, char** argv) {
     connection_finished_dispatcher.connect(sigc::ptr_fun(&on_connection_finished));
     connection_finished_dispatcher2.connect(sigc::ptr_fun(&on_connection2_finished));
     video_connection_finished_dispatcher.connect(sigc::ptr_fun(&on_video_connection_finished));
-    
-    std::thread broadcastListenThread(broadcastListen);
-    broadcastListenThread.detach();
 
-    std::thread videoBroadcastListenThread(videoBroadcastListen);
-    videoBroadcastListenThread.detach();
-
-    std::thread videoMainThread(videoMain, std::ref(latestFrame), std::ref(frameMutex), 
-        std::ref(newFrameAvailable), std::ref(videoDisconnectDispatcher), 
-        std::ref(shouldVideoDisconnect));
-    videoMainThread.detach();
-
-    if (SDL_Init(SDL_INIT_GAMECONTROLLER | SDL_INIT_JOYSTICK | SDL_INIT_EVENTS) != 0) {
-        SDL_Log("Unable to initialize SDL: %s", SDL_GetError());
-        return 1;
+    if(SDL_Init(SDL_INIT_JOYSTICK) < 0) {
+        std::cerr << "Couldn't initialize SDL: " << SDL_GetError() << std::endl;
+        exit(1);
     }
+
     SDL_JoystickEventState(SDL_ENABLE);
-
-    //-------------------------------------------------------------------------Initializing joystick(s)--------------------------------------------------------------------------
-    int joystickCount=SDL_NumJoysticks();
-    std::cout << "number of joysticks " << joystickCount << std::endl;
-    if(joystickCount == 2){
-        twoJoysticks = true;
-    }
-    SDL_Joystick* joystickList[joystickCount];
-    SDL_GameController* controller = nullptr;
-
-    if(joystickCount>0){
-        axisEventList = new std::vector<std::vector<AxisEvent*>*>(joystickCount);
-        for(int joystickIndex=0;joystickIndex<joystickCount;joystickIndex++) {
-
-            if(SDL_IsGameController(joystickIndex)){
+    
+    int numJoysticks = SDL_NumJoysticks();
+    if(numJoysticks > 0) {
+        std::cout << numJoysticks << " joysticks found" << std::endl;
+        for(int i = 0; i < numJoysticks; i++) {
+            SDL_JoystickOpen(i);
+            if (SDL_IsGameController(i)) {
                 isController = true;
-                controller = SDL_GameControllerOpen(joystickIndex);
-                if(controller){
-                    std::cout << "Opened controller: " << SDL_GameControllerName(controller) << std::endl;
-                    joystickList[joystickIndex]=SDL_GameControllerGetJoystick(controller);
-                }
-            }
-            else{
-                joystickList[joystickIndex]=SDL_JoystickOpen(joystickIndex);
-            }
-            if (joystickList[joystickIndex]) {
-                axisEventList->at(joystickIndex) = new std::vector<AxisEvent*>(SDL_JoystickNumAxes(joystickList[joystickIndex]));
-                for(int axisIndex=0; axisIndex < SDL_JoystickNumAxes(joystickList[joystickIndex]); axisIndex++){
-                    axisEventList->at(joystickIndex)->at(axisIndex) = new AxisEvent();
-                }
-                std::cout << "Opened Joystick " << joystickIndex << std::endl;
-                std::cout << "   Name: " << SDL_JoystickName(joystickList[joystickIndex]) << std::endl;
-                std::cout << "   Number of Axes: " << SDL_JoystickNumAxes(joystickList[joystickIndex]) << std::endl;
-                std::cout << "   Number of Buttons: " << SDL_JoystickNumButtons(joystickList[joystickIndex]) << std::endl;
-                std::cout << "   Number of Balls: " << SDL_JoystickNumBalls(joystickList[joystickIndex]) << std::endl;
-            }
-            else {
-                (*axisEventList)[joystickIndex] = new std::vector<AxisEvent*>(0);
-                std::cout << "Couldn't open Joystick " << joystickIndex << std::endl;
             }
         }
+        if(numJoysticks > 1) twoJoysticks = true;
     }
-    else {
-        axisEventList = new std::vector<std::vector<AxisEvent*>*>(0);
+
+    axisEventList = new std::vector<std::vector<AxisEvent*>*>();
+    for(int i=0; i<numJoysticks; i++){
+        auto joystickAxisEventList = new std::vector<AxisEvent*>();
+        for(int j=0; j<SDL_JoystickNumAxes(SDL_JoystickOpen(i)); j++){
+            auto axisEvent = new AxisEvent();
+            axisEvent->which = i;
+            axisEvent->axis = j;
+            joystickAxisEventList->push_back(axisEvent);
+        }
+        axisEventList->push_back(joystickAxisEventList);
     }
 
     SDL_Event event;
-    char buffer[16384] = {0}; 
-    int bytesRead=0;
-
-    std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
     std::chrono::high_resolution_clock::time_point lastTransmitTime = std::chrono::high_resolution_clock::now();
-    std::chrono::high_resolution_clock::time_point lastReceiveOrin = std::chrono::high_resolution_clock::now();
-    std::chrono::high_resolution_clock::time_point lastReceiveNano = std::chrono::high_resolution_clock::now();
-    std::chrono::high_resolution_clock::time_point lastHeartbeatTime = std::chrono::high_resolution_clock::now();
-    std::chrono::high_resolution_clock::time_point lastVideoHeartbeatTime = std::chrono::high_resolution_clock::now();
-    now = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double> time_span = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastTransmitTime);
-    double deltaTime = time_span.count();
-    
-    std::list<uint8_t> messageBytesList; //List to store incoming bytes
-    uint8_t message[256];
-    bool running=true;
-    while(running){
-        adjustRobotList(addressListBox);
-        adjustVideoRobotList(videoAddressListBox);
+    std::chrono::high_resolution_clock::time_point now;
+    std::chrono::duration<double> time_span;
+    double deltaTime;
 
-        while(Gtk::Main::events_pending()){
-            Gtk::Main::iteration();
+    while (true) {
+        while(gtk_events_pending()) {
+            gtk_main_iteration();
         }
-
-        updateDiagnosticsTab();
-        updateFEDashboard();
-
-        if (newFrameAvailable) {
-            if (isFlightEngineer) {
-                std::lock_guard<std::mutex> lock(frameMutex);
-                if (feVideoAreaRobot1 && !fe_left_frame.empty()) {
-                    feVideoAreaRobot1->setFrame(fe_left_frame);
-                }
-                if (feVideoAreaRobot2 && !fe_right_frame.empty()) {
-                    feVideoAreaRobot2->setFrame(fe_right_frame);
-                }
-            } else if (videoArea) {
-                videoArea->setFrame(latestFrame);
-            }
-            newFrameAvailable = false;
-        }
-
-        now = std::chrono::high_resolution_clock::now();
-        time_span = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastFoxgloveTransmit);
-        if (time_span.count() > 0.016) {
-            lastFoxgloveTransmit = now;
-            publishRobotTransform();
-        }
-
-        if(!testInput && !isServerInitialized() && !isServerInitialized2() && !isVideoStreamActive()) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
-            continue;
-        }
-
-        std::vector<uint8_t> data_buffer;
-        bytesRead = receiveRobotData(data_buffer);
-        if(isSilentRunning())
-            lastReceiveOrin = std::chrono::high_resolution_clock::now();
-        else{
-            lastReceiveOrin = lastPacketOrinMs();
-        }
-        if(isSilentRunning2())
-            lastReceiveNano = std::chrono::high_resolution_clock::now();
-        else{
-            lastReceiveNano = lastPacketNanoMs();
-        }
-        if (bytesRead > 0) {
-            std::vector<uint8_t> processed_buffer;
-            now = std::chrono::high_resolution_clock::now();
-            if (process_payload(data_buffer, processed_buffer)) { 
-                for(uint8_t byte : processed_buffer) {
-                    messageBytesList.push_back(byte);
-                }
-            }
-        }
-        now = std::chrono::high_resolution_clock::now();
-        if (isServerConnected()) {
-            double dt = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastReceiveOrin).count();
-            if (dt > 5.0) {
-                std::cout << "Orin connection timed out.\n";
-                setDisconnectedState(server_ui);
-            }
-        }
-
-        if (isServerConnected2()) {
-            double dt = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastReceiveNano).count();
-            if (dt > 5.0) {
-                std::cout << "Nano connection timed out.\n";
-                setDisconnectedState2(server_ui);
-            }
-        }
-
-        if (!isFlightEngineer && !isServerConnected() && !isServerConnected2()) {
-            resetUIOnDisconnect();
-        }
-        
-        while(BinaryMessage::hasMessage(messageBytesList)){
-            if (checksum_decode(messageBytesList) == 1) {
-                BinaryMessage message(messageBytesList);
-                updateGUI(message);
-                uint64_t size = BinaryMessage::decodeSizeBytes(messageBytesList);
-                for(int count=0; count < size + 1; count++){
-                    messageBytesList.pop_front();
-                }
-            }
-            else {
-                break; 
-            }
-        }
-
-        if (messageBytesList.size() > 100000) { 
-            std::cerr << "Buffer desynced. Purging to prevent leak." << std::endl;
-            messageBytesList.clear();
-        }
-
-        now = std::chrono::high_resolution_clock::now();
-        time_span = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastHeartbeatTime);
-        deltaTime = time_span.count();
-        if(deltaTime > 1.0 && (isServerConnected() || isServerConnected2())){
-            lastHeartbeatTime = now;
-            sendHeartbeat();
-        }
-
-        time_span = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastVideoHeartbeatTime);
-        if (time_span.count() > 1.0 && isVideoConnected()) {
-            lastVideoHeartbeatTime = now;
-            sendVideoHeartbeat();
-        }
-
-        if(isFlightEngineer)
-            continue;
 
         /******************************Handle control events******************************/
         while(SDL_PollEvent(&event)){
@@ -5543,18 +5501,74 @@ int main(int argc, char** argv) {
                     break;
                 }
                 case SDL_JOYBUTTONDOWN:{
-                    sendJoystickButton(event.jbutton.which, event.jbutton.button, event.jbutton.state);
+                    if(isController) {
+                        uint8_t btn = event.jbutton.button;
+                        switch(btn) {
+                            // --- MECHANISM BUMPERS ---
+                            case 4: // Left Bumper (LB) -> Bucket Up
+                                sendJoystickAxis(1, 0, -1.0); // Send raw axis command UP
+                                break;
+                            case 5: // Right Bumper (RB) -> Arm Up
+                                sendJoystickAxis(1, 1, -1.0); // Send raw axis command UP
+                                break;
+                                
+                            // --- MACRO PLACEHOLDERS ---
+                            case 0: // A Button
+                                std::cout << "[Macro] A Button Triggered" << std::endl;
+                                // Implement A Macro here
+                                break;
+                            case 1: // B Button
+                                std::cout << "[Macro] B Button Triggered" << std::endl;
+                                // Implement B Macro here
+                                break;
+                            case 2: // X Button
+                                std::cout << "[Macro] X Button Triggered" << std::endl;
+                                // Implement X Macro here
+                                break;
+                            case 3: // Y Button
+                                std::cout << "[Macro] Y Button Triggered" << std::endl;
+                                // Implement Y Macro here
+                                break;
+                            
+                            // Unmapped buttons process normally
+                            default:
+                                sendJoystickButton(event.jbutton.which, event.jbutton.button, event.jbutton.state);
+                                break;
+                        }
+                    } else {
+                        sendJoystickButton(event.jbutton.which, event.jbutton.button, event.jbutton.state);
+                    }
                     break;
                 }
                 case SDL_JOYBUTTONUP:{
-                    sendJoystickButton(event.jbutton.which, event.jbutton.button, event.jbutton.state);
+                    if(isController) {
+                        uint8_t btn = event.jbutton.button;
+                        // When bumpers are released, stop the mechanism
+                        if(btn == 4) {
+                            sendJoystickAxis(1, 0, 0.0);
+                        } else if(btn == 5) {
+                            sendJoystickAxis(1, 1, 0.0);
+                        } else {
+                            sendJoystickButton(event.jbutton.which, event.jbutton.button, event.jbutton.state);
+                        }
+                    } else {
+                        sendJoystickButton(event.jbutton.which, event.jbutton.button, event.jbutton.state);
+                    }
                     break;
                 }
                 case SDL_JOYAXISMOTION: {
-                    int deadZone=4000;
-                    if(event.jaxis.value < -deadZone || deadZone < event.jaxis.value ) {
+                    int deadZone = useInputConfig ? inputConfig.deadZone : 4000;
+                    int axisValue = event.jaxis.value;
+                    
+                    // XBOX TRIGGER FIX: Triggers rest at -32768. 
+                    // This prevents them from continuously sending "pressed" states while untouched.
+                    if (isController && (event.jaxis.axis == 2 || event.jaxis.axis == 5)) {
+                        if (axisValue < -30000) axisValue = 0; 
+                    }
+
+                    if(axisValue < -deadZone || deadZone < axisValue ) {
                         axisEventList->at(event.jaxis.which)->at(event.jaxis.axis)->isSet = true;
-                        axisEventList->at(event.jaxis.which)->at(event.jaxis.axis)->value = event.jaxis.value;
+                        axisEventList->at(event.jaxis.which)->at(event.jaxis.axis)->value = axisValue;
                     }
                     else{
                         axisEventList->at(event.jaxis.which)->at(event.jaxis.axis)->isSet = true;
@@ -5566,6 +5580,7 @@ int main(int argc, char** argv) {
                     break;
             }
         }
+        
         // Two ways we might be able to decrease bandwidth usage here:
         // 1. Introduce delta threshold and only send values over certain delta
         // 2. Send all axes together, not individually
@@ -5581,7 +5596,15 @@ int main(int argc, char** argv) {
                         float value = ((float)axisEventList->at(joystickIndex)->at(axisIndex)->value) / -32768.0;
                         uint8_t which = joystickIndex;
                         uint8_t axis  = axisIndex;
-                        remapJoystickInputs(&which, &axis);
+                        bool invert = false;
+                        if(useInputConfig){
+                            inputConfig.remap(&which, &axis, &invert);
+                            if(invert) value = -value;
+                            if(inputConfig.invertY && (axis == 1)) value = -value;
+                        }
+                        else {
+                            remapJoystickInputs(&which, &axis);
+                        }
                         sendJoystickAxis(which, axis, value);
                     }
                 }

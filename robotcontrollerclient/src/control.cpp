@@ -5450,48 +5450,192 @@ int main(int argc, char** argv) {
     connection_finished_dispatcher.connect(sigc::ptr_fun(&on_connection_finished));
     connection_finished_dispatcher2.connect(sigc::ptr_fun(&on_connection2_finished));
     video_connection_finished_dispatcher.connect(sigc::ptr_fun(&on_video_connection_finished));
-
-    if(SDL_Init(SDL_INIT_JOYSTICK) < 0) {
-        std::cerr << "Couldn't initialize SDL: " << SDL_GetError() << std::endl;
-        exit(1);
-    }
-
-    SDL_JoystickEventState(SDL_ENABLE);
     
-    int numJoysticks = SDL_NumJoysticks();
-    if(numJoysticks > 0) {
-        std::cout << numJoysticks << " joysticks found" << std::endl;
-        for(int i = 0; i < numJoysticks; i++) {
-            SDL_JoystickOpen(i);
-            if (SDL_IsGameController(i)) {
+    std::thread broadcastListenThread(broadcastListen);
+    broadcastListenThread.detach();
+
+    std::thread videoBroadcastListenThread(videoBroadcastListen);
+    videoBroadcastListenThread.detach();
+
+    std::thread videoMainThread(videoMain, std::ref(latestFrame), std::ref(frameMutex), 
+        std::ref(newFrameAvailable), std::ref(videoDisconnectDispatcher), 
+        std::ref(shouldVideoDisconnect));
+    videoMainThread.detach();
+
+    if (SDL_Init(SDL_INIT_GAMECONTROLLER | SDL_INIT_JOYSTICK | SDL_INIT_EVENTS) != 0) {
+        SDL_Log("Unable to initialize SDL: %s", SDL_GetError());
+        return 1;
+    }
+    SDL_JoystickEventState(SDL_ENABLE);
+
+    //-------------------------------------------------------------------------Initializing joystick(s)--------------------------------------------------------------------------
+    int joystickCount=SDL_NumJoysticks();
+    std::cout << "number of joysticks " << joystickCount << std::endl;
+    if(joystickCount == 2){
+        twoJoysticks = true;
+    }
+    SDL_Joystick* joystickList[joystickCount];
+    SDL_GameController* controller = nullptr;
+
+    if(joystickCount>0){
+        axisEventList = new std::vector<std::vector<AxisEvent*>*>(joystickCount);
+        for(int joystickIndex=0;joystickIndex<joystickCount;joystickIndex++) {
+
+            if(SDL_IsGameController(joystickIndex)){
                 isController = true;
+                controller = SDL_GameControllerOpen(joystickIndex);
+                if(controller){
+                    std::cout << "Opened controller: " << SDL_GameControllerName(controller) << std::endl;
+                    joystickList[joystickIndex]=SDL_GameControllerGetJoystick(controller);
+                }
+            }
+            else{
+                joystickList[joystickIndex]=SDL_JoystickOpen(joystickIndex);
+            }
+            if (joystickList[joystickIndex]) {
+                axisEventList->at(joystickIndex) = new std::vector<AxisEvent*>(SDL_JoystickNumAxes(joystickList[joystickIndex]));
+                for(int axisIndex=0; axisIndex < SDL_JoystickNumAxes(joystickList[joystickIndex]); axisIndex++){
+                    axisEventList->at(joystickIndex)->at(axisIndex) = new AxisEvent();
+                }
+                std::cout << "Opened Joystick " << joystickIndex << std::endl;
+                std::cout << "   Name: " << SDL_JoystickName(joystickList[joystickIndex]) << std::endl;
+                std::cout << "   Number of Axes: " << SDL_JoystickNumAxes(joystickList[joystickIndex]) << std::endl;
+                std::cout << "   Number of Buttons: " << SDL_JoystickNumButtons(joystickList[joystickIndex]) << std::endl;
+                std::cout << "   Number of Balls: " << SDL_JoystickNumBalls(joystickList[joystickIndex]) << std::endl;
+            }
+            else {
+                (*axisEventList)[joystickIndex] = new std::vector<AxisEvent*>(0);
+                std::cout << "Couldn't open Joystick " << joystickIndex << std::endl;
             }
         }
-        if(numJoysticks > 1) twoJoysticks = true;
     }
-
-    axisEventList = new std::vector<std::vector<AxisEvent*>*>();
-    for(int i=0; i<numJoysticks; i++){
-        auto joystickAxisEventList = new std::vector<AxisEvent*>();
-        for(int j=0; j<SDL_JoystickNumAxes(SDL_JoystickOpen(i)); j++){
-            auto axisEvent = new AxisEvent();
-            axisEvent->which = i;
-            axisEvent->axis = j;
-            joystickAxisEventList->push_back(axisEvent);
-        }
-        axisEventList->push_back(joystickAxisEventList);
+    else {
+        axisEventList = new std::vector<std::vector<AxisEvent*>*>(0);
     }
 
     SDL_Event event;
-    std::chrono::high_resolution_clock::time_point lastTransmitTime = std::chrono::high_resolution_clock::now();
-    std::chrono::high_resolution_clock::time_point now;
-    std::chrono::duration<double> time_span;
-    double deltaTime;
+    char buffer[16384] = {0}; 
+    int bytesRead=0;
 
-    while (true) {
-        while(gtk_events_pending()) {
-            gtk_main_iteration();
+    std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
+    std::chrono::high_resolution_clock::time_point lastTransmitTime = std::chrono::high_resolution_clock::now();
+    std::chrono::high_resolution_clock::time_point lastReceiveOrin = std::chrono::high_resolution_clock::now();
+    std::chrono::high_resolution_clock::time_point lastReceiveNano = std::chrono::high_resolution_clock::now();
+    std::chrono::high_resolution_clock::time_point lastHeartbeatTime = std::chrono::high_resolution_clock::now();
+    std::chrono::high_resolution_clock::time_point lastVideoHeartbeatTime = std::chrono::high_resolution_clock::now();
+    now = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> time_span = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastTransmitTime);
+    double deltaTime = time_span.count();
+    
+    std::list<uint8_t> messageBytesList; //List to store incoming bytes
+    uint8_t message[256];
+    bool running=true;
+    while(running){
+        adjustRobotList(addressListBox);
+        adjustVideoRobotList(videoAddressListBox);
+
+        while(Gtk::Main::events_pending()){
+            Gtk::Main::iteration();
         }
+
+        if (newFrameAvailable) {
+            if (videoArea) {
+                videoArea->setFrame(latestFrame);
+            }
+            newFrameAvailable = false;
+        }
+
+        now = std::chrono::high_resolution_clock::now();
+        time_span = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastFoxgloveTransmit);
+        if (time_span.count() > 0.016) {
+            lastFoxgloveTransmit = now;
+            publishRobotTransform();
+        }
+
+        if(!testInput && !isServerInitialized() && !isServerInitialized2() && !isVideoStreamActive()) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            continue;
+        }
+
+        /******************************Receive and process data from server******************************/
+        std::vector<uint8_t> data_buffer;
+        bytesRead = receiveRobotData(data_buffer);
+        if(isSilentRunning())
+            lastReceiveOrin = std::chrono::high_resolution_clock::now();
+        else{
+            lastReceiveOrin = lastPacketOrinMs();
+        }
+        if(isSilentRunning2())
+            lastReceiveNano = std::chrono::high_resolution_clock::now();
+        else{
+            lastReceiveNano = lastPacketNanoMs();
+        }
+        if (bytesRead > 0) {
+            std::vector<uint8_t> processed_buffer;
+            now = std::chrono::high_resolution_clock::now();
+            if (process_payload(data_buffer, processed_buffer)) { 
+                for(uint8_t byte : processed_buffer) {
+                    messageBytesList.push_back(byte);
+                }
+            }
+        }
+        now = std::chrono::high_resolution_clock::now();
+        if (isServerConnected()) {
+            double dt = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastReceiveOrin).count();
+            if (dt > 5.0) {
+                std::cout << "Orin connection timed out.\n";
+                setDisconnectedState(server_ui);
+            }
+        }
+
+        if (isServerConnected2()) {
+            double dt = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastReceiveNano).count();
+            if (dt > 5.0) {
+                std::cout << "Nano connection timed out.\n";
+                setDisconnectedState2(server_ui);
+            }
+        }
+
+        if(!isServerConnected() && !isServerConnected2()){
+            resetUIOnDisconnect();
+        }
+        
+        while(BinaryMessage::hasMessage(messageBytesList)){
+            if (checksum_decode(messageBytesList) == 1) {
+                BinaryMessage message(messageBytesList);
+                updateGUI(message);
+                uint64_t size = BinaryMessage::decodeSizeBytes(messageBytesList);
+                for(int count=0; count < size + 1; count++){
+                    messageBytesList.pop_front();
+                }
+            }
+            else {
+                break; 
+            }
+        }
+
+        if (messageBytesList.size() > 100000) { 
+            std::cerr << "Buffer desynced. Purging to prevent leak." << std::endl;
+            messageBytesList.clear();
+        }
+
+        /******************************Send heartbeats******************************/
+        now = std::chrono::high_resolution_clock::now();
+        time_span = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastHeartbeatTime);
+        deltaTime = time_span.count();
+        if(deltaTime > 1.0 && (isServerConnected() || isServerConnected2())){
+            lastHeartbeatTime = now;
+            sendHeartbeat();
+        }
+
+        time_span = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastVideoHeartbeatTime);
+        if (time_span.count() > 1.0 && isVideoConnected()) {
+            lastVideoHeartbeatTime = now;
+            sendVideoHeartbeat();
+        }
+
+        if(isFlightEngineer)
+            continue;
 
         /******************************Handle control events******************************/
         while(SDL_PollEvent(&event)){

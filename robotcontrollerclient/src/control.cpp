@@ -259,7 +259,8 @@ bool isLightMode = true;
 
 static constexpr int ROLL_PITCH_IMAGE_SIZE = 200;
 static constexpr int BUCKET_TILT_IMAGE_SIZE = 200;
-static constexpr int EDGE_PANEL_WIDTH = 250;
+static constexpr int BASE_EDGE_PANEL_WIDTH = 250;
+static int EDGE_PANEL_WIDTH = 250;
 
 
 double roll_rotation_angle = 0.0;
@@ -2976,7 +2977,7 @@ bool onClickEvent(GdkEventButton* event, const std::string& id) {
 
 Gtk::Box* create_motor_column(std::vector<std::pair<Glib::ustring, CircleDrawingArea**>> items, void (*init_hook)(), std::vector<std::string> labels, bool right = false) {
     auto column = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
-    column->set_size_request(200, 300);
+    column->set_size_request(200 * GUI_SCALE, 300 * GUI_SCALE);
     column->set_hexpand(false);
     column->set_vexpand(false);
 
@@ -3000,7 +3001,7 @@ Gtk::Box* create_motor_column(std::vector<std::pair<Glib::ustring, CircleDrawing
 // To change Speedometer sizes, need to change this value
 Gtk::Box* create_lower_motor_column(std::vector<std::pair<Glib::ustring, CircleDrawingArea**>> items, std::vector<std::string> labels, bool right = false) {
     auto column = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
-    column->set_size_request(200, -1);
+    column->set_size_request(200 * GUI_SCALE, -1);
     column->set_hexpand(true);
     column->set_vexpand(false);
     column->set_valign(Gtk::ALIGN_END);
@@ -3383,7 +3384,7 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
             std::cout << "Initializing Upper Left column with Falcon indicators by default." << std::endl;
             innerLeftBox = buildMotorColumn(PanelPosition::UPPER_LEFT, true);
             pLeft->add(*innerLeftBox);
-            innerLeftBox->set_size_request(200, -1);
+            innerLeftBox->set_size_request(200 * GUI_SCALE, -1);
             innerLeftBox->set_valign(Gtk::ALIGN_START);
         }
 
@@ -5329,8 +5330,12 @@ void checkSize(){
         GUI_SCALE = (double)width / 2560.0;
 
         if(GUI_SCALE < 0.5) GUI_SCALE = 0.5;
+
+        // Scale edge panel width for smaller screens
+        EDGE_PANEL_WIDTH = static_cast<int>(BASE_EDGE_PANEL_WIDTH * GUI_SCALE);
         
-        std::cout << "Detected Width: " << width << " | Applying GUI Scale: " << GUI_SCALE << std::endl;
+        std::cout << "Detected Width: " << width << " | Applying GUI Scale: " << GUI_SCALE 
+                  << " | Edge Panel Width: " << EDGE_PANEL_WIDTH << std::endl;
 
         if(width < 1920){
             smallLaptop = true;

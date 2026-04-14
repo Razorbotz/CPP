@@ -196,8 +196,8 @@ void setupPassiveListening(int port1, int port2, int video_port1, int video_port
 }
 
 
-std::atomic<std::chrono::high_resolution_clock::time_point> last_rx_orin_ms{};
-std::atomic<std::chrono::high_resolution_clock::time_point> last_rx_nano_ms{};
+std::atomic<std::chrono::high_resolution_clock::time_point> last_rx_orin_ms{std::chrono::high_resolution_clock::now()};
+std::atomic<std::chrono::high_resolution_clock::time_point> last_rx_nano_ms{std::chrono::high_resolution_clock::now()};
 
 std::atomic<bool> orin_ip_known{false};
 std::atomic<bool> nano_ip_known{false};

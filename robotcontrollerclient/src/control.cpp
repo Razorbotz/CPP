@@ -1231,6 +1231,40 @@ void toggleMode() {
     if (right_arm) right_arm->set_light_mode(isLightMode);
     if (left_bucket) left_bucket->set_light_mode(isLightMode);
     if (right_bucket) right_bucket->set_light_mode(isLightMode);
+
+    if (isFlightEngineer) {
+        Gdk::RGBA labelColor;
+        if (isLightMode) labelColor.set("black");
+        else             labelColor.set("white");
+
+        auto recolorLabel = [&](Gtk::Label* lbl) {
+            if (lbl) lbl->override_color(labelColor);
+        };
+        recolorLabel(feLatencyRobot1);
+        recolorLabel(feLatencyRobot2);
+        recolorLabel(feClock);
+        recolorLabel(feEsp32Config);
+        recolorLabel(feEsp32MotorCount);
+        recolorLabel(feNavR1X);
+        recolorLabel(feNavR1Y);
+        recolorLabel(feNavR2X);
+        recolorLabel(feNavR2Y);
+
+        for (int row = 0; row < 16; row++) {
+            for (int col = 0; col < 6; col++) {
+                recolorLabel(feMotorLabels[row][col]);
+            }
+        }
+
+        for (int row = 0; row < 10; row++) {
+            for (int col = 0; col < 7; col++) {
+                recolorLabel(feEsp32MotorLabels[row][col]);
+            }
+        }
+        updateFEDashboard();
+
+        if (window) window->queue_draw();
+    }
 }
 
 void updateBackgroundColor(Gtk::Box* box, bool synced){
@@ -2859,6 +2893,11 @@ bool on_key_release_event(GdkEventKey* key_event){
 
 bool on_key_press_event(GdkEventKey* key_event){
     switch (key_event->keyval) {
+        case GDK_KEY_m:
+        case GDK_KEY_M:
+            // Toggle light/dark mode (works in both pilot and FE mode)
+            toggleMode();
+            return true;
         case GDK_KEY_u:
             send_servo_command("left");
             return false;
@@ -3619,7 +3658,7 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
 
         if (videoPlaceholder && !feVideoAreaRobot1) {
             feVideoAreaRobot1 = Gtk::manage(new VideoWidget());
-            feVideoAreaRobot1->set_size_request(640 * GUI_SCALE, 400 * GUI_SCALE);
+            feVideoAreaRobot1->set_size_request(800 * GUI_SCALE, 600 * GUI_SCALE);
             videoPlaceholder->pack_start(*feVideoAreaRobot1, Gtk::PACK_EXPAND_WIDGET);
         } else if (videoPlaceholder && feVideoAreaRobot1) {
             videoPlaceholder->pack_start(*feVideoAreaRobot1, Gtk::PACK_EXPAND_WIDGET);
@@ -3627,7 +3666,7 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
 
         if (videoPlaceholderRobot2 && !feVideoAreaRobot2) {
             feVideoAreaRobot2 = Gtk::manage(new VideoWidget());
-            feVideoAreaRobot2->set_size_request(640 * GUI_SCALE, 400 * GUI_SCALE);
+            feVideoAreaRobot2->set_size_request(800 * GUI_SCALE, 600 * GUI_SCALE);
             videoPlaceholderRobot2->pack_start(*feVideoAreaRobot2, Gtk::PACK_EXPAND_WIDGET);
         } else if (videoPlaceholderRobot2 && feVideoAreaRobot2) {
             videoPlaceholderRobot2->pack_start(*feVideoAreaRobot2, Gtk::PACK_EXPAND_WIDGET);

@@ -106,6 +106,9 @@ bool isServerInitialized2();
 bool isSilentRunning2();
 bool isVideoStreamActive();
 bool isVideoConnected();
+bool isForwardingActive();
+
+void requestVideoIDR();
 
 extern bool isFlightEngineerMode;
 extern bool isForwarding;

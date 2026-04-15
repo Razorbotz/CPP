@@ -5528,6 +5528,7 @@ int main(int argc, char** argv) {
     std::chrono::high_resolution_clock::time_point lastReceiveNano = std::chrono::high_resolution_clock::now();
     std::chrono::high_resolution_clock::time_point lastHeartbeatTime = std::chrono::high_resolution_clock::now();
     std::chrono::high_resolution_clock::time_point lastVideoHeartbeatTime = std::chrono::high_resolution_clock::now();
+    std::chrono::high_resolution_clock::time_point lastIDRRequestTime = std::chrono::high_resolution_clock::now();
     now = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> time_span = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastTransmitTime);
     double deltaTime = time_span.count();
@@ -5544,7 +5545,15 @@ int main(int argc, char** argv) {
         }
 
         if (newFrameAvailable) {
-            if (videoArea) {
+            if (isFlightEngineer) {
+                std::lock_guard<std::mutex> lock(frameMutex);
+                if (feVideoAreaRobot1 && !fe_left_frame.empty()) {
+                    feVideoAreaRobot1->setFrame(fe_left_frame);
+                }
+                if (feVideoAreaRobot2 && !fe_right_frame.empty()) {
+                    feVideoAreaRobot2->setFrame(fe_right_frame);
+                }
+            } else if (videoArea) {
                 videoArea->setFrame(latestFrame);
             }
             newFrameAvailable = false;
@@ -5601,7 +5610,7 @@ int main(int argc, char** argv) {
             }
         }
 
-        if(!isServerConnected() && !isServerConnected2()){
+        if(!isServerConnected() && !isServerConnected2() && !isFlightEngineer){
             resetUIOnDisconnect();
         }
         
@@ -5637,6 +5646,14 @@ int main(int argc, char** argv) {
         if (time_span.count() > 1.0 && isVideoConnected()) {
             lastVideoHeartbeatTime = now;
             sendVideoHeartbeat();
+        }
+
+        if (isForwardingActive()) {
+            time_span = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastIDRRequestTime);
+            if (time_span.count() > 2.0 && isVideoConnected()) {
+                lastIDRRequestTime = now;
+                requestVideoIDR();
+            }
         }
 
         if(isFlightEngineer)

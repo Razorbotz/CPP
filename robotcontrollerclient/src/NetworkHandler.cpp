@@ -234,6 +234,7 @@ bool isSilentRunning() { return silentRunning; }
 bool isServerConnected2() { return connected2; }
 bool isServerInitialized2() { return initialized2; }
 bool isSilentRunning2() { return silentRunning2; }
+bool isForwardingActive() { return isForwarding; }
 
 static inline void send_to_both(const uint8_t* buf, size_t len) {
     if (isFlightEngineerMode) return; // FE never transmits control data
@@ -999,6 +1000,7 @@ void videoDecoderThread(int& targetSock, int side, cv::Mat& latestFrame, std::mu
     
     // Kept local to thread to prevent collision between multiple streams
     std::unordered_map<uint16_t, std::vector<std::vector<uint8_t>>> frameChunks;
+    bool fe_got_sps = false;
 
     bool running = true;
     while (running) {
@@ -1039,6 +1041,15 @@ void videoDecoderThread(int& targetSock, int side, cv::Mat& latestFrame, std::mu
         std::vector<uint8_t> chunk(frameDataBuffer.begin() + sizeof(hdr),
                                   frameDataBuffer.begin() + bytesRead);
 
+        if (frameChunks.size() > 30) {
+            std::vector<uint16_t> stale_ids;
+            for (auto& kv : frameChunks) {
+                uint16_t age = hdr.frame_id - kv.first; // wraps naturally for uint16
+                if (age > 60) stale_ids.push_back(kv.first);
+            }
+            for (uint16_t id : stale_ids) frameChunks.erase(id);
+        }
+
         frameChunks[hdr.frame_id].resize(hdr.total_chunks);
         frameChunks[hdr.frame_id][hdr.chunk_index] = std::move(chunk);
 
@@ -1056,6 +1067,28 @@ void videoDecoderThread(int& targetSock, int side, cv::Mat& latestFrame, std::mu
                 fullFrame.insert(fullFrame.end(), c.begin(), c.end());
 
             frameChunks.erase(hdr.frame_id);
+
+            if (isFlightEngineerMode && !fe_got_sps) {
+                bool found_sps = false;
+                for (size_t i = 0; i + 3 < fullFrame.size(); ++i) {
+                    // Check for 3-byte (00 00 01) or 4-byte (00 00 00 01) start code
+                    bool start3 = (fullFrame[i] == 0 && fullFrame[i+1] == 0 && fullFrame[i+2] == 1);
+                    bool start4 = (i + 4 < fullFrame.size() && fullFrame[i] == 0 && fullFrame[i+1] == 0 
+                                   && fullFrame[i+2] == 0 && fullFrame[i+3] == 1);
+                    if (start3 || start4) {
+                        size_t nal_byte = start4 ? i + 4 : i + 3;
+                        if (nal_byte < fullFrame.size()) {
+                            uint8_t nal_type = fullFrame[nal_byte] & 0x1F;
+                            if (nal_type == 7) { // SPS
+                                found_sps = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+                if (!found_sps) continue; // Drop this frame, wait for an IDR with SPS
+                fe_got_sps = true;
+            }
 
             uint8_t* data_ptr = fullFrame.data();
             size_t data_size = fullFrame.size();
@@ -1084,13 +1117,15 @@ void videoDecoderThread(int& targetSock, int side, cv::Mat& latestFrame, std::mu
 
                         cv::Mat decoded_mat(codec_ctx->height, codec_ctx->width, CV_8UC1, bgr_frame->data[0], bgr_frame->linesize[0]);
 
-                        // In FE mode, size each stream for its own pane. In pilot mode,
-                        // preserve the existing full-size single-stream path.
-                        int target_width = (isFlightEngineerMode) ? (800 * GUI_SCALE) : (1600 * GUI_SCALE);
-                        int target_height = 1000 * GUI_SCALE;
-
                         cv::Mat display_img;
-                        cv::resize(decoded_mat, display_img, cv::Size(target_width, target_height), 0, 0, cv::INTER_LINEAR);
+                        if (isFlightEngineerMode) {
+                            display_img = decoded_mat.clone();
+                        }
+                        else {
+                            int target_width = 1600 * GUI_SCALE;
+                            int target_height = 1000 * GUI_SCALE;
+                            cv::resize(decoded_mat, display_img, cv::Size(target_width, target_height), 0, 0, cv::INTER_LINEAR);
+                        }
 
                         {
                             std::lock_guard<std::mutex> lock(frameMutex);
@@ -1309,6 +1344,16 @@ void sendVideoHeartbeat() {
     uint8_t message[2];
     message[0] = 2;
     message[1] = 0;
+    sendto(videoSock, message, sizeof(message), 0, (struct sockaddr *)&video_serv_addr, video_addr_len);
+}
+
+void requestVideoIDR() {
+    if (!videoConnected) return;
+    if (isFlightEngineerMode) return;
+    // Command 3 = request IDR keyframe from the robot
+    uint8_t message[2];
+    message[0] = 2;  // message length
+    message[1] = 3;  // command 3 = IDR request
     sendto(videoSock, message, sizeof(message), 0, (struct sockaddr *)&video_serv_addr, video_addr_len);
 }
 

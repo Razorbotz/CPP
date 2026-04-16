@@ -2025,12 +2025,44 @@ void handleLidarElements(const std::vector<Element>& elements) {
     }
 }
 
+struct MotorState {
+    bool error = false;
+    bool lowVoltage = false;
+    float voltage = 0.0f;
+    float current = 0.0f;
+    float outputPct = 0.0f;
+    uint16_t temperature = 0;
+    int position = 0;
+    bool hasData = false;
+    std::string displayName;
+    std::chrono::high_resolution_clock::time_point lastUpdate;
+};
+
+std::map<std::string, MotorState> motorStates;
+
+/* Helper to update the global motorStates from any motor handler */
+static void updateMotorStateEntry(const std::string& label, float voltage, float current, float outputPct, uint16_t temperature, int position, bool error, bool lowVoltage) {
+    auto& ms = motorStates[label];
+    ms.voltage = voltage;
+    ms.current = current;
+    ms.outputPct = outputPct;
+    ms.temperature = temperature;
+    ms.position = position;
+    ms.error = error;
+    ms.lowVoltage = lowVoltage;
+    ms.hasData = true;
+    ms.lastUpdate = std::chrono::high_resolution_clock::now();
+    auto nameIt = displayNameMap.find(label);
+    if (nameIt != displayNameMap.end()) ms.displayName = nameIt->second;
+}
+
 void handleTalonElements(const std::string& label, const std::vector<Element>& elements) {
     bool lowVoltage = false;
     float voltage_val = 0.0f;
     float current_val = 0.0f;
     float output_pct = 0.0f;
     int position_val = 0;
+    uint16_t temp_val = 0;
     for (const auto& element : elements) {
         if (element.label == "Sensor Position") {
             int pos = element.data.front().uint16;
@@ -2039,8 +2071,6 @@ void handleTalonElements(const std::string& label, const std::vector<Element>& e
                 left_arm_pos = pos;
                 if (left_arm) left_arm->set_position(pos);
                 arm_angle_deg = ((pos - 20) / 900.0) * -57.2 + 17.1;
-                std::cout << "pos: " << pos << std::endl;
-                std::cout << "arm_angle_deg: " << arm_angle_deg << std::endl;
                 updateBucketRotationImage();
                 updateBucketElevationBar();
                 if (proximityBar) {
@@ -2056,8 +2086,6 @@ void handleTalonElements(const std::string& label, const std::vector<Element>& e
                 if (left_bucket) left_bucket->set_position(pos);
 
                 bucket_angle_deg = ((pos - 20) / 900.0) * 97.4 - 25.8;
-                std::cout << "pos: " << pos << std::endl;
-                std::cout << "bucket_angle_deg: " << bucket_angle_deg << std::endl;
 
                 updateBucketRotationImage();
                 updateBucketElevationBar();
@@ -2092,8 +2120,12 @@ void handleTalonElements(const std::string& label, const std::vector<Element>& e
             output_pct = percent;
             if (!noVideo) talonOutputGraph->update_data(label, percent);
         }
+        else if (element.label == "Temperature") {
+            temp_val = element.data.front().uint16;
+        }
     }
     updateCircleColor(getMotorCircle(label), false, lowVoltage);
+    updateMotorStateEntry(label, voltage_val, current_val, output_pct, temp_val, position_val, false, lowVoltage);
 
     auto nameIt = displayNameMap.find(label);
     if (nameIt != displayNameMap.end()) {
@@ -2105,17 +2137,363 @@ void handleTalonElements(const std::string& label, const std::vector<Element>& e
     }
 }
 
-struct MotorState {
-    bool error = false;
-    bool lowVoltage = false;
-};
+/* ============================================================
+ * Motor Status Dashboard — replaces the old time-series graphs
+ * in the sensors window with a status-at-a-glance grid.
+ * ============================================================ */
+Gtk::Label* dashAlertLabel = nullptr;
+Gtk::Label* dashHealthVoltage = nullptr;
+Gtk::Label* dashHealthCurrent = nullptr;
+Gtk::Label* dashHealthTemp = nullptr;
+Gtk::Label* dashHealthOnline = nullptr;
+Gtk::LevelBar* dashBarVoltage = nullptr;
+Gtk::LevelBar* dashBarCurrent = nullptr;
+Gtk::LevelBar* dashBarTemp = nullptr;
+Gtk::LevelBar* dashBarOnline = nullptr;
+Gtk::Grid* dashMotorGrid = nullptr;
+Gtk::Label* dashMotorLabels[16][8]; // [row][col]: name, status, voltage, current, output%, temp, position, temp_alert
+int dashMotorRowCount = 0;
+std::map<std::string, int> dashMotorRowMap;
 
-std::map<std::string, MotorState> motorStates;
+#define TEMP_ANOMALY_THRESHOLD 8.0f  // degrees C above average = anomaly warning
+
+/* --- Autonomy state tracking --- */
+Gtk::Label* dashAutoState = nullptr;
+Gtk::Label* dashAutoDestX = nullptr;
+Gtk::Label* dashAutoDestZ = nullptr;
+Gtk::Label* dashAutoDistToTarget = nullptr;
+std::string currentAutoState = "Unknown";
+float currentAutoDestX = 0.0f;
+float currentAutoDestZ = 0.0f;
+
+/* --- Network throughput tracking --- */
+Gtk::Label* dashNetBytesPerSec = nullptr;
+Gtk::Label* dashNetPacketsPerSec = nullptr;
+Gtk::Label* dashNetLatency = nullptr;
+Gtk::Label* dashNetWifiStatus = nullptr;
+Gtk::Label* dashNetCanStatus = nullptr;
+Gtk::LevelBar* dashBarBandwidth = nullptr;
+
+static uint64_t netBytesAccum = 0;
+static uint64_t netPacketsAccum = 0;
+static double netBytesPerSec = 0.0;
+static double netPacketsPerSec = 0.0;
+static std::chrono::high_resolution_clock::time_point netLastSampleTime = std::chrono::high_resolution_clock::now();
+static std::string lastWifiStatus = "--";
+static std::string lastCanStatus = "--";
+
+/* --- Power budget tracking --- */
+Gtk::Label* dashPowerAvgCurrent = nullptr;
+Gtk::Label* dashPowerTotalDraw = nullptr;
+Gtk::Label* dashPowerTimeRemaining = nullptr;
+Gtk::LevelBar* dashBarPowerRemaining = nullptr;
+
+static double powerBatteryCapacityAh = 18.0;  // Default: 18Ah, set via --battery_capacity
+static double netMaxBandwidthBps = 5.0 * 1024 * 1024;  // Default: 5 MB/s, set via --max_bandwidth
+static double powerCurrentSum = 0.0;
+static int powerCurrentSamples = 0;
+static double powerCoulombsUsed = 0.0;  // Running integral of current over time
+static std::chrono::high_resolution_clock::time_point powerLastSampleTime = std::chrono::high_resolution_clock::now();
+
+static void updateMotorStatusDashboard() {
+    if (!dashMotorGrid) return;
+
+    // Collect stats for health cards
+    float minVoltage = 999.0f, maxCurrent = 0.0f, maxTemp = 0.0f;
+    int onlineCount = 0, totalCount = 0;
+    float tempSum = 0.0f;
+    int tempCount = 0;
+
+    auto now = std::chrono::high_resolution_clock::now();
+
+    for (auto& [label, ms] : motorStates) {
+        if (!ms.hasData) continue;
+        totalCount++;
+
+        double age = std::chrono::duration_cast<std::chrono::duration<double>>(now - ms.lastUpdate).count();
+        if (age < 5.0) onlineCount++;
+
+        if (ms.voltage > 0.1f && ms.voltage < minVoltage) minVoltage = ms.voltage;
+        if (ms.current > maxCurrent) maxCurrent = ms.current;
+        if (ms.temperature > maxTemp) maxTemp = ms.temperature;
+        if (ms.temperature > 0) {
+            tempSum += ms.temperature;
+            tempCount++;
+        }
+    }
+
+    float avgTemp = (tempCount > 0) ? (tempSum / tempCount) : 0.0f;
+    if (minVoltage > 900.0f) minVoltage = 0.0f;
+
+    // Update health cards
+    char buf[64];
+    if (dashHealthVoltage) {
+        snprintf(buf, sizeof(buf), "%.1fV", minVoltage);
+        dashHealthVoltage->set_text(buf);
+    }
+    if (dashBarVoltage && minVoltage > 0.1f) {
+        dashBarVoltage->set_value(std::min(1.0, (minVoltage - 10.0) / 8.0)); // 10V=0, 18V=1
+    }
+    if (dashHealthCurrent) {
+        snprintf(buf, sizeof(buf), "%.1fA", maxCurrent);
+        dashHealthCurrent->set_text(buf);
+    }
+    if (dashBarCurrent) {
+        dashBarCurrent->set_value(std::min(1.0, maxCurrent / 50.0));
+    }
+    if (dashHealthTemp) {
+        snprintf(buf, sizeof(buf), "%d\u00B0C", (int)maxTemp);
+        dashHealthTemp->set_text(buf);
+    }
+    if (dashBarTemp) {
+        dashBarTemp->set_value(std::min(1.0, maxTemp / 80.0));
+    }
+    if (dashHealthOnline) {
+        snprintf(buf, sizeof(buf), "%d / %d", onlineCount, totalCount);
+        dashHealthOnline->set_text(buf);
+    }
+    if (dashBarOnline && totalCount > 0) {
+        dashBarOnline->set_value((double)onlineCount / totalCount);
+    }
+
+    // Build alert string
+    std::string alertText;
+    for (auto& [label, ms] : motorStates) {
+        if (!ms.hasData) continue;
+        std::string name = ms.displayName.empty() ? label : ms.displayName;
+
+        if (ms.error) {
+            if (!alertText.empty()) alertText += "  |  ";
+            alertText += name + ": ERROR";
+        }
+        else if (ms.lowVoltage) {
+            if (!alertText.empty()) alertText += "  |  ";
+            snprintf(buf, sizeof(buf), "%s: voltage low (%.1fV)", name.c_str(), ms.voltage);
+            alertText += buf;
+        }
+
+        // Temperature anomaly: flag if this motor is significantly hotter than average
+        if (tempCount >= 2 && ms.temperature > 0 && (ms.temperature - avgTemp) > TEMP_ANOMALY_THRESHOLD) {
+            if (!alertText.empty()) alertText += "  |  ";
+            snprintf(buf, sizeof(buf), "%s: temp anomaly (%d\u00B0C, avg %d\u00B0C)", name.c_str(), ms.temperature, (int)avgTemp);
+            alertText += buf;
+        }
+    }
+    if (dashAlertLabel) {
+        if (alertText.empty()) {
+            dashAlertLabel->set_markup("<span foreground='#1D9E75'>\u25CF All systems nominal</span>");
+        } else {
+            dashAlertLabel->set_markup("<span foreground='#E24B4A'>\u26A0 " + alertText + "</span>");
+        }
+    }
+
+    // Update motor rows
+    for (auto& [label, ms] : motorStates) {
+        if (!ms.hasData) continue;
+
+        auto it = dashMotorRowMap.find(label);
+        int row;
+        if (it == dashMotorRowMap.end()) {
+            if (dashMotorRowCount >= 16) continue;
+            row = dashMotorRowCount++;
+            dashMotorRowMap[label] = row;
+            for (int col = 0; col < 8; col++)
+                dashMotorLabels[row][col]->set_visible(true);
+        } else {
+            row = it->second;
+        }
+
+        std::string name = ms.displayName.empty() ? label : (label + " (" + ms.displayName + ")");
+        double age = std::chrono::duration_cast<std::chrono::duration<double>>(now - ms.lastUpdate).count();
+        bool stale = (age > 5.0);
+
+        // Col 0: Name with status dot
+        std::string dotColor = stale ? "#888780" : (ms.error ? "#E24B4A" : (ms.lowVoltage ? "#EF9F27" : "#1D9E75"));
+        dashMotorLabels[row][0]->set_markup("<span foreground='" + dotColor + "'>\u25CF</span> " + name);
+
+        // Col 1: Status badge
+        if (stale) {
+            dashMotorLabels[row][1]->set_markup("<span foreground='#888780'>Offline</span>");
+        } else if (ms.error) {
+            dashMotorLabels[row][1]->set_markup("<span foreground='#E24B4A' weight='bold'>ERROR</span>");
+        } else if (ms.lowVoltage) {
+            dashMotorLabels[row][1]->set_markup("<span foreground='#EF9F27' weight='bold'>Low V</span>");
+        } else {
+            dashMotorLabels[row][1]->set_markup("<span foreground='#1D9E75'>OK</span>");
+        }
+
+        // Col 2: Voltage
+        snprintf(buf, sizeof(buf), "%.1fV", ms.voltage);
+        if (ms.lowVoltage) {
+            dashMotorLabels[row][2]->set_markup(std::string("<span foreground='#EF9F27' weight='bold'>") + buf + "</span>");
+        } else {
+            dashMotorLabels[row][2]->set_text(buf);
+        }
+
+        // Col 3: Current
+        snprintf(buf, sizeof(buf), "%.1fA", ms.current);
+        dashMotorLabels[row][3]->set_text(buf);
+
+        // Col 4: Output %
+        snprintf(buf, sizeof(buf), "%.0f%%", ms.outputPct * 100.0f);
+        dashMotorLabels[row][4]->set_text(buf);
+
+        // Col 5: Temperature
+        snprintf(buf, sizeof(buf), "%d\u00B0C", ms.temperature);
+        bool tempAnomaly = (tempCount >= 2 && ms.temperature > 0 && (ms.temperature - avgTemp) > TEMP_ANOMALY_THRESHOLD);
+        if (tempAnomaly) {
+            dashMotorLabels[row][5]->set_markup(std::string("<span foreground='#E24B4A' weight='bold'>") + buf + "</span>");
+        } else {
+            dashMotorLabels[row][5]->set_text(buf);
+        }
+
+        // Col 6: Position
+        if (ms.position != 0) {
+            dashMotorLabels[row][6]->set_text(std::to_string(ms.position));
+        } else {
+            dashMotorLabels[row][6]->set_text("\u2014");
+        }
+
+        // Col 7: Temp anomaly indicator
+        if (tempAnomaly) {
+            snprintf(buf, sizeof(buf), "+%d\u00B0 vs avg", (int)(ms.temperature - avgTemp));
+            dashMotorLabels[row][7]->set_markup(std::string("<span foreground='#E24B4A'>") + buf + "</span>");
+        } else {
+            dashMotorLabels[row][7]->set_text("");
+        }
+    }
+
+    /* --- Autonomy state panel --- */
+    if (dashAutoState) {
+        bool active = (currentAutoState == "Active" || currentAutoState == "Running" || currentAutoState == "Navigating");
+        std::string color = active ? "#1D9E75" : "#888780";
+        dashAutoState->set_markup("<span foreground='" + color + "' weight='bold'>" + currentAutoState + "</span>");
+    }
+    if (dashAutoDestX) {
+        snprintf(buf, sizeof(buf), "%.2f", currentAutoDestX);
+        dashAutoDestX->set_text(buf);
+    }
+    if (dashAutoDestZ) {
+        snprintf(buf, sizeof(buf), "%.2f", currentAutoDestZ);
+        dashAutoDestZ->set_text(buf);
+    }
+    if (dashAutoDistToTarget) {
+        // Distance from current robot position to autonomy target
+        double dx = currentAutoDestX - robot_x_m;
+        double dz = currentAutoDestZ - robot_y_m;
+        double dist = std::sqrt(dx*dx + dz*dz);
+        snprintf(buf, sizeof(buf), "%.2fm", dist);
+        dashAutoDistToTarget->set_text(buf);
+    }
+
+    /* --- Network throughput panel --- */
+    {
+        double elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now - netLastSampleTime).count();
+        if (elapsed >= 1.0) {
+            netBytesPerSec = netBytesAccum / elapsed;
+            netPacketsPerSec = netPacketsAccum / elapsed;
+            netBytesAccum = 0;
+            netPacketsAccum = 0;
+            netLastSampleTime = now;
+        }
+        if (dashNetBytesPerSec) {
+            if (netBytesPerSec > 1024*1024)
+                snprintf(buf, sizeof(buf), "%.1f MB/s", netBytesPerSec / (1024*1024));
+            else if (netBytesPerSec > 1024)
+                snprintf(buf, sizeof(buf), "%.1f KB/s", netBytesPerSec / 1024);
+            else
+                snprintf(buf, sizeof(buf), "%.0f B/s", netBytesPerSec);
+            dashNetBytesPerSec->set_text(buf);
+        }
+        if (dashNetPacketsPerSec) {
+            snprintf(buf, sizeof(buf), "%.0f pkt/s", netPacketsPerSec);
+            dashNetPacketsPerSec->set_text(buf);
+        }
+        if (dashBarBandwidth) {
+            // Scale bar: assume 5 MB/s is max expected throughput
+            dashBarBandwidth->set_value(std::min(1.0, netBytesPerSec / netMaxBandwidthBps));
+        }
+        if (dashNetLatency) {
+            double orinAge = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastPacketOrinMs()).count();
+            snprintf(buf, sizeof(buf), "%.0fms", orinAge * 1000.0);
+            dashNetLatency->set_text(buf);
+        }
+        if (dashNetWifiStatus) {
+            bool bad = (lastWifiStatus == "NON-FUNCTIONAL" || lastWifiStatus == "INTERFERENCE" || lastWifiStatus == "DOWN");
+            std::string color = bad ? "#E24B4A" : "#1D9E75";
+            dashNetWifiStatus->set_markup("<span foreground='" + color + "'>" + lastWifiStatus + "</span>");
+        }
+        if (dashNetCanStatus) {
+            bool bad = (lastCanStatus == "NON-FUNCTIONAL" || lastCanStatus == "DOWN");
+            std::string color = bad ? "#E24B4A" : "#1D9E75";
+            dashNetCanStatus->set_markup("<span foreground='" + color + "'>" + lastCanStatus + "</span>");
+        }
+    }
+
+    /* --- Power budget panel --- */
+    {
+        // Calculate total current draw across all motors
+        float totalCurrent = 0.0f;
+        int activeMotors = 0;
+        for (auto& [label, ms] : motorStates) {
+            if (!ms.hasData) continue;
+            totalCurrent += ms.current;
+            activeMotors++;
+        }
+
+        // Update running average and coulomb counter
+        double elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now - powerLastSampleTime).count();
+        if (elapsed > 0.0 && elapsed < 2.0 && activeMotors > 0) {
+            powerCoulombsUsed += totalCurrent * elapsed / 3600.0;  // Ah
+            powerCurrentSum += totalCurrent;
+            powerCurrentSamples++;
+        }
+        powerLastSampleTime = now;
+
+        float avgCurrent = (powerCurrentSamples > 0) ? (powerCurrentSum / powerCurrentSamples) : 0.0f;
+        double ahRemaining = powerBatteryCapacityAh - powerCoulombsUsed;
+        if (ahRemaining < 0) ahRemaining = 0;
+
+        // Estimate time remaining at average current draw
+        double minutesRemaining = 0.0;
+        if (avgCurrent > 0.5f) {
+            minutesRemaining = (ahRemaining / avgCurrent) * 60.0;
+        }
+
+        if (dashPowerAvgCurrent) {
+            snprintf(buf, sizeof(buf), "%.1fA avg", avgCurrent);
+            dashPowerAvgCurrent->set_text(buf);
+        }
+        if (dashPowerTotalDraw) {
+            snprintf(buf, sizeof(buf), "%.1fA total (%.2f Ah used)", totalCurrent, powerCoulombsUsed);
+            dashPowerTotalDraw->set_text(buf);
+        }
+        if (dashPowerTimeRemaining) {
+            if (avgCurrent < 0.5f) {
+                dashPowerTimeRemaining->set_text("-- (no load)");
+            } else if (minutesRemaining < 10.0) {
+                snprintf(buf, sizeof(buf), "%.0f min", minutesRemaining);
+                dashPowerTimeRemaining->set_markup(std::string("<span foreground='#E24B4A' weight='bold'>") + buf + "</span>");
+            } else if (minutesRemaining < 20.0) {
+                snprintf(buf, sizeof(buf), "%.0f min", minutesRemaining);
+                dashPowerTimeRemaining->set_markup(std::string("<span foreground='#EF9F27' weight='bold'>") + buf + "</span>");
+            } else {
+                snprintf(buf, sizeof(buf), "%.0f min", minutesRemaining);
+                dashPowerTimeRemaining->set_text(buf);
+            }
+        }
+        if (dashBarPowerRemaining) {
+            dashBarPowerRemaining->set_value(std::min(1.0, ahRemaining / powerBatteryCapacityAh));
+        }
+    }
+}
 
 void handleFalconElements(const std::string& label, const std::vector<Element>& elements) {
     float voltage_val = 0.0f;
     float current_val = 0.0f;
     float output_pct = 0.0f;
+    int temp_val = 0;
+    bool errorFlag = false;
     //Prints fields for debugging purposes, can be removed later
     if(debugMotors){
         std::cerr << "\n[" << label << "]  Packet contents:" << std::endl;
@@ -2140,14 +2518,13 @@ void handleFalconElements(const std::string& label, const std::vector<Element>& 
             std::cerr << std::endl;
         }
     }
-    motorStates[label].error = false;  // Reset at start of each update
+    bool lowVoltage = false;
     for (const auto& element : elements) {
         if (element.label == "Bus Voltage") {
             float voltage = element.data.front().uint16 / 100.0f;
             voltage_val = voltage;
             if (!noVideo) falconVoltageGraph->update_data(label, voltage);
-            bool lowVoltage = voltage < LOW_VOLTAGE;
-            motorStates[label].lowVoltage = lowVoltage;
+            lowVoltage = voltage < LOW_VOLTAGE;
             if (batteryBar) batteryBar->report_voltage(label, voltage);
         }
         else if (element.label == "Output Current") {
@@ -2167,11 +2544,14 @@ void handleFalconElements(const std::string& label, const std::vector<Element>& 
             }
         }
         else if (element.label == "Error"){
-            bool error = element.data.front().boolean;
-            motorStates[label].error = error;
+            errorFlag = element.data.front().boolean;
+        }
+        else if (element.label == "Temperature"){
+            temp_val = element.data.front().uint16;
         }
     }
-    updateCircleColor(getMotorCircle(label), motorStates[label].lowVoltage, motorStates[label].error);
+    updateCircleColor(getMotorCircle(label), lowVoltage, errorFlag);
+    updateMotorStateEntry(label, voltage_val, current_val, output_pct, temp_val, 0, errorFlag, lowVoltage);
 
     auto nameIt = displayNameMap.find(label);
     if (nameIt != displayNameMap.end()) {
@@ -2179,7 +2559,7 @@ void handleFalconElements(const std::string& label, const std::vector<Element>& 
     }
     if (isFlightEngineer) {
         std::string feLabel = (lastPacketFromRobot1() ? "R1 " : "R2 ") + label;
-        feUpdateMotorRow(feLabel, voltage_val, current_val, output_pct, 0, motorStates[label].error, motorStates[label].lowVoltage);
+        feUpdateMotorRow(feLabel, voltage_val, current_val, output_pct, 0, errorFlag, lowVoltage);
     }
 }
 
@@ -2187,6 +2567,9 @@ void handleNeoElements(const std::string& label, const std::vector<Element>& ele
     float voltage_val = 0.0f;
     float current_val = 0.0f;
     float output_pct = 0.0f;
+    int temp_val = 0;
+    bool errorFlag = false;
+    bool lowVoltage = false;
     //Prints fields for debugging purposes, can be removed later
     if(debugMotors){
         std::cerr << "\n[" << label << "]  Packet contents:" << std::endl;
@@ -2212,13 +2595,12 @@ void handleNeoElements(const std::string& label, const std::vector<Element>& ele
         }
     }
 
-    motorStates[label].error = false;  // Reset at start of each update
     for (const auto& element : elements) {
         if (element.label == "Bus Voltage") {
             float voltage = element.data.front().uint16 / 100.0f;
             voltage_val = voltage;
             if (!noVideo) falconVoltageGraph->update_data(label, voltage);
-            motorStates[label].lowVoltage = voltage < LOW_VOLTAGE;
+            lowVoltage = voltage < LOW_VOLTAGE;
             if (batteryBar) batteryBar->report_voltage(label, voltage);
         }
         else if (element.label == "Output Current") {
@@ -2238,18 +2620,21 @@ void handleNeoElements(const std::string& label, const std::vector<Element>& ele
             }
         }
         else if (element.label == "Error"){
-            bool error = element.data.front().boolean;
-            motorStates[label].error = error;
+            errorFlag = element.data.front().boolean;
+        }
+        else if (element.label == "Temperature"){
+            temp_val = element.data.front().uint16;
         }
     }
-    updateCircleColor(getMotorCircle(label), motorStates[label].lowVoltage, motorStates[label].error);
+    updateCircleColor(getMotorCircle(label), lowVoltage, errorFlag);
+    updateMotorStateEntry(label, voltage_val, current_val, output_pct, temp_val, 0, errorFlag, lowVoltage);
     auto neoNameIt = displayNameMap.find(label);
     if (neoNameIt != displayNameMap.end()) {
         updateMotorTelemetry(neoNameIt->second, voltage_val, current_val);
     }
     if (isFlightEngineer) {
         std::string feLabel = (lastPacketFromRobot1() ? "R1 " : "R2 ") + label;
-        feUpdateMotorRow(feLabel, voltage_val, current_val, output_pct, 0, motorStates[label].error, motorStates[label].lowVoltage);
+        feUpdateMotorRow(feLabel, voltage_val, current_val, output_pct, 0, errorFlag, lowVoltage);
     }
 }
 
@@ -2257,6 +2642,9 @@ void handleKrakenElements(const std::string& label, const std::vector<Element>& 
     float voltage_val = 0.0f;
     float current_val = 0.0f;
     float output_pct = 0.0f;
+    int temp_val = 0;
+    bool errorFlag = false;
+    bool lowVoltage = false;
     //Prints fields for debugging purposes, can be removed later
     if(debugMotors){
         std::cerr << "\n[" << label << "]  Packet contents:" << std::endl;
@@ -2282,14 +2670,12 @@ void handleKrakenElements(const std::string& label, const std::vector<Element>& 
         }
     }
     
-    motorStates[label].error = false;  // Reset at start of each update
     for (const auto& element : elements) {
         if (element.label == "Bus Voltage") {
             float voltage = element.data.front().uint16 / 100.0f;
             voltage_val = voltage;
             if (!noVideo) falconVoltageGraph->update_data(label, voltage);
-            bool lowVoltage = voltage < LOW_VOLTAGE;
-            motorStates[label].lowVoltage = lowVoltage;
+            lowVoltage = voltage < LOW_VOLTAGE;
             if (batteryBar) batteryBar->report_voltage(label, voltage);
         }
         else if (element.label == "Output Current") {
@@ -2309,18 +2695,21 @@ void handleKrakenElements(const std::string& label, const std::vector<Element>& 
             }
         }
         else if (element.label == "Error"){
-            bool error = element.data.front().boolean;
-            motorStates[label].error = error;
+            errorFlag = element.data.front().boolean;
         }
-        updateCircleColor(getMotorCircle(label), motorStates[label].lowVoltage, motorStates[label].error);
+        else if (element.label == "Temperature"){
+            temp_val = element.data.front().uint16;
+        }
     }
+    updateCircleColor(getMotorCircle(label), lowVoltage, errorFlag);
+    updateMotorStateEntry(label, voltage_val, current_val, output_pct, temp_val, 0, errorFlag, lowVoltage);
     auto krakenNameIt = displayNameMap.find(label);
     if (krakenNameIt != displayNameMap.end()) {
         updateMotorTelemetry(krakenNameIt->second, voltage_val, current_val);
     }
     if (isFlightEngineer) {
         std::string feLabel = (lastPacketFromRobot1() ? "R1 " : "R2 ") + label;
-        feUpdateMotorRow(feLabel, voltage_val, current_val, output_pct, 0, motorStates[label].error, motorStates[label].lowVoltage);
+        feUpdateMotorRow(feLabel, voltage_val, current_val, output_pct, 0, errorFlag, lowVoltage);
     }
 }
 
@@ -2330,6 +2719,10 @@ void handleCommunicationElements(InfoFrame* frame, const std::vector<Element>& e
 
         std::string text;
         for (const auto& c : element.data) text += c.character;
+
+        // Track for dashboard
+        if (element.label == "Wi-Fi") lastWifiStatus = text;
+        if (element.label == "CAN Bus") lastCanStatus = text;
 
         if (text == "NON-FUNCTIONAL" || text == "INTERFERENCE" || text == "DOWN") {
             frame->setBackground(element.label, "#FF0000");
@@ -2358,14 +2751,24 @@ void handleCommunicationElements(InfoFrame* frame, const std::vector<Element>& e
 }
 
 void handleAutonomyElements(const std::string& label, const std::vector<Element>& elements) {
-    int destX = -1;
-    int destY = -1;
+    float destX = -1, destZ = -1;
     for (const auto& element : elements) {
         if (element.label == "Dest X") {
             destX = element.data.front().float32;
+            currentAutoDestX = destX;
         }
         else if(element.label == "Dest Z"){
-            destY = element.data.front().float32;
+            destZ = element.data.front().float32;
+            currentAutoDestZ = destZ;
+        }
+        // Capture any state string field from the autonomy message
+        else if (element.type == TYPE::STRING) {
+            std::string text;
+            for (const auto& c : element.data) text += c.character;
+            if (!text.empty()) currentAutoState = text;
+        }
+        else if (element.type == TYPE::BOOLEAN && element.label == "Active") {
+            currentAutoState = element.data.front().boolean ? "Active" : "Inactive";
         }
     }
 
@@ -2373,8 +2776,8 @@ void handleAutonomyElements(const std::string& label, const std::vector<Element>
         bool r1 = lastPacketFromRobot1();
         Gtk::Label* lDestX = r1 ? feAutoR1DestX : feAutoR2DestX;
         Gtk::Label* lDestZ = r1 ? feAutoR1DestZ : feAutoR2DestZ;
-        if (lDestX && destX >= 0) lDestX->set_text(std::to_string(destX));
-        if (lDestZ && destY >= 0) lDestZ->set_text(std::to_string(destY));
+        if (lDestX && destX >= 0) lDestX->set_text(std::to_string((int)destX));
+        if (lDestZ && destZ >= 0) lDestZ->set_text(std::to_string((int)destZ));
     }
 }
 
@@ -4053,43 +4456,271 @@ void initSensorsWindow() {
     std::vector<std::string> falconNames = {"Falcon 1", "Falcon 2", "Falcon 3", "Falcon 4"};
     std::vector<std::string> linearNames = {"Linear 1", "Linear 2"};
 
-    auto inject = [&](const char* id, Gtk::Widget* widget) {
-        Gtk::Box* holder = nullptr;
-        builder->get_widget(id, holder);
-        if (holder && widget) {
-            holder->add(*widget);
-        }
-    };
-
+    // Create graph objects (still used for data collection even though not displayed)
     talonVoltageGraph = Gtk::manage(new MultiMotorGraph("Talon Bus Voltage", MultiMotorGraph::VOLTAGE, talonNames));
-    inject("holder_talon_volt", talonVoltageGraph);
-
     talonCurrentGraph = Gtk::manage(new MultiMotorGraph("Talon Output Current", MultiMotorGraph::CURRENT, talonNames));
-    inject("holder_talon_curr", talonCurrentGraph);
-
     talonPositionGraph = Gtk::manage(new MultiMotorGraph("Talon Sensor Position", MultiMotorGraph::POSITION, talonNames));
-    inject("holder_talon_pos", talonPositionGraph);
-
     talonOutputGraph = Gtk::manage(new MultiMotorGraph("Talon Output Percentage", MultiMotorGraph::OUTPUT_PERCENT, talonNames));
-    inject("holder_talon_out", talonOutputGraph);
-
     falconVoltageGraph = Gtk::manage(new MultiMotorGraph("Falcon Bus Voltage", MultiMotorGraph::VOLTAGE, falconNames));
-    inject("holder_falcon_volt", falconVoltageGraph);
-
     falconCurrentGraph = Gtk::manage(new MultiMotorGraph("Falcon Output Current", MultiMotorGraph::CURRENT, falconNames));
-    inject("holder_falcon_curr", falconCurrentGraph);
-
     falconPositionGraph = Gtk::manage(new MultiMotorGraph("Falcon Sensor Position", MultiMotorGraph::POSITION, falconNames));
-    inject("holder_falcon_pos", falconPositionGraph);
-
     falconOutputGraph = Gtk::manage(new MultiMotorGraph("Falcon Output Percentage", MultiMotorGraph::OUTPUT_PERCENT, falconNames));
-    inject("holder_falcon_out", falconOutputGraph);
-
     linearSpeedGraph = Gtk::manage(new MultiMotorGraph("Linear Actuator Speed", MultiMotorGraph::SPEED, linearNames));
-    inject("holder_linear_speed", linearSpeedGraph);
-
     linearPotentiometerGraph = Gtk::manage(new MultiMotorGraph("Linear Actuator Position", MultiMotorGraph::POTENTIOMETER, linearNames));
-    inject("holder_linear_pot", linearPotentiometerGraph);
+
+    /* ============================================================
+     * MOTOR STATUS DASHBOARD — replaces graph tabs with at-a-glance
+     * status grid, health summary cards, and alert banner.
+     * Injected into the first available Glade tab holder.
+     * ============================================================ */
+    {
+        // Try to inject into the first graph tab holder from Glade
+        Gtk::Box* dashHost = nullptr;
+        const char* holderCandidates[] = {
+            "holder_talon_volt", "holder_talon_curr", "holder_talon_pos", "holder_talon_out",
+            "holder_falcon_volt", "holder_falcon_curr", "holder_falcon_pos", "holder_falcon_out",
+            nullptr
+        };
+        // Find the parent notebook or top-level box that contains the graph holders
+        // and inject a new page, or use the first holder directly
+        for (int i = 0; holderCandidates[i]; i++) {
+            builder->get_widget(holderCandidates[i], dashHost);
+            if (dashHost) break;
+        }
+
+        // If we found a holder, clear it and build the dashboard inside
+        // If not, create a standalone box
+        Gtk::Box* dashBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 10));
+        dashBox->property_margin().set_value(10);
+
+        // Alert banner
+        dashAlertLabel = Gtk::manage(new Gtk::Label());
+        dashAlertLabel->set_halign(Gtk::ALIGN_START);
+        dashAlertLabel->set_markup("<span foreground='#1D9E75'>\u25CF All systems nominal</span>");
+        auto* alertFrame = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 8));
+        alertFrame->property_margin().set_value(8);
+        alertFrame->add(*dashAlertLabel);
+        dashBox->pack_start(*alertFrame, Gtk::PACK_SHRINK);
+
+        // Health summary cards
+        auto* healthRow = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 12));
+
+        auto makeHealthCard = [](const std::string& title, Gtk::Label*& valLabel, Gtk::LevelBar*& bar) -> Gtk::Box* {
+            auto* card = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 4));
+            card->property_margin().set_value(8);
+            card->set_hexpand(true);
+
+            auto* titleLbl = Gtk::manage(new Gtk::Label(title));
+            titleLbl->set_halign(Gtk::ALIGN_START);
+            Pango::FontDescription smallFont;
+            smallFont.set_size(10 * Pango::SCALE);
+            titleLbl->override_font(smallFont);
+            card->add(*titleLbl);
+
+            valLabel = Gtk::manage(new Gtk::Label("--"));
+            valLabel->set_halign(Gtk::ALIGN_START);
+            Pango::FontDescription bigFont;
+            bigFont.set_size(16 * Pango::SCALE);
+            bigFont.set_weight(Pango::WEIGHT_BOLD);
+            valLabel->override_font(bigFont);
+            card->add(*valLabel);
+
+            bar = Gtk::manage(new Gtk::LevelBar());
+            bar->set_min_value(0.0);
+            bar->set_max_value(1.0);
+            bar->set_value(0.0);
+            bar->set_size_request(-1, 6);
+            card->add(*bar);
+
+            return card;
+        };
+
+        healthRow->add(*makeHealthCard("Min battery voltage", dashHealthVoltage, dashBarVoltage));
+        healthRow->add(*makeHealthCard("Peak current draw", dashHealthCurrent, dashBarCurrent));
+        healthRow->add(*makeHealthCard("Hottest motor", dashHealthTemp, dashBarTemp));
+        healthRow->add(*makeHealthCard("Motors online", dashHealthOnline, dashBarOnline));
+
+        dashBox->pack_start(*healthRow, Gtk::PACK_SHRINK);
+
+        // Separator
+        dashBox->pack_start(*Gtk::manage(new Gtk::Separator(Gtk::ORIENTATION_HORIZONTAL)), Gtk::PACK_SHRINK);
+
+        // Motor status grid
+        dashMotorGrid = Gtk::manage(new Gtk::Grid());
+        dashMotorGrid->set_row_spacing(4);
+        dashMotorGrid->set_column_spacing(14);
+        dashMotorGrid->property_margin().set_value(8);
+
+        const char* headers[] = {"Motor", "Status", "Voltage", "Current", "Output", "Temp", "Position", ""};
+        for (int col = 0; col < 8; col++) {
+            auto* hdr = Gtk::manage(new Gtk::Label());
+            hdr->set_markup(std::string("<b>") + headers[col] + "</b>");
+            hdr->set_halign(Gtk::ALIGN_START);
+            Pango::FontDescription hdrFont;
+            hdrFont.set_size(10 * Pango::SCALE);
+            hdr->override_font(hdrFont);
+            dashMotorGrid->attach(*hdr, col, 0, 1, 1);
+        }
+
+        // Pre-create 16 rows of labels
+        for (int row = 0; row < 16; row++) {
+            for (int col = 0; col < 8; col++) {
+                dashMotorLabels[row][col] = Gtk::manage(new Gtk::Label("--"));
+                dashMotorLabels[row][col]->set_halign(Gtk::ALIGN_START);
+                dashMotorLabels[row][col]->set_visible(false);
+                Pango::FontDescription rowFont;
+                rowFont.set_size(11 * Pango::SCALE);
+                dashMotorLabels[row][col]->override_font(rowFont);
+                dashMotorGrid->attach(*dashMotorLabels[row][col], col, row + 1, 1, 1);
+            }
+        }
+
+        auto* gridScroll = Gtk::manage(new Gtk::ScrolledWindow());
+        gridScroll->set_policy(Gtk::POLICY_AUTOMATIC, Gtk::POLICY_AUTOMATIC);
+        gridScroll->set_vexpand(true);
+        gridScroll->add(*dashMotorGrid);
+        dashBox->pack_start(*gridScroll, Gtk::PACK_EXPAND_WIDGET);
+
+        /* ---- Helper: create a label-value pair row ---- */
+        auto makeLabelValue = [](const std::string& title, Gtk::Label*& valLabel) -> Gtk::Box* {
+            auto* row = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 8));
+            auto* lbl = Gtk::manage(new Gtk::Label(title));
+            lbl->set_halign(Gtk::ALIGN_START);
+            Pango::FontDescription smallFont;
+            smallFont.set_size(10 * Pango::SCALE);
+            lbl->override_font(smallFont);
+            lbl->set_size_request(130, -1);
+            row->pack_start(*lbl, Gtk::PACK_SHRINK);
+
+            valLabel = Gtk::manage(new Gtk::Label("--"));
+            valLabel->set_halign(Gtk::ALIGN_START);
+            Pango::FontDescription valFont;
+            valFont.set_size(11 * Pango::SCALE);
+            valFont.set_weight(Pango::WEIGHT_BOLD);
+            valLabel->override_font(valFont);
+            row->pack_start(*valLabel, Gtk::PACK_SHRINK);
+            return row;
+        };
+
+        /* ============================================================
+         * AUTONOMY STATE PANEL
+         * ============================================================ */
+        dashBox->pack_start(*Gtk::manage(new Gtk::Separator(Gtk::ORIENTATION_HORIZONTAL)), Gtk::PACK_SHRINK);
+        {
+            auto* sectionLabel = Gtk::manage(new Gtk::Label());
+            sectionLabel->set_markup("<b>Autonomy</b>");
+            sectionLabel->set_halign(Gtk::ALIGN_START);
+            sectionLabel->set_margin_top(6);
+            sectionLabel->set_margin_start(8);
+            dashBox->pack_start(*sectionLabel, Gtk::PACK_SHRINK);
+
+            auto* autoGrid = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 4));
+            autoGrid->property_margin().set_value(8);
+
+            auto* row1 = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 20));
+            row1->add(*makeLabelValue("State:", dashAutoState));
+            row1->add(*makeLabelValue("Dist to target:", dashAutoDistToTarget));
+            autoGrid->add(*row1);
+
+            auto* row2 = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 20));
+            row2->add(*makeLabelValue("Dest X:", dashAutoDestX));
+            row2->add(*makeLabelValue("Dest Z:", dashAutoDestZ));
+            autoGrid->add(*row2);
+
+            dashBox->pack_start(*autoGrid, Gtk::PACK_SHRINK);
+        }
+
+        /* ============================================================
+         * NETWORK THROUGHPUT PANEL
+         * ============================================================ */
+        dashBox->pack_start(*Gtk::manage(new Gtk::Separator(Gtk::ORIENTATION_HORIZONTAL)), Gtk::PACK_SHRINK);
+        {
+            auto* sectionLabel = Gtk::manage(new Gtk::Label());
+            sectionLabel->set_markup("<b>Network</b>");
+            sectionLabel->set_halign(Gtk::ALIGN_START);
+            sectionLabel->set_margin_top(6);
+            sectionLabel->set_margin_start(8);
+            dashBox->pack_start(*sectionLabel, Gtk::PACK_SHRINK);
+
+            auto* netGrid = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 4));
+            netGrid->property_margin().set_value(8);
+
+            auto* row1 = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 20));
+            row1->add(*makeLabelValue("Throughput:", dashNetBytesPerSec));
+            row1->add(*makeLabelValue("Packet rate:", dashNetPacketsPerSec));
+            row1->add(*makeLabelValue("Latency:", dashNetLatency));
+            netGrid->add(*row1);
+
+            auto* row2 = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 20));
+            row2->add(*makeLabelValue("Wi-Fi:", dashNetWifiStatus));
+            row2->add(*makeLabelValue("CAN Bus:", dashNetCanStatus));
+            netGrid->add(*row2);
+
+            // Bandwidth usage bar
+            dashBarBandwidth = Gtk::manage(new Gtk::LevelBar());
+            dashBarBandwidth->set_min_value(0.0);
+            dashBarBandwidth->set_max_value(1.0);
+            dashBarBandwidth->set_value(0.0);
+            dashBarBandwidth->set_size_request(-1, 6);
+            dashBarBandwidth->set_margin_top(4);
+            netGrid->add(*dashBarBandwidth);
+
+            dashBox->pack_start(*netGrid, Gtk::PACK_SHRINK);
+        }
+
+        /* ============================================================
+         * POWER BUDGET PANEL
+         * ============================================================ */
+        dashBox->pack_start(*Gtk::manage(new Gtk::Separator(Gtk::ORIENTATION_HORIZONTAL)), Gtk::PACK_SHRINK);
+        {
+            auto* sectionLabel = Gtk::manage(new Gtk::Label());
+            sectionLabel->set_markup("<b>Power budget</b>");
+            sectionLabel->set_halign(Gtk::ALIGN_START);
+            sectionLabel->set_margin_top(6);
+            sectionLabel->set_margin_start(8);
+            dashBox->pack_start(*sectionLabel, Gtk::PACK_SHRINK);
+
+            auto* powerGrid = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 4));
+            powerGrid->property_margin().set_value(8);
+
+            auto* row1 = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 20));
+            row1->add(*makeLabelValue("Avg current:", dashPowerAvgCurrent));
+            row1->add(*makeLabelValue("Total draw:", dashPowerTotalDraw));
+            powerGrid->add(*row1);
+
+            auto* row2 = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 20));
+            row2->add(*makeLabelValue("Time remaining:", dashPowerTimeRemaining));
+
+            // Show battery capacity for reference
+            Gtk::Label* capDummy = nullptr;
+            row2->add(*makeLabelValue("Battery:", capDummy));
+            if (capDummy) {
+                char capBuf[32];
+                snprintf(capBuf, sizeof(capBuf), "%.0f Ah", powerBatteryCapacityAh);
+                capDummy->set_text(capBuf);
+            }
+            powerGrid->add(*row2);
+
+            // Remaining capacity bar
+            dashBarPowerRemaining = Gtk::manage(new Gtk::LevelBar());
+            dashBarPowerRemaining->set_min_value(0.0);
+            dashBarPowerRemaining->set_max_value(1.0);
+            dashBarPowerRemaining->set_value(1.0);
+            dashBarPowerRemaining->set_size_request(-1, 6);
+            dashBarPowerRemaining->set_margin_top(4);
+            powerGrid->add(*dashBarPowerRemaining);
+
+            dashBox->pack_start(*powerGrid, Gtk::PACK_SHRINK);
+        }
+
+        if (dashHost) {
+            // Remove existing children from the holder and replace with dashboard
+            for (auto* child : dashHost->get_children()) {
+                dashHost->remove(*child);
+            }
+            dashHost->pack_start(*dashBox, Gtk::PACK_EXPAND_WIDGET);
+        }
+    }
 
     /* ============================================================
      * DIAGNOSTICS TAB (ESP32 handheld tool data)
@@ -5464,6 +6095,24 @@ void processArguments(int argc, char** argv){
                     std::cerr << "Error: --mission_time requires <seconds>\n";
                 }
             }
+            else if(!strcmp("--battery_capacity", argv[i])){
+                // Set battery capacity in Ah for power budget estimation (default: 18)
+                if(i+1 < argc){
+                    powerBatteryCapacityAh = std::stod(argv[++i]);
+                    std::cout << "Battery capacity set to " << powerBatteryCapacityAh << " Ah\n";
+                } else {
+                    std::cerr << "Error: --battery_capacity requires <Ah>\n";
+                }
+            }
+            else if(!strcmp("--max_bandwidth", argv[i])){
+                // Set expected max bandwidth in MB/s for the utilization bar (default: 5)
+                if(i+1 < argc){
+                    netMaxBandwidthBps = std::stod(argv[++i]) * 1024 * 1024;
+                    std::cout << "Max bandwidth set to " << (netMaxBandwidthBps / (1024*1024)) << " MB/s\n";
+                } else {
+                    std::cerr << "Error: --max_bandwidth requires <MB/s>\n";
+                }
+            }
         }
     }
 }
@@ -5684,6 +6333,7 @@ int main(int argc, char** argv) {
     std::chrono::high_resolution_clock::time_point lastHeartbeatTime = std::chrono::high_resolution_clock::now();
     std::chrono::high_resolution_clock::time_point lastVideoHeartbeatTime = std::chrono::high_resolution_clock::now();
     std::chrono::high_resolution_clock::time_point lastIDRRequestTime = std::chrono::high_resolution_clock::now();
+    std::chrono::high_resolution_clock::time_point lastDashboardUpdate = std::chrono::high_resolution_clock::now();
     now = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> time_span = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastTransmitTime);
     double deltaTime = time_span.count();
@@ -5722,6 +6372,13 @@ int main(int argc, char** argv) {
             publishRobotTransform();
         }
 
+        // Update motor status dashboard at ~4Hz
+        time_span = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastDashboardUpdate);
+        if (time_span.count() > 0.25) {
+            lastDashboardUpdate = now;
+            updateMotorStatusDashboard();
+        }
+
         if(!testInput && !isServerInitialized() && !isServerInitialized2() && !isVideoStreamActive()) {
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
             continue;
@@ -5741,6 +6398,10 @@ int main(int argc, char** argv) {
             lastReceiveNano = lastPacketNanoMs();
         }
         if (bytesRead > 0) {
+            // Track network throughput
+            netBytesAccum += bytesRead;
+            netPacketsAccum++;
+
             std::vector<uint8_t> processed_buffer;
             now = std::chrono::high_resolution_clock::now();
             if (process_payload(data_buffer, processed_buffer)) { 

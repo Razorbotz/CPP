@@ -936,6 +936,14 @@ Gtk::Label* feCommR2Can = nullptr;
 
 std::chrono::high_resolution_clock::time_point feStartTime;
 
+/* Mission timer — counts down from a configurable duration.
+ * T key starts/pauses, R key resets. Duration set via --mission_time <seconds>. */
+Gtk::Label* feMissionTimer = nullptr;
+int feMissionDurationSec = 10 * 60;  // Default: 10 minutes
+bool feMissionTimerRunning = false;
+double feMissionElapsedSec = 0.0;
+std::chrono::high_resolution_clock::time_point feMissionTimerStart;
+
 /* Forward declarations for FE update functions */
 void feUpdateMotorRow(const std::string& label, float voltage, float current, float output_pct, int position, bool error, bool lowVoltage);
 void updateFEDashboard();
@@ -1175,11 +1183,14 @@ void toggleMode() {
 
     auto css_provider = Gtk::CssProvider::create();
     if (isLightMode) {
-        css_provider->load_from_data(generateLightModeString(lightBackgroundColorCSS));
+        // FE has no video underlay — use opaque colors so text is readable
+        std::string bg = isFlightEngineer ? lightBackgroundColor : lightBackgroundColorCSS;
+        css_provider->load_from_data(generateLightModeString(bg));
         background.set(lightBackgroundColor);    
     }
     else {
-        css_provider->load_from_data(generateDarkModeString(darkBackgroundColorCSS));
+        std::string bg = isFlightEngineer ? darkBackgroundColor : darkBackgroundColorCSS;
+        css_provider->load_from_data(generateDarkModeString(bg));
         background.set(darkBackgroundColor);
     }
 
@@ -1217,6 +1228,14 @@ void toggleMode() {
         simulatorWindow->get_style_context()->add_provider(sim_css, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
     }
 
+    if (configWindow) {
+        auto config_css = Gtk::CssProvider::create();
+        std::string config_bg = "window { background-color: " + (isLightMode ? lightBackgroundColor : darkBackgroundColor) + "; }"
+                                " label { color: " + (isLightMode ? std::string("#000000") : std::string("#edf6fa")) + "; }";
+        config_css->load_from_data(config_bg);
+        configWindow->get_style_context()->add_provider(config_css, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+    }
+
     if(!noVideo) {
         setBackgroundColors(background);
     }
@@ -1232,17 +1251,20 @@ void toggleMode() {
     if (left_bucket) left_bucket->set_light_mode(isLightMode);
     if (right_bucket) right_bucket->set_light_mode(isLightMode);
 
+    // FE mode: update static labels and grid text colors to match new mode
     if (isFlightEngineer) {
         Gdk::RGBA labelColor;
         if (isLightMode) labelColor.set("black");
         else             labelColor.set("white");
 
+        // Update FE dashboard labels that use plain text (not colored markup)
         auto recolorLabel = [&](Gtk::Label* lbl) {
             if (lbl) lbl->override_color(labelColor);
         };
         recolorLabel(feLatencyRobot1);
         recolorLabel(feLatencyRobot2);
         recolorLabel(feClock);
+        recolorLabel(feMissionTimer);
         recolorLabel(feEsp32Config);
         recolorLabel(feEsp32MotorCount);
         recolorLabel(feNavR1X);
@@ -1250,17 +1272,21 @@ void toggleMode() {
         recolorLabel(feNavR2X);
         recolorLabel(feNavR2Y);
 
+        // Recolor motor grid labels
         for (int row = 0; row < 16; row++) {
             for (int col = 0; col < 6; col++) {
                 recolorLabel(feMotorLabels[row][col]);
             }
         }
 
+        // Recolor ESP32 motor grid labels
         for (int row = 0; row < 10; row++) {
             for (int col = 0; col < 7; col++) {
                 recolorLabel(feEsp32MotorLabels[row][col]);
             }
         }
+
+        // Force a dashboard refresh to re-apply colored markup on status labels
         updateFEDashboard();
 
         if (window) window->queue_draw();
@@ -2851,6 +2877,13 @@ void create_config_editor_window(const std::string& config_file) {
         allowConfig = true;     // Allow a new window to be created next time.
     });
 
+    // Apply opaque background so text is readable (the global CSS uses transparent backgrounds)
+    auto config_css = Gtk::CssProvider::create();
+    std::string config_bg = "window { background-color: " + (isLightMode ? lightBackgroundColor : darkBackgroundColor) + "; }"
+                            " label { color: " + (isLightMode ? std::string("#000000") : std::string("#edf6fa")) + "; }";
+    config_css->load_from_data(config_bg);
+    configWindow->get_style_context()->add_provider(config_css, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+
     configWindow->show();
 }
 
@@ -2898,6 +2931,31 @@ bool on_key_press_event(GdkEventKey* key_event){
             // Toggle light/dark mode (works in both pilot and FE mode)
             toggleMode();
             return true;
+        case GDK_KEY_t:
+        case GDK_KEY_T:
+            // FE only: start/pause mission timer
+            if (isFlightEngineer) {
+                if (!feMissionTimerRunning) {
+                    feMissionTimerRunning = true;
+                    feMissionTimerStart = std::chrono::high_resolution_clock::now();
+                } else {
+                    // Pause: accumulate elapsed time and stop
+                    auto now = std::chrono::high_resolution_clock::now();
+                    feMissionElapsedSec += std::chrono::duration_cast<std::chrono::duration<double>>(now - feMissionTimerStart).count();
+                    feMissionTimerRunning = false;
+                }
+                return true;
+            }
+            break;
+        case GDK_KEY_r:
+        case GDK_KEY_R:
+            // FE only: reset mission timer
+            if (isFlightEngineer) {
+                feMissionTimerRunning = false;
+                feMissionElapsedSec = 0.0;
+                return true;
+            }
+            break;
         case GDK_KEY_u:
             send_servo_command("left");
             return false;
@@ -3574,6 +3632,17 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
         builder->get_widget("fe_rssi_esp32", feRssiEsp32);
         builder->get_widget("fe_clock", feClock);
 
+        /* Create mission timer label and inject next to the clock */
+        if (feClock) {
+            auto* clockParent = dynamic_cast<Gtk::Box*>(feClock->get_parent());
+            if (clockParent) {
+                feMissionTimer = Gtk::manage(new Gtk::Label());
+                feMissionTimer->set_halign(Gtk::ALIGN_END);
+                feMissionTimer->set_margin_start(20);
+                clockParent->pack_end(*feMissionTimer, Gtk::PACK_SHRINK);
+            }
+        }
+
         /* Navigation */
         builder->get_widget("fe_nav_r1_roll", feNavR1Roll);
         builder->get_widget("fe_nav_r1_pitch", feNavR1Pitch);
@@ -3674,6 +3743,13 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
 
         if (window) window->show_all();
         std::cout << "Flight Engineer dashboard initialized." << std::endl;
+
+        // FE mode has no video underlay, so the background must be opaque
+        // (the default CSS uses transparent backgrounds for the pilot's video overlay)
+        auto fe_css = Gtk::CssProvider::create();
+        fe_css->load_from_data(generateLightModeString(lightBackgroundColor));
+        Gtk::StyleContext::add_provider_for_screen(
+            Gdk::Screen::get_default(), fe_css, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION + 1);
     }
 }
 
@@ -3760,6 +3836,37 @@ void updateFEDashboard() {
         char buf[32];
         snprintf(buf, sizeof(buf), "Uptime: %02d:%02d:%02d", h, m, s);
         feClock->set_text(buf);
+    }
+
+    /* --- Mission countdown timer --- */
+    if (feMissionTimer) {
+        double totalElapsed = feMissionElapsedSec;
+        if (feMissionTimerRunning) {
+            auto now = std::chrono::high_resolution_clock::now();
+            totalElapsed += std::chrono::duration_cast<std::chrono::duration<double>>(now - feMissionTimerStart).count();
+        }
+        int remaining = feMissionDurationSec - (int)totalElapsed;
+        if (remaining < 0) remaining = 0;
+        int m = remaining / 60, s = remaining % 60;
+        char buf[64];
+
+        if (!feMissionTimerRunning && feMissionElapsedSec == 0.0) {
+            snprintf(buf, sizeof(buf), "Mission: %02d:%02d [T=Start, R=Reset]", m, s);
+        } else if (remaining <= 0) {
+            snprintf(buf, sizeof(buf), "Mission: 00:00 — TIME!");
+        } else if (feMissionTimerRunning) {
+            snprintf(buf, sizeof(buf), "Mission: %02d:%02d [T=Pause]", m, s);
+        } else {
+            snprintf(buf, sizeof(buf), "Mission: %02d:%02d [PAUSED, T=Resume]", m, s);
+        }
+
+        if (remaining <= 60 && (feMissionTimerRunning || remaining <= 0)) {
+            feMissionTimer->set_markup(std::string("<span foreground='#cc0000'><b>") + buf + "</b></span>");
+        } else if (remaining <= 120 && feMissionTimerRunning) {
+            feMissionTimer->set_markup(std::string("<span foreground='#cc8800'><b>") + buf + "</b></span>");
+        } else {
+            feMissionTimer->set_text(buf);
+        }
     }
 
     /* --- Connection status labels --- */
@@ -5348,6 +5455,15 @@ void processArguments(int argc, char** argv){
                     std::cerr << "Error: --forward requires <IP> <Telemetry_Port> <Video_Port>\n";
                 }
             }
+            else if(!strcmp("--mission_time", argv[i])){
+                // Set mission timer duration in seconds (default: 600 = 10 minutes)
+                if(i+1 < argc){
+                    feMissionDurationSec = std::stoi(argv[++i]);
+                    std::cout << "Mission timer set to " << feMissionDurationSec << " seconds\n";
+                } else {
+                    std::cerr << "Error: --mission_time requires <seconds>\n";
+                }
+            }
         }
     }
 }
@@ -5585,6 +5701,7 @@ int main(int argc, char** argv) {
 
         if (newFrameAvailable) {
             if (isFlightEngineer) {
+                // Push FE video panes from the global frame buffers
                 std::lock_guard<std::mutex> lock(frameMutex);
                 if (feVideoAreaRobot1 && !fe_left_frame.empty()) {
                     feVideoAreaRobot1->setFrame(fe_left_frame);
@@ -5687,6 +5804,8 @@ int main(int argc, char** argv) {
             sendVideoHeartbeat();
         }
 
+        // When forwarding video to a Flight Engineer, periodically request
+        // an IDR keyframe from the robot so the FE decoder can sync up.
         if (isForwardingActive()) {
             time_span = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastIDRRequestTime);
             if (time_span.count() > 2.0 && isVideoConnected()) {
@@ -5695,8 +5814,10 @@ int main(int argc, char** argv) {
             }
         }
 
-        if(isFlightEngineer)
+        if(isFlightEngineer) {
+            updateFEDashboard();
             continue;
+        }
 
         /******************************Handle control events******************************/
         while(SDL_PollEvent(&event)){

@@ -185,30 +185,6 @@
                     <property name="margin">4</property>
 
                     <child>
-                      <object class="GtkFrame" id="fe_frame_alerts">
-                        <property name="visible">True</property>
-                        <property name="label">Flight Engineer Focus</property>
-                        <property name="label_xalign">0.02</property>
-                        <child>
-                          <object class="GtkBox" id="fe_alerts_content">
-                            <property name="visible">True</property>
-                            <property name="orientation">vertical</property>
-                            <property name="spacing">4</property>
-                            <property name="margin">8</property>
-                            <child>
-                              <object class="GtkLabel" id="fe_alerts_hint">
-                                <property name="visible">True</property>
-                                <property name="halign">start</property>
-                                <property name="wrap">True</property>
-                                <property name="label">Use the top health strip for immediate triage. Compare Robot 1 and Robot 2 below, then drop into the detailed diagnostics tabs only when you need root-cause data.</property>
-                              </object>
-                            </child>
-                          </object>
-                        </child>
-                      </object>
-                    </child>
-
-                    <child>
                       <object class="GtkBox" id="fe_robot_cards_row">
                         <property name="visible">True</property>
                         <property name="orientation">horizontal</property>

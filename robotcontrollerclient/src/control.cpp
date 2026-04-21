@@ -4877,17 +4877,52 @@ void publishRobotTransform() {
     uint32_t sec = timestamp_ns / 1000000000;
     uint32_t nsec = timestamp_ns % 1000000000;
 
-    // --- SENSOR OFFSET MATH ---
-    const double OFFSET_X = 0.762639;
-    const double OFFSET_Y = -0.100614;
+    // --- DYNAMIC OFFSETS BASED ON ACTIVE URDF ---
+    double offset_x = 0.0, offset_y = 0.0;
+    double arm_x = 0.0, arm_y = 0.0, arm_z = 0.0;
+    double bucket_x = 0.0, bucket_y = 0.0, bucket_z = 0.0;
+    double fl_x = 0.0, fl_y = 0.0, fl_z = 0.0;
+    double fr_x = 0.0, fr_y = 0.0, fr_z = 0.0;
+    double bl_x = 0.0, bl_y = 0.0, bl_z = 0.0;
+    double br_x = 0.0, br_y = 0.0, br_z = 0.0;
+
+    if (primaryBot) { 
+        // sierra.urdf
+        offset_x = 0.822000; offset_y = 0.083000; // From base_to_zed2i
+        arm_x = 0.180193; arm_y = -0.033254; arm_z = 0.283140;
+        bucket_x = 0.741492; bucket_y = -0.007750; bucket_z = -0.320993;
+        fl_x = 0.703615; fl_y = 0.090463; fl_z = 0.089338;
+        fr_x = 0.703615; fr_y = -0.484060; fr_z = 0.088900;
+        bl_x = 0.043036; bl_y = 0.090463; bl_z = 0.089338;
+        br_x = 0.042121; br_y = -0.484060; br_z = 0.088900;
+    }
+    else if (dumpBot) { 
+        // dump_bot.urdf
+        offset_x = 0.762639; offset_y = -0.100614; // From base_to_zed2i
+        // No arm or bucket offsets for dump_bot
+        fl_x = 0.841100; fl_y = -0.019814; fl_z = 0.235883;
+        fr_x = 0.841100; fr_y = -0.538167; fr_z = 0.235883;
+        bl_x = 0.183870; bl_y = 0.000000; bl_z = 0.235880;
+        br_x = 0.183875; br_y = -0.475667; br_z = 0.235883;
+    }
+    else { 
+        // backupBot (my_robot_tf.urdf)
+        offset_x = 0.762639; offset_y = -0.100614; // From base_to_zed2i
+        arm_x = 0.284680; arm_y = -0.222630; arm_z = 0.306210;
+        bucket_x = 0.826510; bucket_y = 0.070738; bucket_z = -0.052110;
+        fl_x = 0.841100; fl_y = -0.019814; fl_z = 0.235883;
+        fr_x = 0.841100; fr_y = -0.538167; fr_z = 0.235883;
+        bl_x = 0.183870; bl_y = 0.000000; bl_z = 0.235880;
+        br_x = 0.183875; br_y = -0.475667; br_z = 0.235883;
+    }
 
     double cos_yaw = std::cos(robot_pitch_rad);
     double sin_yaw = std::sin(robot_pitch_rad);
 
     // Subtract the rotated offset from the camera's world position 
     // to find the true center of the chassis
-    double true_base_x = robot_x_m - (OFFSET_X * cos_yaw - OFFSET_Y * sin_yaw);
-    double true_base_y = robot_y_m - (OFFSET_X * sin_yaw + OFFSET_Y * cos_yaw);
+    double true_base_x = robot_x_m - (offset_x * cos_yaw - offset_y * sin_yaw);
+    double true_base_y = robot_y_m - (offset_x * sin_yaw + offset_y * cos_yaw);
 
     // --- SIMULATED WHEEL SPIN MATH ---
     static double prev_x = true_base_x;
@@ -4916,105 +4951,94 @@ void publishRobotTransform() {
         prev_y = true_base_y;
     }
 
-    // --------------------------
-
-    double safe_arm_deg = arm_angle_deg;
-    if (safe_arm_deg < -40.1) safe_arm_deg = -40.1;
-    if (safe_arm_deg > 17.1) safe_arm_deg = 17.1;
-    
-    double arm_pitch_rad = safe_arm_deg * (M_PI / 180.0);
-
     nlohmann::json tf_update;
     tf_update["transforms"] = nlohmann::json::array();
     
+    // --- BASE LINK ---
     nlohmann::json transform;
     transform["timestamp"]["sec"] = sec;
     transform["timestamp"]["nsec"] = nsec;
     transform["parent_frame_id"] = "world";
     transform["child_frame_id"] = "base_link";
-    
-    transform["transform"]["translation"]["x"] = true_base_x;
-    transform["transform"]["translation"]["y"] = true_base_y;
-    transform["transform"]["translation"]["z"] = 0.0; 
-    
-    transform["transform"]["rotation"] = euler_to_quat(0.0, 0.0, robot_pitch_rad);
+    transform["translation"]["x"] = true_base_x;
+    transform["translation"]["y"] = true_base_y;
+    transform["translation"]["z"] = 0.0; 
+    transform["rotation"] = euler_to_quat(0.0, 0.0, robot_pitch_rad);
     tf_update["transforms"].push_back(transform);
 
-    nlohmann::json arm_tf;
-    arm_tf["timestamp"]["sec"] = sec;
-    arm_tf["timestamp"]["nsec"] = nsec;
-    arm_tf["parent_frame_id"] = "base_link";
-    arm_tf["child_frame_id"] = "Arm";
-    
-    arm_tf["transform"]["translation"]["x"] = 0.28468;
-    arm_tf["transform"]["translation"]["y"] = -0.22263;
-    arm_tf["transform"]["translation"]["z"] = 0.30621; 
-    
-    arm_tf["transform"]["rotation"] = euler_to_quat(0.0, arm_pitch_rad, 0.0);
-    
-    tf_update["transforms"].push_back(arm_tf);
+    // --- ARM & BUCKET (Skip if Dump Bot) ---
+    if (!dumpBot) {
+        double safe_arm_deg = arm_angle_deg;
+        if (safe_arm_deg < -40.1) safe_arm_deg = -40.1;
+        if (safe_arm_deg > 17.1) safe_arm_deg = 17.1;
+        double arm_pitch_rad = safe_arm_deg * (M_PI / 180.0);
 
-    double safe_bucket_deg = bucket_angle_deg;
-    if (safe_bucket_deg < -25.8) safe_bucket_deg = -25.8;
-    if (safe_bucket_deg > 71.6) safe_bucket_deg = 71.6;
-    
-    // Convert to radians for Foxglove
-    double bucket_pitch_rad = safe_bucket_deg * (M_PI / 180.0);
+        nlohmann::json arm_tf;
+        arm_tf["timestamp"]["sec"] = sec;
+        arm_tf["timestamp"]["nsec"] = nsec;
+        arm_tf["parent_frame_id"] = "base_link";
+        arm_tf["child_frame_id"] = "Arm";
+        arm_tf["translation"]["x"] = arm_x;
+        arm_tf["translation"]["y"] = arm_y;
+        arm_tf["translation"]["z"] = arm_z; 
+        arm_tf["rotation"] = euler_to_quat(0.0, arm_pitch_rad, 0.0);
+        tf_update["transforms"].push_back(arm_tf);
 
-    nlohmann::json bucket_tf;
-    bucket_tf["timestamp"]["sec"] = sec;
-    bucket_tf["timestamp"]["nsec"] = nsec;
-    
-    bucket_tf["parent_frame_id"] = "Arm";
-    bucket_tf["child_frame_id"] = "Bucket";
-    
-    bucket_tf["transform"]["translation"]["x"] = 0.82651;
-    bucket_tf["transform"]["translation"]["y"] = 0.070738;
-    bucket_tf["transform"]["translation"]["z"] = -0.052110; 
-    
-    bucket_tf["transform"]["rotation"] = euler_to_quat(0.0, bucket_pitch_rad, 0.0);
-    tf_update["transforms"].push_back(bucket_tf);
+        double safe_bucket_deg = bucket_angle_deg;
+        if (safe_bucket_deg < -25.8) safe_bucket_deg = -25.8;
+        if (safe_bucket_deg > 71.6) safe_bucket_deg = 71.6;
+        double bucket_pitch_rad = safe_bucket_deg * (M_PI / 180.0);
 
-    // Front Left
+        nlohmann::json bucket_tf;
+        bucket_tf["timestamp"]["sec"] = sec;
+        bucket_tf["timestamp"]["nsec"] = nsec;
+        bucket_tf["parent_frame_id"] = "Arm";
+        bucket_tf["child_frame_id"] = "Bucket";
+        bucket_tf["translation"]["x"] = bucket_x;
+        bucket_tf["translation"]["y"] = bucket_y;
+        bucket_tf["translation"]["z"] = bucket_z; 
+        bucket_tf["rotation"] = euler_to_quat(0.0, bucket_pitch_rad, 0.0);
+        tf_update["transforms"].push_back(bucket_tf);
+    }
+
+    // --- WHEELS ---
     nlohmann::json fl_tf;
     fl_tf["timestamp"]["sec"] = sec; fl_tf["timestamp"]["nsec"] = nsec;
     fl_tf["parent_frame_id"] = "base_link"; fl_tf["child_frame_id"] = "FL_Wheel";
-    fl_tf["transform"]["translation"]["x"] = 0.8411;
-    fl_tf["transform"]["translation"]["y"] = -0.019814;
-    fl_tf["transform"]["translation"]["z"] = 0.235883; 
-    fl_tf["transform"]["rotation"] = euler_to_quat(0.0, global_wheel_angle_rad, 0.0);
+    fl_tf["translation"]["x"] = fl_x;
+    fl_tf["translation"]["y"] = fl_y;
+    fl_tf["translation"]["z"] = fl_z; 
+    fl_tf["rotation"] = euler_to_quat(0.0, global_wheel_angle_rad, 0.0);
     tf_update["transforms"].push_back(fl_tf);
 
-    // Front Right
     nlohmann::json fr_tf;
     fr_tf["timestamp"]["sec"] = sec; fr_tf["timestamp"]["nsec"] = nsec;
     fr_tf["parent_frame_id"] = "base_link"; fr_tf["child_frame_id"] = "FR_Wheel";
-    fr_tf["transform"]["translation"]["x"] = 0.8411;
-    fr_tf["transform"]["translation"]["y"] = -0.538167;
-    fr_tf["transform"]["translation"]["z"] = 0.235883; 
-    fr_tf["transform"]["rotation"] = euler_to_quat(0.0, global_wheel_angle_rad, 0.0);
+    fr_tf["translation"]["x"] = fr_x;
+    fr_tf["translation"]["y"] = fr_y;
+    fr_tf["translation"]["z"] = fr_z; 
+    fr_tf["rotation"] = euler_to_quat(0.0, global_wheel_angle_rad, 0.0);
     tf_update["transforms"].push_back(fr_tf);
 
-    // Back Left
     nlohmann::json bl_tf;
     bl_tf["timestamp"]["sec"] = sec; bl_tf["timestamp"]["nsec"] = nsec;
     bl_tf["parent_frame_id"] = "base_link"; bl_tf["child_frame_id"] = "BL_Wheel";
-    bl_tf["transform"]["translation"]["x"] = 0.18387;
-    bl_tf["transform"]["translation"]["y"] = 0.0;
-    bl_tf["transform"]["translation"]["z"] = 0.23588; 
-    bl_tf["transform"]["rotation"] = euler_to_quat(0.0, global_wheel_angle_rad, 0.0);
+    bl_tf["translation"]["x"] = bl_x;
+    bl_tf["translation"]["y"] = bl_y;
+    bl_tf["translation"]["z"] = bl_z; 
+    bl_tf["rotation"] = euler_to_quat(0.0, global_wheel_angle_rad, 0.0);
     tf_update["transforms"].push_back(bl_tf);
 
-    // Back Right
     nlohmann::json br_tf;
     br_tf["timestamp"]["sec"] = sec; br_tf["timestamp"]["nsec"] = nsec;
     br_tf["parent_frame_id"] = "base_link"; br_tf["child_frame_id"] = "BR_Wheel";
-    br_tf["transform"]["translation"]["x"] = 0.183875;
-    br_tf["transform"]["translation"]["y"] = -0.475667;
-    br_tf["transform"]["translation"]["z"] = 0.235883; 
-    br_tf["transform"]["rotation"] = euler_to_quat(0.0, global_wheel_angle_rad, -3.1415);
+    br_tf["translation"]["x"] = br_x;
+    br_tf["translation"]["y"] = br_y;
+    br_tf["translation"]["z"] = br_z; 
+    br_tf["rotation"] = euler_to_quat(0.0, global_wheel_angle_rad, -3.1415);
     tf_update["transforms"].push_back(br_tf);
 
+    // --- BROADCAST ---
     std::string json_str = tf_update.dump();
     foxglove_server->broadcastMessage(
         tf_channel, 

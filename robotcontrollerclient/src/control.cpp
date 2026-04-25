@@ -2057,12 +2057,16 @@ static void updateMotorStateEntry(const std::string& label, float voltage, float
 }
 
 void handleTalonElements(const std::string& label, const std::vector<Element>& elements) {
-    bool lowVoltage = false;
-    float voltage_val = 0.0f;
-    float current_val = 0.0f;
-    float output_pct = 0.0f;
-    int position_val = 0;
-    uint16_t temp_val = 0;
+    // Seed from existing cached state so fields not present in this (diff) packet
+    // are preserved instead of being overwritten with zero. The comms node only
+    // sends fields whose values have changed; absence means "unchanged".
+    auto& msPrev = motorStates[label];
+    float    voltage_val  = msPrev.voltage;
+    float    current_val  = msPrev.current;
+    float    output_pct   = msPrev.outputPct;
+    uint16_t temp_val     = msPrev.temperature;
+    int      position_val = msPrev.position;
+    bool     lowVoltage   = msPrev.lowVoltage;
     for (const auto& element : elements) {
         if (element.label == "Sensor Position") {
             int pos = element.data.front().uint16;
@@ -2489,11 +2493,13 @@ static void updateMotorStatusDashboard() {
 }
 
 void handleFalconElements(const std::string& label, const std::vector<Element>& elements) {
-    float voltage_val = 0.0f;
-    float current_val = 0.0f;
-    float output_pct = 0.0f;
-    int temp_val = 0;
-    bool errorFlag = false;
+    auto& msPrev = motorStates[label];
+    float voltage_val = msPrev.voltage;
+    float current_val = msPrev.current;
+    float output_pct  = msPrev.outputPct;
+    int   temp_val    = msPrev.temperature;
+    bool  errorFlag   = msPrev.error;
+    bool  lowVoltage  = msPrev.lowVoltage;
     //Prints fields for debugging purposes, can be removed later
     if(debugMotors){
         std::cerr << "\n[" << label << "]  Packet contents:" << std::endl;
@@ -2518,7 +2524,6 @@ void handleFalconElements(const std::string& label, const std::vector<Element>& 
             std::cerr << std::endl;
         }
     }
-    bool lowVoltage = false;
     for (const auto& element : elements) {
         if (element.label == "Bus Voltage") {
             float voltage = element.data.front().uint16 / 100.0f;
@@ -2639,12 +2644,13 @@ void handleNeoElements(const std::string& label, const std::vector<Element>& ele
 }
 
 void handleKrakenElements(const std::string& label, const std::vector<Element>& elements) {
-    float voltage_val = 0.0f;
-    float current_val = 0.0f;
-    float output_pct = 0.0f;
-    int temp_val = 0;
-    bool errorFlag = false;
-    bool lowVoltage = false;
+    auto& msPrev = motorStates[label];
+    float voltage_val = msPrev.voltage;
+    float current_val = msPrev.current;
+    float output_pct  = msPrev.outputPct;
+    int   temp_val    = msPrev.temperature;
+    bool  errorFlag   = msPrev.error;
+    bool  lowVoltage  = msPrev.lowVoltage;
     //Prints fields for debugging purposes, can be removed later
     if(debugMotors){
         std::cerr << "\n[" << label << "]  Packet contents:" << std::endl;
@@ -6557,12 +6563,15 @@ int main(int argc, char** argv) {
                         // When bumpers are released, stop the mechanism
                         if(btn == 4) {
                             sendJoystickAxis(1, 0, 0.0);
-                        } else if(btn == 5) {
+                        }
+                        else if(btn == 5) {
                             sendJoystickAxis(1, 1, 0.0);
-                        } else {
+                        }
+                        else {
                             sendJoystickButton(event.jbutton.which, event.jbutton.button, event.jbutton.state);
                         }
-                    } else {
+                    }
+                    else {
                         sendJoystickButton(event.jbutton.which, event.jbutton.button, event.jbutton.state);
                     }
                     break;

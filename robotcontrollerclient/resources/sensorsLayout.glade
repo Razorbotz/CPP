@@ -34,39 +34,7 @@
               </object>
             </child>
             <child type="tab">
-              <object class="GtkLabel"><property name="visible">True</property><property name="label">Talon Motors</property></object>
-            </child>
-
-            <child>
-              <object class="GtkBox" id="box_tab_falcon">
-                <property name="visible">True</property>
-                <property name="orientation">vertical</property>
-                <property name="spacing">5</property>
-                <property name="margin">5</property>
-                
-                <child><object class="GtkBox" id="holder_falcon_volt"><property name="visible">True</property><property name="vexpand">True</property></object></child>
-                <child><object class="GtkBox" id="holder_falcon_curr"><property name="visible">True</property><property name="vexpand">True</property></object></child>
-                <child><object class="GtkBox" id="holder_falcon_pos"><property name="visible">True</property><property name="vexpand">True</property></object></child>
-                <child><object class="GtkBox" id="holder_falcon_out"><property name="visible">True</property><property name="vexpand">True</property></object></child>
-              </object>
-            </child>
-            <child type="tab">
-              <object class="GtkLabel"><property name="visible">True</property><property name="label">Falcon Motors</property></object>
-            </child>
-
-            <child>
-              <object class="GtkBox" id="box_tab_linear">
-                <property name="visible">True</property>
-                <property name="orientation">vertical</property>
-                <property name="spacing">5</property>
-                <property name="margin">5</property>
-                
-                <child><object class="GtkBox" id="holder_linear_speed"><property name="visible">True</property><property name="vexpand">True</property></object></child>
-                <child><object class="GtkBox" id="holder_linear_pot"><property name="visible">True</property><property name="vexpand">True</property></object></child>
-              </object>
-            </child>
-            <child type="tab">
-              <object class="GtkLabel"><property name="visible">True</property><property name="label">Linear Actuators</property></object>
+              <object class="GtkLabel"><property name="visible">True</property><property name="label">Motors</property></object>
             </child>
 
             <child>

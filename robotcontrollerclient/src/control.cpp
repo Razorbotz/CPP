@@ -5994,6 +5994,8 @@ void parseConfigFile(std::string filename){
 
 
 void processArguments(int argc, char** argv){
+    bool forwardingExplicitlySet = false;
+    bool forwardingDisabled = false;
     if(argc > 1){
         for(int i = 1; i < argc; ++i){
             if(!strcmp("--help", argv[i])){
@@ -6111,10 +6113,14 @@ void processArguments(int argc, char** argv){
                     int fe_port = std::stoi(argv[i+2]);
                     int fe_video_port = std::stoi(argv[i+3]);
                     setupForwarding(fe_ip, fe_port, fe_video_port);
+                    forwardingExplicitlySet = true;
                     i += 3;
                 } else {
                     std::cerr << "Error: --forward requires <IP> <Telemetry_Port> <Video_Port>\n";
                 }
+            }
+            else if(!strcmp("--no_forward", argv[i])){
+                forwardingDisabled = true;
             }
             else if(!strcmp("--mission_time", argv[i])){
                 // Set mission timer duration in seconds (default: 600 = 10 minutes)
@@ -6143,6 +6149,31 @@ void processArguments(int argc, char** argv){
                     std::cerr << "Error: --max_bandwidth requires <MB/s>\n";
                 }
             }
+        }
+    }
+
+    // Default forwarding: if neither --forward nor --no_forward was given,
+    // forward to 192.168.0.4 using bot-specific ports.
+    //   Primary bot: telemetry 5001, video 5010
+    //   Dump bot:    telemetry 5002, video 5011
+    if(!forwardingExplicitlySet && !forwardingDisabled){
+        std::string fe_ip = "192.168.0.4";
+        int fe_port = -1;
+        int fe_video_port = -1;
+        if(primaryBot){
+            fe_port = 5001;
+            fe_video_port = 5010;
+        }
+        else if(dumpBot){
+            fe_port = 5002;
+            fe_video_port = 5011;
+        }
+
+        if(fe_port != -1){
+            std::cout << "Setting up default forwarding to " << fe_ip
+                      << " (telemetry=" << fe_port
+                      << ", video=" << fe_video_port << ")\n";
+            setupForwarding(fe_ip, fe_port, fe_video_port);
         }
     }
 }

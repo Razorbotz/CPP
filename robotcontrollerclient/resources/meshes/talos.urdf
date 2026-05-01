@@ -49,7 +49,7 @@
     <visual>
       <origin xyz="0 0 0" rpy="-1.5708 0 0"/>
       <geometry>
-        <mesh filename="TalosArm.STL" scale="1 1 1"/>
+        <mesh filename="TalosArm.stl" scale="1 1 1"/>
       </geometry>
       <material name="grey">
         <color rgba="0.5 0.5 0.5 1.0"/>
@@ -58,7 +58,7 @@
     <collision>
       <origin xyz="0 0 0" rpy="-1.5708 0 0"/>
       <geometry>
-        <mesh filename="TalosArm.STL" scale="1 1 1"/>
+        <mesh filename="TalosArm.stl" scale="1 1 1"/>
       </geometry>
     </collision>
   </link>
@@ -66,7 +66,7 @@
   <joint name="Arm_Joint" type="revolute">
     <parent link="base_link"/>
     <child link="Arm"/>
-    <origin xyz="0.180193 -0.033254 0.283140" rpy="0 0 0"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
     <limit lower="-0.7" upper="0.3" effort="120" velocity="1.5"/>
     <dynamics damping="2.0" friction="0.2"/>
@@ -81,7 +81,7 @@
     <visual>
       <origin xyz="-0.02 0 -0.02" rpy="-1.5708 0 0"/>
       <geometry>
-        <mesh filename="SierraBucket.STL" scale="1 1 1"/>
+        <mesh filename="TalosBucket.stl" scale="1 1 1"/>
       </geometry>
       <material name="grey">
         <color rgba="0.5 0.5 0.5 1.0"/>
@@ -98,7 +98,7 @@
   <joint name="Bucket_Joint" type="revolute">
     <parent link="Arm"/>
     <child link="Bucket"/>
-    <origin xyz="0.741492 -0.00775 -0.320993" rpy="0 0 0"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
     <limit lower="-0.45" upper="1.25" effort="80" velocity="2.0"/>
     <dynamics damping="1.5" friction="0.15"/>

@@ -22,7 +22,6 @@
 #include <gtkmm.h>
 #include <gdkmm.h>
 #include <gtkmm/window.h>
-#include <webkit2/webkit2.h>
 #include <cairomm/context.h>
 #include <pangomm.h>
 #include <gdk-pixbuf/gdk-pixbuf.h>

@@ -66,7 +66,7 @@
   <joint name="Arm_Joint" type="revolute">
     <parent link="base_link"/>
     <child link="Arm"/>
-    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <origin xyz="-0.319 0.18 0.171" rpy="0.0304533 0 0"/>
     <axis xyz="0 1 0"/>
     <limit lower="-0.7" upper="0.3" effort="120" velocity="1.5"/>
     <dynamics damping="2.0" friction="0.2"/>
@@ -79,7 +79,7 @@
       <inertia ixx="0.0214664" ixy="0" ixz="0" iyy="0.0251992" iyz="0" izz="0.00731207"/>
     </inertial>
     <visual>
-      <origin xyz="-0.02 0 -0.02" rpy="-1.5708 0 0"/>
+      <origin xyz="0 0 0" rpy="-1.5708 0 0"/>
       <geometry>
         <mesh filename="TalosBucket.stl" scale="1 1 1"/>
       </geometry>
@@ -98,7 +98,7 @@
   <joint name="Bucket_Joint" type="revolute">
     <parent link="Arm"/>
     <child link="Bucket"/>
-    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <origin xyz="0.913 -0.020 -0.079" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
     <limit lower="-0.45" upper="1.25" effort="80" velocity="2.0"/>
     <dynamics damping="1.5" friction="0.15"/>
@@ -127,7 +127,7 @@
   <joint name="FL_Wheel_Joint" type="continuous">
     <parent link="base_link"/>
     <child link="FL_Wheel"/>
-    <origin xyz="0.8411 -0.019814 0.235883" rpy="0 0 0"/>
+    <origin xyz="0.3275 0.265 0.089" rpy="0 0 0"/>
     <axis xyz="0 0 -1"/>
     <limit effort="2000" velocity="20"/>
     <dynamics damping="1.0" friction="1.0"/>
@@ -156,7 +156,7 @@
   <joint name="FR_Wheel_Joint" type="continuous">
     <parent link="base_link"/>
     <child link="FR_Wheel"/>
-    <origin xyz="0.8411 -0.538167 0.235883" rpy="0 0 0"/>
+    <origin xyz="0.3275 -0.27 0.089" rpy="0 0 0"/>
     <axis xyz="0 0 -1"/>
     <limit effort="2000" velocity="20"/>
     <dynamics damping="1.0" friction="1.0"/>
@@ -185,7 +185,7 @@
   <joint name="BL_Wheel_Joint" type="continuous">
     <parent link="base_link"/>
     <child link="BL_Wheel"/>
-    <origin xyz="0.18387 0 0.23588" rpy="0 0 0"/>
+    <origin xyz="-0.3315 0.28 0.089" rpy="0 0 0"/>
     <axis xyz="0 0 -1"/>
     <limit effort="2000" velocity="20"/>
     <dynamics damping="1.0" friction="1.0"/>
@@ -215,32 +215,10 @@
   <joint name="BR_Wheel_Joint" type="continuous">
     <parent link="base_link"/>
     <child link="BR_Wheel"/>
-    <origin xyz="0.183875 -0.475667 0.235883" rpy="0 0 -3.14159"/>
+    <origin xyz="-0.3315 -0.20 0.089" rpy="0 0 -3.14159"/>
     <axis xyz="0 0 1"/>
     <limit effort="2000" velocity="20"/>
     <dynamics damping="1.0" friction="1.0"/>
-  </joint>
-
-  <link name="Camera_Mount">
-    <inertial>
-      <mass value=".15"/>
-      <inertia ixx="0.01" ixy="0" ixz="0" iyy="0.01" iyz="0" izz="0.02"/>
-    </inertial>
-    <visual>
-      <origin xyz="0 0 0" rpy="-1.5708 0 -1.5708"/>
-      <geometry>
-        <mesh filename="SierraCameraMount.STL" scale="1 1 1"/>
-      </geometry>
-      <material name="grey">
-        <color rgba="0.5 0.5 0.5 1.0"/>
-      </material>
-    </visual>
-  </link>
-
-  <joint name="Camera_Mount_Joint" type="fixed">
-    <parent link="base_link"/>
-    <child link="Camera_Mount"/>
-    <origin xyz="0.679000 0.008000 0.148000" rpy="0 0 0"/>
   </joint>
 
   <link name="zed2i_base_link">
@@ -265,7 +243,7 @@
   <joint name="base_to_zed2i" type="fixed">
     <parent link="base_link"/>
     <child link="zed2i_base_link"/>
-    <origin xyz="0.822000 0.083000 0.508000" rpy="0 0 0"/>
+    <origin xyz="0.3275 -0.27 0.35" rpy="0 0 0"/>
   </joint>
 
   <joint name="zed2i_visual_joint" type="fixed">

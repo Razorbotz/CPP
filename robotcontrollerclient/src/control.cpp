@@ -60,6 +60,8 @@ extern "C" {
 #include "ProximityBar.hpp"
 #include "PositionBar.hpp"
 #include "ArtificialHorizon.hpp"
+#include "BucketTiltIndicator.hpp"
+#include "BucketHeightIndicator.hpp"
 #include "BatteryBar.hpp"
 #include "BotConfig.hpp"
 #include "InputMapper.hpp"
@@ -273,8 +275,7 @@ Gtk::Image* pitch_image;
 Gtk::Image* lvl_image;
 
 double bucket_rotation_angle = 0.0;
-Glib::RefPtr<Gdk::Pixbuf> bucket_rot_pixbuf;
-Gtk::Image* bucket_rot_image;
+BucketTiltIndicator* bucketTiltIndicator = nullptr;
 
 double robot_x_m = 0.0;
 double robot_y_m = 0.0;
@@ -328,6 +329,7 @@ PositionBar* left_arm = nullptr;
 PositionBar* right_bucket = nullptr;
 PositionBar* left_bucket = nullptr;
 PositionBar* elevation_bar = nullptr;
+BucketHeightIndicator* bucketHeightIndicator = nullptr;
 SyncStatusLabel* armSyncLabel = nullptr;
 SyncStatusLabel* bucketSyncLabel = nullptr;
 
@@ -1249,6 +1251,8 @@ void toggleMode() {
     if (right_arm) right_arm->set_light_mode(isLightMode);
     if (left_bucket) left_bucket->set_light_mode(isLightMode);
     if (right_bucket) right_bucket->set_light_mode(isLightMode);
+    if (bucketTiltIndicator) bucketTiltIndicator->set_light_mode(isLightMode);
+    if (bucketHeightIndicator) bucketHeightIndicator->set_light_mode(isLightMode);
 
     // FE mode: update static labels and grid text colors to match new mode
     if (isFlightEngineer) {
@@ -1810,20 +1814,27 @@ void initBucketElevation() {
             return;
         }
 
-        Gtk::Widget* elevation_widget;
+        bucketHeightIndicator = Gtk::manage(new BucketHeightIndicator("Bucket Height"));
+
+        // Per-bot geometry (cm) — same values the old updateBucketElevationBar
+        // used. Keep these in sync if the hardware changes.
         if (backupBot) {
-            elevation_widget = createSinglePositionIndicator("Bucket Elevation", elevation_bar, 50, 40, 200);
+            bucketHeightIndicator->set_geometry_cm(16.375, 80.0, 38.1);
+        } else { // primaryBot
+            bucketHeightIndicator->set_geometry_cm(17.0, 68.3, 30.9);
         }
 
-        // if primaryBot
-        else {
-            elevation_widget = createSinglePositionIndicator("Bucket Elevation", elevation_bar, 70, 40, 200);
-        }
+        // Caution within 5 cm of ground, red at/below ground.
+        bucketHeightIndicator->set_thresholds_cm(5.0, 0.0);
+        bucketHeightIndicator->set_light_mode(isLightMode);
+        bucketHeightIndicator->set_halign(Gtk::ALIGN_CENTER);
+        bucketHeightIndicator->set_valign(Gtk::ALIGN_CENTER);
+        bucketHeightIndicator->set_size_request(260 * GUI_SCALE, 240 * GUI_SCALE);
 
         if (noVideo)
-            sensorBox->add(*elevation_widget);
+            sensorBox->add(*bucketHeightIndicator);
         else
-            innerRightBox->add(*elevation_widget);
+            innerRightBox->add(*bucketHeightIndicator);
 
         bucketElevation_init = true;
         window->show_all();
@@ -1835,18 +1846,32 @@ void initBucketRot() {
         if (isFlightEngineer) {
             return;
         }
+        if (!activeConfig.findMechanism("Bucket")) {
+            bucketRot_init = true;
+            return;
+        }
+
         Gtk::Container* parent = noVideo ? static_cast<Gtk::Container*>(sensorBox)
                                          : (bucketTiltPlaceholder ? static_cast<Gtk::Container*>(bucketTiltPlaceholder)
                                                                   : static_cast<Gtk::Container*>(innerLeftBox));
 
-        bool success = createImageIndicator(bucket_rot_image, bucket_rot_pixbuf, "../resources/newbucket.png", parent,
-            bucket_rotation_angle, 45, -90, BUCKET_TILT_IMAGE_SIZE);
+        bucketTiltIndicator = Gtk::manage(new BucketTiltIndicator("Bucket Tilt"));
+        bucketTiltIndicator->set_size_request(
+            BUCKET_TILT_IMAGE_SIZE * GUI_SCALE,
+            (BUCKET_TILT_IMAGE_SIZE + 40) * GUI_SCALE);
 
-        if (success) {
-            center_image_widget(bucket_rot_image);
-            bucketRot_init = true;
-            window->show_all();
-        }
+        // URDF Bucket_Joint allows -0.45 .. 2.2 rad (-26 .. +126 deg).
+        // We're measuring world-frame tilt (roll + arm + bucket), so leave
+        // a bit of margin past the joint limit. Tune to taste.
+        bucketTiltIndicator->set_warning_angles(-30.0, 130.0);
+        bucketTiltIndicator->set_caution_margin(15.0);
+        bucketTiltIndicator->set_light_mode(isLightMode);
+        bucketTiltIndicator->set_halign(Gtk::ALIGN_CENTER);
+        bucketTiltIndicator->set_valign(Gtk::ALIGN_CENTER);
+
+        parent->add(*bucketTiltIndicator);
+        bucketRot_init = true;
+        window->show_all();
     }
 }
 
@@ -1893,54 +1918,21 @@ void addElementToInfoFrame(std::string label, InfoFrame* frame, const Element& e
 void updateBucketRotationImage() {
     bucket_rotation_angle = -roll_rotation_angle + arm_angle_deg + bucket_angle_deg;
 
-    if (bucketRot_init && bucket_rot_image && bucket_rot_pixbuf) {
-        bucket_rot_image->set(rotate_image(bucket_rot_pixbuf, bucket_rotation_angle, BUCKET_TILT_IMAGE_SIZE, BUCKET_TILT_IMAGE_SIZE, 45, -90));
+    if (bucketTiltIndicator) {
+        bucketTiltIndicator->set_angle(bucket_rotation_angle);
     }
 }
 
 void updateBucketElevationBar() {
     /*
-    H = height of arm pivot above ground
-    L_arm = length from arm pivot to bucket pivot
-    L_bucket = length from bucket pivot to bucket edge
-    θ_a = absolute angle of arm
-    θ_b = absolute angle of bucket
-
-    bucket height = H - L_arm * sin(θ_a) - L_bucket * sin(θ_b)
+    Bucket-tip height above ground (cm) is computed inside the widget,
+    using the per-bot geometry (H, L_arm, L_bucket) set at init time:
+        height = H - L_arm * sin(arm) - L_bucket * sin(arm + bucket)
+    Here we just hand it the live angles and let it redraw.
     */
-
-    // Degrees to radians helper
-    auto degToRad = [](double deg){ return deg * (M_PI / 180.0); };
-
-    double bucket_height_cm = 0.0;
-
-    if (backupBot)
-    {
-        // Values are in centimeters
-        const double H  = 16.375;
-        const double L_arm = 80.0;
-        const double L_bucket = 38.1;
-
-        double armRad = degToRad(arm_angle_deg);
-        double bucketRad = degToRad(arm_angle_deg + bucket_angle_deg);
-
-        bucket_height_cm = H - L_arm * std::sin(armRad) - L_bucket * std::sin(bucketRad);
-
-        if (elevation_bar) elevation_bar->set_position(bucket_height_cm);
-    }
-    else if (primaryBot)
-    {
-        const double H  = 17.0;
-        const double L_arm = 68.3;
-        const double L_bucket = 30.9;
-
-        double armRad = degToRad(arm_angle_deg);
-        double bucketRad = degToRad(arm_angle_deg + bucket_angle_deg);
-
-        bucket_height_cm = H - L_arm * std::sin(armRad) - L_bucket * std::sin(bucketRad);
-
-        if (elevation_bar) elevation_bar->set_position(bucket_height_cm);
-    }
+    if (!bucketHeightIndicator) return;
+    bucketHeightIndicator->set_angles_deg(arm_angle_deg, bucket_angle_deg);
+    bucket_elevation_height = static_cast<int>(bucketHeightIndicator->height_cm());
 }
 
 /*

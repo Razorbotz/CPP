@@ -114,6 +114,8 @@ add_executable(control
   src/ConfigDefinitions.cpp
   src/ConfigEditorWindow.cpp
   src/NetworkHandler.cpp
+  src/BucketHeightIndicator.cpp
+  src/BucketTiltIndicator.cpp
 )
 
 

@@ -68,7 +68,7 @@
     <child link="Arm"/>
     <origin xyz="-0.319 0.18 0.171" rpy="0.0304533 0 0"/>
     <axis xyz="0 1 0"/>
-    <limit lower="-0.7" upper="0.3" effort="120" velocity="1.5"/>
+    <limit lower="-0.7" upper="0.0873" effort="120" velocity="1.5"/>
     <dynamics damping="2.0" friction="0.2"/>
   </joint>
 
@@ -100,7 +100,7 @@
     <child link="Bucket"/>
     <origin xyz="0.913 -0.020 -0.079" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
-    <limit lower="-0.45" upper="1.25" effort="80" velocity="2.0"/>
+    <limit lower="-0.45" upper="2.2" effort="80" velocity="2.0"/>
     <dynamics damping="1.5" friction="0.15"/>
   </joint>
 

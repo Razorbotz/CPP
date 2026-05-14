@@ -3017,7 +3017,7 @@ void initGUI() {
             createMessage("Kraken 4", "KRAKEN");
             createMessage("Linear 1", "LINEAR");
             createMessage("Linear 3", "LINEAR");
-            createMessage("Lidar", "LIDAR");
+            //createMessage("Lidar", "LIDAR");
         }
         else if(backupBot){
             createMessage("Talon 1", "TALON");
@@ -3028,7 +3028,7 @@ void initGUI() {
             createMessage("Falcon 4", "FALCON");
             createMessage("Linear 1", "LINEAR");
             createMessage("Linear 3", "LINEAR");
-            createMessage("Lidar", "LIDAR");
+            //createMessage("Lidar", "LIDAR");
         }
         else if(dumpBot){
             createMessage("Falcon 1", "FALCON");

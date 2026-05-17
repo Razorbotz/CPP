@@ -1920,7 +1920,11 @@ void addElementToInfoFrame(std::string label, InfoFrame* frame, const Element& e
 }
 
 void updateBucketRotationImage() {
-    bucket_rotation_angle = -roll_rotation_angle + arm_angle_deg + bucket_angle_deg;
+    // Offset calibrated so that arm=0 + bucket=0 reads ~+10 degrees at rest.
+    // Derivation: at pos=0, arm=(-20/900)*50=-1.11deg, bucket=(-20/900)*-70=+1.56deg, sum=0.45deg.
+    // Target=+10deg, so offset = 10 - 0.45 = +9.55deg.
+    static constexpr double BUCKET_ANGLE_OFFSET = 9.55;
+    bucket_rotation_angle = -roll_rotation_angle + arm_angle_deg + bucket_angle_deg + BUCKET_ANGLE_OFFSET;
 
     if (bucketTiltIndicator) {
         bucketTiltIndicator->set_angle(bucket_rotation_angle);
@@ -2069,14 +2073,14 @@ void handleTalonElements(const std::string& label, const std::vector<Element>& e
             if (label == "Talon 1") {
                 left_arm_pos = pos;
                 if (left_arm) left_arm->set_position(pos);
-                arm_angle_deg = ((pos - 20) / 900.0) * -57.2 + 17.1;
+                arm_angle_deg = ((pos - 20) / 900.0) * 50.0;
                 updateBucketRotationImage();
                 updateBucketElevationBar();
                 if (proximityBar) {
                     proximityBar->set_arm_position(pos);
                 }
             }
-            if(label == "Talon 2") {
+            else if (label == "Talon 2") {
                 right_arm_pos = pos;
                 if (right_arm) right_arm->set_position(pos);
             }
@@ -2084,7 +2088,7 @@ void handleTalonElements(const std::string& label, const std::vector<Element>& e
                 left_bucket_pos = pos;
                 if (left_bucket) left_bucket->set_position(pos);
 
-                bucket_angle_deg = ((pos - 20) / 900.0) * 97.4 - 25.8;
+                bucket_angle_deg = ((pos - 20) / 900.0) * -70.0;
 
                 updateBucketRotationImage();
                 updateBucketElevationBar();

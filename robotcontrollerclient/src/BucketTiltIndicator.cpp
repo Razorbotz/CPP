@@ -70,33 +70,33 @@ const char* BucketTiltIndicator::status_text() const {
 void BucketTiltIndicator::draw_arc_ticks(const Cairo::RefPtr<Cairo::Context>& cr,
                                          double cx, double cy, double radius) const
 {
-    // Background ring (the "track").
+    // Background ring (the "track") — right half only (270 deg to 90 deg).
     if (light_mode_) cr->set_source_rgb(0.85, 0.85, 0.85);
     else             cr->set_source_rgb(0.20, 0.20, 0.22);
     cr->set_line_width(8.0);
-    cr->arc(cx, cy, radius, M_PI, 2.0 * M_PI); // top half only
+    cr->arc(cx, cy, radius, -M_PI / 2.0, M_PI / 2.0); // right half (270->90)
     cr->stroke();
 
-    // Coloured sweep from 0 deg up to current angle, clipped to limits.
+    // Coloured sweep from 0 deg to current angle, clipped to limits.
     const double clamped = clampd(angle_deg_, low_deg_, high_deg_);
     double r, g, b;
     status_color(r, g, b);
     cr->set_source_rgb(r, g, b);
     cr->set_line_width(8.0);
 
-    // We map angle 0 -> straight up (-pi/2). Positive = clockwise (fwd dump).
-    const double start_a = -M_PI / 2.0;
-    const double end_a   = -M_PI / 2.0 + clamped * DEG2RAD;
+    // Angle 0 -> pointing right (0 rad). Positive = clockwise (down), negative = counter-clockwise (up).
+    const double start_a = 0.0;
+    const double end_a   = clamped * DEG2RAD;
     if (end_a >= start_a) cr->arc(cx, cy, radius, start_a, end_a);
     else                  cr->arc_negative(cx, cy, radius, start_a, end_a);
     cr->stroke();
 
-    // Tick marks every 15 deg across the full arc.
+    // Tick marks every 15 deg from 270 (-90) to 90.
     cr->set_line_width(1.5);
     if (light_mode_) cr->set_source_rgb(0.25, 0.25, 0.25);
     else             cr->set_source_rgb(0.85, 0.85, 0.85);
     for (int deg = -90; deg <= 90; deg += 15) {
-        const double a = -M_PI / 2.0 + deg * DEG2RAD;
+        const double a = deg * DEG2RAD;  // 0 = right, -90 = up, +90 = down
         const bool major = (deg % 45 == 0);
         const double inner = radius - (major ? 12.0 : 6.0);
         const double outer = radius + 4.0;
@@ -105,11 +105,11 @@ void BucketTiltIndicator::draw_arc_ticks(const Cairo::RefPtr<Cairo::Context>& cr
         cr->stroke();
     }
 
-    // Zero (level) marker — bold red-orange line for the operator's eye.
+    // Zero (level) marker — bold red-orange line pointing right (0 deg).
     cr->set_source_rgb(0.95, 0.55, 0.10);
     cr->set_line_width(2.5);
-    cr->move_to(cx, cy - radius - 6.0);
-    cr->line_to(cx, cy - radius + 14.0);
+    cr->move_to(cx + radius - 14.0, cy);
+    cr->line_to(cx + radius +  6.0, cy);
     cr->stroke();
 }
 
@@ -121,72 +121,80 @@ void BucketTiltIndicator::draw_bucket(const Cairo::RefPtr<Cairo::Context>& cr,
     cr->translate(cx, cy);
     cr->rotate(angle_rad);
 
-    // Bucket silhouette, drawn around its pivot.
-    // Dimensions are normalised to `size` (the gauge target size).
-    const double s = size * 0.55;                 // overall scale
-    const double w_top    =  0.42 * s;            // top opening half-width
-    const double w_bottom =  0.30 * s;            // bottom half-width
-    const double depth    =  0.55 * s;            // bucket depth
-    const double back_h   =  0.08 * s;            // back wall thickness at top
+    // Side-profile triangle representing a skid steer bucket.
+    // Pivot/mount point is at the top-left (back of bucket).
+    // The triangle reads: left=back wall, bottom=floor, hypotenuse=angled front face.
+    //
+    //  (0,0) pivot/back-top
+    //    |  \
+    //    |    \   <- angled top/front face (hypotenuse)
+    //    |      \
+    //    +--------+  <- floor with cutting edge at front-bottom right
+    //
+    const double s       = size * 0.50;
+    const double floor_w = 0.85 * s;   // floor length (horizontal)
+    const double back_h  = 0.50 * s;   // back wall height (vertical)
 
-    // Body fill colour — uses the status colour at low saturation so the
-    // bucket itself reflects state without screaming.
     double r, g, b;
     status_color(r, g, b);
 
-    // Outer shell (the steel).
-    cr->set_source_rgb(light_mode_ ? 0.30 : 0.78,
-                       light_mode_ ? 0.30 : 0.78,
-                       light_mode_ ? 0.32 : 0.80);
-    cr->move_to(-w_top, 0);
-    cr->line_to(-w_bottom, depth);
-    // curved scoop floor
-    cr->curve_to(-w_bottom * 0.5,  depth + 0.20 * s,
-                  w_bottom * 0.5,  depth + 0.20 * s,
-                  w_bottom,        depth);
-    cr->line_to( w_top, 0);
-    cr->line_to( w_top, -back_h);
-    cr->line_to(-w_top, -back_h);
-    cr->close_path();
+    // Main body fill — steel grey.
+    cr->set_source_rgb(light_mode_ ? 0.35 : 0.68,
+                       light_mode_ ? 0.35 : 0.68,
+                       light_mode_ ? 0.37 : 0.70);
+    cr->move_to(0,       0);        // pivot: back-top
+    cr->line_to(0,       back_h);   // back-bottom
+    cr->line_to(floor_w, back_h);   // front-bottom (cutting edge)
+    cr->close_path();               // hypotenuse back to pivot
     cr->fill_preserve();
 
-    cr->set_source_rgb(0.10, 0.10, 0.12);
+    // Outline.
+    cr->set_source_rgb(0.08, 0.08, 0.10);
     cr->set_line_width(2.0);
     cr->stroke();
 
-    // Inner cavity tinted with status colour at ~35% so a glance tells you
-    // the safe/caution/danger state without reading the number.
-    cr->set_source_rgba(r, g, b, 0.55);
-    cr->move_to(-w_top + 4, 2);
-    cr->line_to(-w_bottom + 3, depth - 2);
-    cr->curve_to(-w_bottom * 0.5, depth + 0.20 * s - 4,
-                  w_bottom * 0.5, depth + 0.20 * s - 4,
-                  w_bottom - 3,   depth - 2);
-    cr->line_to(w_top - 4, 2);
+    // Inner cavity tinted with status colour so state is visible at a glance.
+    cr->set_source_rgba(r, g, b, 0.35);
+    const double inset = 5.0;
+    cr->move_to(inset,           inset);
+    cr->line_to(inset,           back_h - inset);
+    cr->line_to(floor_w - inset, back_h - inset);
     cr->close_path();
     cr->fill();
 
-    // Cutting edge / lip — the bright reference line at the bucket's mouth.
+    // Cutting edge — bright yellow tip at the front-bottom corner.
     cr->set_source_rgb(0.98, 0.83, 0.10);
     cr->set_line_width(3.5);
-    cr->move_to(-w_top, 0);
-    cr->line_to( w_top, 0);
+    cr->move_to(floor_w,      back_h - 12.0);
+    cr->line_to(floor_w + 1.0, back_h +  2.0);
     cr->stroke();
 
-    // Pivot marker.
-    cr->set_source_rgb(0.10, 0.10, 0.12);
+    // Back wall accent — lighter stripe so the rear face reads clearly.
+    cr->set_source_rgb(light_mode_ ? 0.55 : 0.90,
+                       light_mode_ ? 0.55 : 0.90,
+                       light_mode_ ? 0.57 : 0.92);
+    cr->set_line_width(3.0);
+    cr->move_to(0, 0);
+    cr->line_to(0, back_h);
+    cr->stroke();
+
+    // Pivot marker — white filled circle with dark ring.
+    cr->set_source_rgb(0.95, 0.95, 0.95);
     cr->arc(0, 0, 4.0, 0, 2.0 * M_PI);
     cr->fill();
+    cr->set_source_rgb(0.08, 0.08, 0.10);
+    cr->set_line_width(1.5);
+    cr->arc(0, 0, 4.0, 0, 2.0 * M_PI);
+    cr->stroke();
 
     cr->restore();
 
-    // Horizon reference line through the pivot — does NOT rotate.
+    // Horizon reference line — does NOT rotate, helps operator read the angle.
     cr->set_source_rgba(light_mode_ ? 0.20 : 0.95,
                         light_mode_ ? 0.20 : 0.95,
                         light_mode_ ? 0.20 : 0.95,
                         0.45);
     cr->set_line_width(1.0);
-    // dashed
     std::vector<double> dashes = {4.0, 4.0};
     cr->set_dash(dashes, 0.0);
     cr->move_to(cx - size * 0.40, cy);
@@ -256,7 +264,7 @@ bool BucketTiltIndicator::on_draw(const Cairo::RefPtr<Cairo::Context>& cr) {
     const double radius = size * 0.42;
 
     draw_arc_ticks(cr, cx, cy, radius);
-    draw_bucket(cr, cx, cy, size, angle_deg_ * DEG2RAD);
+    draw_bucket(cr, cx, cy, size, -angle_deg_ * DEG2RAD);
     draw_readout(cr, cx, cy + radius + 28.0, W);
 
     return true;

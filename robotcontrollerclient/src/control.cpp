@@ -1920,10 +1920,12 @@ void addElementToInfoFrame(std::string label, InfoFrame* frame, const Element& e
 }
 
 void updateBucketRotationImage() {
-    // Offset calibrated so that arm=0 + bucket=0 reads ~+10 degrees at rest.
-    // Derivation: at pos=0, arm=(-20/900)*50=-1.11deg, bucket=(-20/900)*-70=+1.56deg, sum=0.45deg.
-    // Target=+10deg, so offset = 10 - 0.45 = +9.55deg.
-    static constexpr double BUCKET_ANGLE_OFFSET = 9.55;
+    // Offset calibrated from real measurements:
+    // arm=900 + bucket=0   -> +45 deg
+    // arm=900 + bucket=900 -> -40 deg
+    // bucket slope = -85.0 over 900 units.
+    // At arm=900: arm_angle=+48.89, bucket_angle=+1.89, sum=50.78 -> offset = 45 - 50.78 = -5.78
+    static constexpr double BUCKET_ANGLE_OFFSET = -5.78;
     bucket_rotation_angle = -roll_rotation_angle + arm_angle_deg + bucket_angle_deg + BUCKET_ANGLE_OFFSET;
 
     if (bucketTiltIndicator) {
@@ -2088,7 +2090,7 @@ void handleTalonElements(const std::string& label, const std::vector<Element>& e
                 left_bucket_pos = pos;
                 if (left_bucket) left_bucket->set_position(pos);
 
-                bucket_angle_deg = ((pos - 20) / 900.0) * -70.0;
+                bucket_angle_deg = ((pos - 20) / 900.0) * -85.0;
 
                 updateBucketRotationImage();
                 updateBucketElevationBar();
@@ -3691,21 +3693,6 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
             mainOverlay->add(*videoArea);  // Video as base
             mainOverlay->add_overlay(*topLevelBox);  // UI on top
 
-            // Proximity bar floating on the video feed, left side
-            if (!dumpBot) {
-                std::cout << "Initializing proximity bar for dump bot." << std::endl;
-                proximityBar = Gtk::manage(new ProximityBar());
-                proximityBar->set_size_request(100 * GUI_SCALE, 380 * GUI_SCALE);
-                proximityBar->set_light_mode(isLightMode);
-                proximityBar->set_warning_threshold(0.6);
-                proximityBar->set_optimal_threshold(0.9);
-                proximityBar->set_max_distance(1.5);
-                proximityBar->set_arm_show_threshold(500);
-                proximityBar->set_halign(Gtk::ALIGN_START);
-                proximityBar->set_valign(Gtk::ALIGN_CENTER);
-                proximityBar->set_margin_left(EDGE_PANEL_WIDTH + 50);
-                mainOverlay->add_overlay(*proximityBar);
-            }
 
             // Add overlay to window
             window->add(*mainOverlay);

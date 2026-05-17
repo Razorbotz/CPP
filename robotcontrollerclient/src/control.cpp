@@ -952,19 +952,19 @@ void updateFEDashboard();
 /* From NetworkHandler.cpp — which robot sent the last received packet */
 bool lastPacketFromRobot1();
 
-Speedometer* leftSpeedometer;
-Speedometer* rightSpeedometer;
+Speedometer* leftSpeedometer = nullptr;
+Speedometer* rightSpeedometer = nullptr;
 bool displaySpeed = true;
 bool numbersInside = true;
 bool numberTicks = true;
 
 std::string motorDisplayed = "Talon 1";
-Speedometer* voltageDial;
-Speedometer* temperatureDial;
-DrawingArea* positionDial;
-Speedometer* percentDial;
-Speedometer* velocityDial;
-Speedometer* currentDial;
+Speedometer* voltageDial = nullptr;
+Speedometer* temperatureDial = nullptr;
+DrawingArea* positionDial = nullptr;
+Speedometer* percentDial = nullptr;
+Speedometer* velocityDial = nullptr;
+Speedometer* currentDial = nullptr;
 bool displayMotor = false;
 
 ArtificialHorizon* attitudeIndicator = nullptr;
@@ -1722,7 +1722,7 @@ void initMechanisms() {
 }
 void initBucketLvl() {
     if (!bucketLevel_init) {
-        if (!noVideo) {
+        if (!noVideo && !isFlightEngineer) {
             auto* padding = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
             padding->set_size_request(100, 100);
             bottomLowerBox->add(*padding);
@@ -1809,6 +1809,10 @@ void initBucketPos() {
 
 void initBucketElevation() {
     if (!bucketElevation_init) {
+        if (isFlightEngineer) {
+            bucketElevation_init = true;
+            return;
+        }
         if (dumpBot) {
             bucketElevation_init = true;
             return;
@@ -2096,24 +2100,24 @@ void handleTalonElements(const std::string& label, const std::vector<Element>& e
             else{
                 if (bucketSyncLabel) bucketSyncLabel->update(left_bucket_pos, right_bucket_pos, 50);
             }
-            if (!noVideo) talonPositionGraph->update_data(label, pos);
+            if (!noVideo && !isFlightEngineer) talonPositionGraph->update_data(label, pos);
         }
         else if (element.label == "Bus Voltage") {
             float voltage = element.data.front().uint16 / 100.0f;
             voltage_val = voltage;
-            if (!noVideo) talonVoltageGraph->update_data(label, voltage);
+            if (!noVideo && !isFlightEngineer) talonVoltageGraph->update_data(label, voltage);
             lowVoltage = voltage < LOW_VOLTAGE;
             if (batteryBar) batteryBar->report_voltage(label, voltage);
         }
         else if (element.label == "Output Current") {
             float current = element.data.front().uint16 / 100.0f;
             current_val = current;
-            if (!noVideo) talonCurrentGraph->update_data(label, current);
+            if (!noVideo && !isFlightEngineer) talonCurrentGraph->update_data(label, current);
         }
         else if (element.label == "Output Percent") {
             float percent = element.data.front().float32;
             output_pct = percent;
-            if (!noVideo) talonOutputGraph->update_data(label, percent);
+            if (!noVideo && !isFlightEngineer) talonOutputGraph->update_data(label, percent);
         }
         else if (element.label == "Temperature") {
             temp_val = element.data.front().uint16;
@@ -2519,19 +2523,19 @@ void handleFalconElements(const std::string& label, const std::vector<Element>& 
         if (element.label == "Bus Voltage") {
             float voltage = element.data.front().uint16 / 100.0f;
             voltage_val = voltage;
-            if (!noVideo) falconVoltageGraph->update_data(label, voltage);
+            if (!noVideo && !isFlightEngineer) falconVoltageGraph->update_data(label, voltage);
             lowVoltage = voltage < LOW_VOLTAGE;
             if (batteryBar) batteryBar->report_voltage(label, voltage);
         }
         else if (element.label == "Output Current") {
             float current = element.data.front().uint16 / 100.0f;
             current_val = current;
-            if (!noVideo) falconCurrentGraph->update_data(label, current);
+            if (!noVideo && !isFlightEngineer) falconCurrentGraph->update_data(label, current);
         }
         else if (element.label == "Output Percent") {
             float percent = element.data.front().float32;
             output_pct = percent;
-            if (!noVideo && falconOutputGraph) falconOutputGraph->update_data(label, percent);
+            if (!noVideo && !isFlightEngineer && falconOutputGraph) falconOutputGraph->update_data(label, percent);
             if ((label == "Falcon 2" || label == "Falcon 4") && leftSpeedometer) {
                 leftSpeedometer->set_speed(percent * 100.0);
             }
@@ -2595,23 +2599,23 @@ void handleNeoElements(const std::string& label, const std::vector<Element>& ele
         if (element.label == "Bus Voltage") {
             float voltage = element.data.front().uint16 / 100.0f;
             voltage_val = voltage;
-            if (!noVideo) falconVoltageGraph->update_data(label, voltage);
+            if (!noVideo && !isFlightEngineer) falconVoltageGraph->update_data(label, voltage);
             lowVoltage = voltage < LOW_VOLTAGE;
             if (batteryBar) batteryBar->report_voltage(label, voltage);
         }
         else if (element.label == "Output Current") {
             float current = element.data.front().uint16 / 100.0f;
             current_val = current;
-            if (!noVideo) falconCurrentGraph->update_data(label, current);
+            if (!noVideo && !isFlightEngineer) falconCurrentGraph->update_data(label, current);
         }
         else if (element.label == "Output Percent") {
             float percent = element.data.front().float32;
             output_pct = percent;
-            if (!noVideo) falconOutputGraph->update_data(label, percent);
-            if(label == "Neo 2" || label == "Neo 4"){
+            if (!noVideo && !isFlightEngineer) falconOutputGraph->update_data(label, percent);
+            if((label == "Neo 2" || label == "Neo 4") && leftSpeedometer){
                 leftSpeedometer->set_speed(percent * 100.0);
             }
-            if(label == "Neo 1" || label == "Neo 3"){
+            if((label == "Neo 1" || label == "Neo 3") && rightSpeedometer){
                 rightSpeedometer->set_speed(percent * 100.0);
             }
         }
@@ -2671,23 +2675,23 @@ void handleKrakenElements(const std::string& label, const std::vector<Element>& 
         if (element.label == "Bus Voltage") {
             float voltage = element.data.front().uint16 / 100.0f;
             voltage_val = voltage;
-            if (!noVideo) falconVoltageGraph->update_data(label, voltage);
+            if (!noVideo && !isFlightEngineer) falconVoltageGraph->update_data(label, voltage);
             lowVoltage = voltage < LOW_VOLTAGE;
             if (batteryBar) batteryBar->report_voltage(label, voltage);
         }
         else if (element.label == "Output Current") {
             float current = element.data.front().uint16 / 100.0f;
             current_val = current;
-            if (!noVideo) falconCurrentGraph->update_data(label, current);
+            if (!noVideo && !isFlightEngineer) falconCurrentGraph->update_data(label, current);
         }
         else if (element.label == "Output Percent") {
             float percent = element.data.front().float32;
             output_pct = percent;
-            if (!noVideo) falconOutputGraph->update_data(label, percent);
-            if(label == "Kraken 2" || label == "Kraken 4"){
+            if (!noVideo && !isFlightEngineer) falconOutputGraph->update_data(label, percent);
+            if((label == "Kraken 2" || label == "Kraken 4") && leftSpeedometer){
                 leftSpeedometer->set_speed(percent * 100.0);
             }
-            if(label == "Kraken 1" || label == "Kraken 3"){
+            if((label == "Kraken 1" || label == "Kraken 3") && rightSpeedometer){
                 rightSpeedometer->set_speed(percent * 100.0);
             }
         }
@@ -3088,7 +3092,7 @@ void resetUIOnDisconnect() {
 
 
     // Reset the motor status indicator circles to black
-    if(!noVideo) {
+    if(!noVideo && !isFlightEngineer) {
         Gdk::RGBA black;
         black.set_rgba(0.0, 0.0, 0.0, 1.0);
         for (auto& kv : motorCircles) {
@@ -3847,7 +3851,7 @@ void setupGUI(Glib::RefPtr<Gtk::Application> application) {
             videoConnectButton->set_focus_on_click(false);
         }
 
-        if (!noVideo) {
+        if (!noVideo && !isFlightEngineer) {
             sensorBox->set_visible(false);
 
         Gtk::Box* bottomInnerBox = nullptr;
@@ -6096,6 +6100,7 @@ void processArguments(int argc, char** argv){
             }
             else if(!strcmp("--fe", argv[i]) || !strcmp("--flight_engineer", argv[i])){
                 isFlightEngineer = true;
+                forwardingDisabled = true;
             }
             else if(!strcmp("--forward", argv[i])){
                 // Format: --forward <IP> <Telemetry_Port> <Video_Port>

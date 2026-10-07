@@ -70,3 +70,11 @@ void InfoFrame::setTextColor(std::string itemName, std::string color, bool bold)
         }
     }
 }
+
+void InfoFrame::setAllItemsStale() {
+    for (const auto& infoItem : itemList) {
+        if (infoItem) {
+            infoItem->setValue("---");
+        }
+    }
+}

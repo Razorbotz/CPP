@@ -10,9 +10,10 @@ set(CMAKE_CXX_STANDARD 17)
 find_package(OpenCV REQUIRED)
 find_package(PkgConfig REQUIRED)
 find_package(CURL REQUIRED)
+find_package(ZLIB REQUIRED)
+find_package(OpenSSL REQUIRED)
 pkg_check_modules(GTKMM REQUIRED gtkmm-3.0)
 pkg_check_modules(CAIRO REQUIRED cairo)
-pkg_check_modules(WEBKITGTK REQUIRED webkit2gtk-4.0)
 pkg_check_modules(FFMPEG REQUIRED IMPORTED_TARGET
     libavcodec
     libavformat
@@ -28,10 +29,8 @@ include_directories(
   /usr/include/glib-2.0
   /usr/lib/glib-2.0/include
   /usr/include/glibmm-2.4 
-  /usr/include/glibmm-2.4/glibmm
   /usr/lib/glibmm-2.4/include
   /usr/include/sigc++-2.0
-  /usr/include/sigc++-2.0/sigc++
   /usr/lib/sigc++-2.0/include
   /usr/include/giomm-2.4
   /usr/lib/giomm-2.4/include
@@ -81,6 +80,24 @@ include_directories(
   ${FFMPEG_INCLUDE_DIRS}
 )
 
+include(FetchContent)
+
+FetchContent_Declare(
+  foxglove_websocket
+  GIT_REPOSITORY https://github.com/foxglove/ws-protocol.git
+  GIT_TAG main
+)
+
+FetchContent_GetProperties(foxglove_websocket)
+if(NOT foxglove_websocket_POPULATED)
+  FetchContent_Populate(foxglove_websocket)
+  
+  set(FOXGLOVE_WEBSOCKET_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+  set(FOXGLOVE_WEBSOCKET_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+  
+  add_subdirectory(${foxglove_websocket_SOURCE_DIR}/cpp/foxglove-websocket ${foxglove_websocket_BINARY_DIR}/cpp/foxglove-websocket)
+endif()
+
 link_directories(
   include/
   ${GTKMM_LIBRARY_DIRS}
@@ -93,6 +110,12 @@ add_executable(control
   src/InfoFrame.cpp
   src/InfoItem.cpp
   src/BinaryMessage.cpp
+  src/Speedometer.cpp
+  src/ConfigDefinitions.cpp
+  src/ConfigEditorWindow.cpp
+  src/NetworkHandler.cpp
+  src/BucketHeightIndicator.cpp
+  src/BucketTiltIndicator.cpp
 )
 
 
@@ -118,8 +141,29 @@ target_link_libraries(control
   cairo
   ${WEBKITGTK_LIBRARIES}
   ${OpenCV_LIBS}
+  ${ZLIB_LIBRARIES}
   pthread
   CURL::libcurl
   PkgConfig::FFMPEG
+  foxglove_websocket
+  OpenSSL::SSL
+  OpenSSL::Crypto
 )
 
+add_executable(input_rebind_tool
+  src/InputRebindTool.cpp
+)
+
+target_include_directories(input_rebind_tool PRIVATE
+  include
+  ${GTKMM_INCLUDE_DIRS}
+  ${CAIRO_INCLUDE_DIRS}
+  ${foxglove_websocket_SOURCE_DIR}/cpp/foxglove-websocket/include
+)
+
+target_link_libraries(input_rebind_tool
+  SDL2
+  ${GTKMM_LIBRARIES}
+  ${CAIRO_LIBRARIES}
+  pthread
+)

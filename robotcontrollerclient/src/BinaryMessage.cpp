@@ -38,6 +38,237 @@ Element::Element(std::string label, std::list<Data> data, uint8_t type, size_t d
     this->sizeList = std::move(sizeList);
 }
 
+Element::Element(Field_Strings field, std::list<Data> data, uint8_t type){
+    this->label_is_field = true;
+    this->label_field_id = static_cast<uint8_t>(field);
+    this->label.clear();
+    this->type = type;
+    this->dimensionCount = 1;
+    this->sizeList.clear();
+    this->sizeList.push_back(1);
+    this->data = std::move(data);
+}
+
+Element::Element(Field_Strings field, std::list<Data> data, uint8_t type, size_t dimensionCount, ...){
+    this->label_is_field = true;
+    this->label_field_id = static_cast<uint8_t>(field);
+    this->label.clear();
+    this->data = std::move(data);
+    this->type = type;
+
+    this->dimensionCount = dimensionCount;
+    this->sizeList.clear();
+    va_list va;
+    va_start(va, dimensionCount);
+    for(size_t index=0; index < dimensionCount; index++){
+        size_t x = va_arg(va, size_t);
+        this->sizeList.push_back(x);
+    }
+    va_end(va);
+}
+
+Element::Element(Field_Strings field, std::list<Data> data, uint8_t type, size_t dimensionCount, std::vector<size_t> sizeList){
+    this->label_is_field = true;
+    this->label_field_id = static_cast<uint8_t>(field);
+    this->label.clear();
+    this->data = std::move(data);
+    this->type = type;
+    this->dimensionCount = dimensionCount;
+    this->sizeList = std::move(sizeList);
+}
+
+void BinaryMessage::addElementBoolean(Object& object, Field_Strings field, bool boolean){
+    Data data; data.boolean = boolean;
+    std::list<Data> list; list.push_back(data);
+    Element element(field, list, TYPE::BOOLEAN);
+    object.elementList.push_back(element);
+}
+
+void BinaryMessage::addElementCharacter(Object& object, Field_Strings field, char character){
+    Data data; data.character = character;
+    std::list<Data> list; list.push_back(data);
+    Element element(field, list, TYPE::CHARACTER);
+    object.elementList.push_back(element);
+}
+
+void BinaryMessage::addElementInt8(Object& object, Field_Strings field, int8_t int8){
+    Data data; data.int8 = int8;
+    std::list<Data> list; list.push_back(data);
+    Element element(field, list, TYPE::INT8);
+    object.elementList.push_back(element);
+}
+
+void BinaryMessage::addElementInt16(Object& object, Field_Strings field, int16_t int16){
+    Data data; data.int16 = int16;
+    std::list<Data> list; list.push_back(data);
+    Element element(field, list, TYPE::INT16);
+    object.elementList.push_back(element);
+}
+
+void BinaryMessage::addElementInt32(Object& object, Field_Strings field, int32_t int32){
+    Data data; data.int32 = int32;
+    std::list<Data> list; list.push_back(data);
+    Element element(field, list, TYPE::INT32);
+    object.elementList.push_back(element);
+}
+
+void BinaryMessage::addElementInt64(Object& object, Field_Strings field, int64_t int64){
+    Data data; data.int64 = int64;
+    std::list<Data> list; list.push_back(data);
+    Element element(field, list, TYPE::INT64);
+    object.elementList.push_back(element);
+}
+
+void BinaryMessage::addElementUInt8(Object& object, Field_Strings field, uint8_t uint8){
+    Data data; data.uint8 = uint8;
+    std::list<Data> list; list.push_back(data);
+    Element element(field, list, TYPE::UINT8);
+    object.elementList.push_back(element);
+}
+
+void BinaryMessage::addElementUInt16(Object& object, Field_Strings field, uint16_t uint16){
+    Data data; data.uint16 = uint16;
+    std::list<Data> list; list.push_back(data);
+    Element element(field, list, TYPE::UINT16);
+    object.elementList.push_back(element);
+}
+
+void BinaryMessage::addElementUInt32(Object& object, Field_Strings field, uint32_t uint32){
+    Data data; data.uint32 = uint32;
+    std::list<Data> list; list.push_back(data);
+    Element element(field, list, TYPE::UINT32);
+    object.elementList.push_back(element);
+}
+
+void BinaryMessage::addElementUInt64(Object& object, Field_Strings field, uint64_t uint64){
+    Data data; data.uint64 = uint64;
+    std::list<Data> list; list.push_back(data);
+    Element element(field, list, TYPE::UINT64);
+    object.elementList.push_back(element);
+}
+
+void BinaryMessage::addElementFloat32(Object& object, Field_Strings field, float float32){
+    Data data; data.float32 = float32;
+    std::list<Data> list; list.push_back(data);
+    Element element(field, list, TYPE::FLOAT32);
+    object.elementList.push_back(element);
+}
+
+void BinaryMessage::addElementFloat64(Object& object, Field_Strings field, double float64){
+    Data data; data.float64 = float64;
+    std::list<Data> list; list.push_back(data);
+    Element element(field, list, TYPE::FLOAT64);
+    object.elementList.push_back(element);
+}
+
+void BinaryMessage::addElementString(Object& object, Field_Strings field, std::string string){
+    std::list<Data> list;
+    for(char c : string){
+        Data d; d.character = c;
+        list.push_back(d);
+    }
+    Element element(field, list, TYPE::STRING, 1, string.size());
+    object.elementList.push_back(element);
+}
+
+// Arrays
+void BinaryMessage::addElementBooleanArray(Object& object, Field_Strings field, std::vector<bool> booleanList,
+                                          size_t dimensionCount, std::vector<size_t> sizeList){
+    std::list<Data> list;
+    for(bool b : booleanList){ Data d; d.boolean = b; list.push_back(d); }
+    Element element(field, list, TYPE::BOOLEAN, dimensionCount, sizeList);
+    object.elementList.push_back(element);
+}
+
+void BinaryMessage::addElementCharacterArray(Object& object, Field_Strings field, std::vector<char> characterList,
+                                            size_t dimensionCount, std::vector<size_t> sizeList){
+    std::list<Data> list;
+    for(char v : characterList){ Data d; d.character = v; list.push_back(d); }
+    Element element(field, list, TYPE::CHARACTER, dimensionCount, sizeList);
+    object.elementList.push_back(element);
+}
+
+void BinaryMessage::addElementInt8Array(Object& object, Field_Strings field, std::vector<int8_t> int8List,
+                                       size_t dimensionCount, std::vector<size_t> sizeList){
+    std::list<Data> list;
+    for(auto v : int8List){ Data d; d.int8 = v; list.push_back(d); }
+    Element element(field, list, TYPE::INT8, dimensionCount, sizeList);
+    object.elementList.push_back(element);
+}
+
+void BinaryMessage::addElementInt16Array(Object& object, Field_Strings field, std::vector<int16_t> int16List,
+                                        size_t dimensionCount, std::vector<size_t> sizeList){
+    std::list<Data> list;
+    for(auto v : int16List){ Data d; d.int16 = v; list.push_back(d); }
+    Element element(field, list, TYPE::INT16, dimensionCount, sizeList);
+    object.elementList.push_back(element);
+}
+
+void BinaryMessage::addElementInt32Array(Object& object, Field_Strings field, std::vector<int32_t> int32List,
+                                        size_t dimensionCount, std::vector<size_t> sizeList){
+    std::list<Data> list;
+    for(auto v : int32List){ Data d; d.int32 = v; list.push_back(d); }
+    Element element(field, list, TYPE::INT32, dimensionCount, sizeList);
+    object.elementList.push_back(element);
+}
+
+void BinaryMessage::addElementInt64Array(Object& object, Field_Strings field, std::vector<int64_t> int64List,
+                                        size_t dimensionCount, std::vector<size_t> sizeList){
+    std::list<Data> list;
+    for(auto v : int64List){ Data d; d.int64 = v; list.push_back(d); }
+    Element element(field, list, TYPE::INT64, dimensionCount, sizeList);
+    object.elementList.push_back(element);
+}
+
+void BinaryMessage::addElementUInt8Array(Object& object, Field_Strings field, std::vector<uint8_t> uint8List,
+                                        size_t dimensionCount, std::vector<size_t> sizeList){
+    std::list<Data> list;
+    for(auto v : uint8List){ Data d; d.uint8 = v; list.push_back(d); }
+    Element element(field, list, TYPE::UINT8, dimensionCount, sizeList);
+    object.elementList.push_back(element);
+}
+
+void BinaryMessage::addElementUInt16Array(Object& object, Field_Strings field, std::vector<uint16_t> uint16List,
+                                         size_t dimensionCount, std::vector<size_t> sizeList){
+    std::list<Data> list;
+    for(auto v : uint16List){ Data d; d.uint16 = v; list.push_back(d); }
+    Element element(field, list, TYPE::UINT16, dimensionCount, sizeList);
+    object.elementList.push_back(element);
+}
+
+void BinaryMessage::addElementUInt32Array(Object& object, Field_Strings field, std::vector<uint32_t> uint32List,
+                                         size_t dimensionCount, std::vector<size_t> sizeList){
+    std::list<Data> list;
+    for(auto v : uint32List){ Data d; d.uint32 = v; list.push_back(d); }
+    Element element(field, list, TYPE::UINT32, dimensionCount, sizeList);
+    object.elementList.push_back(element);
+}
+
+void BinaryMessage::addElementUInt64Array(Object& object, Field_Strings field, std::vector<uint64_t> uint64List,
+                                         size_t dimensionCount, std::vector<size_t> sizeList){
+    std::list<Data> list;
+    for(auto v : uint64List){ Data d; d.uint64 = v; list.push_back(d); }
+    Element element(field, list, TYPE::UINT64, dimensionCount, sizeList);
+    object.elementList.push_back(element);
+}
+
+void BinaryMessage::addElementFloat32Array(Object& object, Field_Strings field, std::vector<float> floatList,
+                                          size_t dimensionCount, std::vector<size_t> sizeList){
+    std::list<Data> list;
+    for(auto v : floatList){ Data d; d.float32 = v; list.push_back(d); }
+    Element element(field, list, TYPE::FLOAT32, dimensionCount, sizeList);
+    object.elementList.push_back(element);
+}
+
+void BinaryMessage::addElementFloat64Array(Object& object, Field_Strings field, std::vector<double> doubleList,
+                                          size_t dimensionCount, std::vector<size_t> sizeList){
+    std::list<Data> list;
+    for(auto v : doubleList){ Data d; d.float64 = v; list.push_back(d); }
+    Element element(field, list, TYPE::FLOAT64, dimensionCount, sizeList);
+    object.elementList.push_back(element);
+}
+
+
 void Element::print(){
 //    std::cout << "Element" << std::endl;
     std::cout << this->label << ": ";
@@ -347,7 +578,11 @@ BinaryMessage::BinaryMessage(std::list<uint8_t>& bytes){
     std::list<uint8_t>::iterator currentByte = bytes.begin();
 
     uint64_t size = decodeSizeBytes(currentByte);
-    this->topObject = decodeObject(currentByte);
+    try {
+    	this->topObject = decodeObject(currentByte);
+    } 	catch (const std::exception& e) {
+    		std::cout << "Out of Sync: " << e.what() << std::endl;
+    	}
 }
 
 
@@ -374,6 +609,7 @@ Object BinaryMessage::decodeObject(std::list<uint8_t>::iterator& currentByte){
     if(object.type!=TYPE::OBJECT){
         std::cout << "data not in sync OBJECT" << std::endl;
         std::cout << "Data of type : " << object.type << std::endl;
+        throw std::runtime_error("Data out of Sync");
     }
     else{
         uint64_t elementCount = decodeSizeBytes(currentByte);
@@ -390,25 +626,28 @@ Object BinaryMessage::decodeObject(std::list<uint8_t>::iterator& currentByte){
     }
 }
 
-
-std::string BinaryMessage::decodeLabel(std::list<uint8_t>::iterator& currentByte){
-    int dataType=*currentByte;
-    currentByte++;
-    if(dataType != TYPE::STRING){
-        std::cout << "data not in sync LABEL" << std::endl;
-        std::cout << "Label of type: " << dataType << std::endl;
-    }
-    else{
-        uint64_t size=decodeSizeBytes(currentByte);
-        std::string label="";
-        for(int index=0; index < size ; index++){
-            label += *(currentByte);
-            currentByte++;
+std::string BinaryMessage::decodeLabel(std::list<uint8_t>::iterator& it) {
+    const uint8_t type = *it++;
+    
+    if (type == TYPE::STRING) {
+        const uint64_t n = decodeSizeBytes(it);   // your iterator-based size decode
+        std::string s;
+        s.reserve((size_t)n);
+        for (uint64_t i = 0; i < n; ++i) {
+            s.push_back((char)*it++);
         }
-        return label;
+        return s;
     }
-}
 
+    if (type == TYPE::UINT8) { // compact FieldStrings label id
+        const uint8_t id = *it++;
+        return decodeFieldValue((Field_Strings)id);
+    }
+
+    std::cout << "data not in sync LABEL\n";
+    std::cout << "Label of type: " << (int)type << "\n";
+    return "Unknown";
+}
 
 uint8_t BinaryMessage::decodeType(std::list<uint8_t>::iterator& currentByte){
     uint8_t type = *currentByte;
@@ -1049,39 +1288,69 @@ uint64_t BinaryMessage::decodeSizeBytes(std::list<uint8_t>::iterator& currentByt
     return size;
 }
 
+std::string BinaryMessage::decodeFieldValue(Field_Strings field)
+{
+    const uint8_t idx = static_cast<uint8_t>(field);
+    if (idx < 64) return FieldNames[idx];
+    return "Unknown";
+}
+
+
 
 void BinaryMessage::addElementBoolean(std::string label, bool boolean){
     addElementBoolean(this->topObject,label, boolean);
 }
 
+void BinaryMessage::addElementBoolean(Field_Strings field, bool boolean){
+    addElementBoolean(this->topObject, field, boolean);
+}
 
 void BinaryMessage::addElementCharacter(std::string label, char character){
     addElementCharacter(this->topObject,label, character);
 }
 
+void BinaryMessage::addElementCharacter(Field_Strings field, char character){
+    addElementCharacter(this->topObject, field, character);
+}
 
 void BinaryMessage::addElementInt8(std::string label, int8_t int8){
     addElementInt8(this->topObject,label, int8);
 }
 
+void BinaryMessage::addElementInt8(Field_Strings field, int8_t int8){
+    addElementInt8(this->topObject, field, int8);
+}
 
 void BinaryMessage::addElementInt16(std::string label, int16_t int16){
     addElementInt16(this->topObject,label, int16);
 }
 
+void BinaryMessage::addElementInt16(Field_Strings field, int16_t int16){
+    addElementInt16(this->topObject, field, int16);
+}
 
 void BinaryMessage::addElementInt32(std::string label, int32_t int32){
     addElementInt32(this->topObject,label, int32);
 }
 
+void BinaryMessage::addElementInt32(Field_Strings field, int32_t int32){
+    addElementInt32(this->topObject, field, int32);
+}
 
 void BinaryMessage::addElementInt64(std::string label, int64_t int64){
     addElementInt64(this->topObject,label, int64);
 }
 
+void BinaryMessage::addElementInt64(Field_Strings field, int64_t int64){
+    addElementInt64(this->topObject, field, int64);
+}
 
 void BinaryMessage::addElementUInt8(std::string label, uint8_t uint8){
     addElementUInt8(this->topObject,label, uint8);
+}
+
+void BinaryMessage::addElementUInt8(Field_Strings field, uint8_t uint8){
+    addElementUInt8(this->topObject, field, uint8);
 }
 
 
@@ -1089,14 +1358,25 @@ void BinaryMessage::addElementUInt16(std::string label, uint16_t uint16){
     addElementUInt16(this->topObject,label, uint16);
 }
 
+void BinaryMessage::addElementUInt16(Field_Strings field, uint16_t uint16){
+    addElementUInt16(this->topObject, field, uint16);
+}
+
 
 void BinaryMessage::addElementUInt32(std::string label, uint32_t uint32){
     addElementUInt32(this->topObject,label, uint32);
 }
 
+void BinaryMessage::addElementUInt32(Field_Strings field, uint32_t uint32){
+    addElementUInt32(this->topObject, field, uint32);
+}
 
 void BinaryMessage::addElementUInt64(std::string label, uint64_t uint64){
     addElementUInt64(this->topObject,label, uint64);
+}
+
+void BinaryMessage::addElementUInt64(Field_Strings field, uint64_t uint64){
+    addElementUInt64(this->topObject, field, uint64);
 }
 
 
@@ -1104,9 +1384,17 @@ void BinaryMessage::addElementFloat32(std::string label, float float32){
     addElementFloat32(this->topObject,label, float32);
 }
 
+void BinaryMessage::addElementFloat32(Field_Strings field, float float32){
+    addElementFloat32(this->topObject, field, float32);
+}
+
 
 void BinaryMessage::addElementFloat64(std::string label, double float64){
     addElementFloat64(this->topObject,label, float64);
+}
+
+void BinaryMessage::addElementFloat64(Field_Strings field, double float64){
+    addElementFloat64(this->topObject, field, float64);
 }
 
 
@@ -1114,9 +1402,17 @@ void BinaryMessage::addElementString(std::string label, std::string string){
     addElementString(this->topObject,label, string);
 }
 
+void BinaryMessage::addElementString(Field_Strings field, std::string string){
+    addElementString(this->topObject, field, string);
+}
+
 
 void BinaryMessage::addElementBooleanArray(std::string label, std::vector<bool> booleanList, size_t dimensionCount, std::vector<size_t> sizeList){
     addElementBooleanArray(this->topObject, label, booleanList, dimensionCount, sizeList);
+}
+
+void BinaryMessage::addElementBooleanArray(Field_Strings field, std::vector<bool> booleanList, size_t dimensionCount, std::vector<size_t> sizeList){
+    addElementBooleanArray(this->topObject, field, booleanList, dimensionCount, sizeList);
 }
 
 
@@ -1124,9 +1420,17 @@ void BinaryMessage::addElementCharacterArray(std::string label, std::vector<char
     addElementCharacterArray(this->topObject, label, characterList, dimensionCount, sizeList);
 }
 
+void BinaryMessage::addElementCharacterArray(Field_Strings field, std::vector<char> characterList, size_t dimensionCount, std::vector<size_t> sizeList){
+    addElementCharacterArray(this->topObject, field, characterList, dimensionCount, sizeList);
+}
+
 
 void BinaryMessage::addElementInt8Array(std::string label, std::vector<int8_t> int8List, size_t dimensionCount, std::vector<size_t> sizeList){
     addElementInt8Array(this->topObject, label, int8List, dimensionCount, sizeList);
+}
+
+void BinaryMessage::addElementInt8Array(Field_Strings field, std::vector<int8_t> int8List, size_t dimensionCount, std::vector<size_t> sizeList){
+    addElementInt8Array(this->topObject, field, int8List, dimensionCount, sizeList);
 }
 
 
@@ -1134,9 +1438,17 @@ void BinaryMessage::addElementInt16Array(std::string label, std::vector<int16_t>
     addElementInt16Array(this->topObject, label, int16List, dimensionCount, sizeList);
 }
 
+void BinaryMessage::addElementInt16Array(Field_Strings field, std::vector<int16_t> int16List, size_t dimensionCount, std::vector<size_t> sizeList){
+    addElementInt16Array(this->topObject, field, int16List, dimensionCount, sizeList);
+}
+
 
 void BinaryMessage::addElementInt32Array(std::string label, std::vector<int32_t> int32List, size_t dimensionCount, std::vector<size_t> sizeList){
     addElementInt32Array(this->topObject, label, int32List, dimensionCount, sizeList);
+}
+
+void BinaryMessage::addElementInt32Array(Field_Strings field, std::vector<int32_t> int32List, size_t dimensionCount, std::vector<size_t> sizeList){
+    addElementInt32Array(this->topObject, field, int32List, dimensionCount, sizeList);
 }
 
 
@@ -1144,9 +1456,17 @@ void BinaryMessage::addElementInt64Array(std::string label, std::vector<int64_t>
     addElementInt64Array(this->topObject, label, int64List, dimensionCount, sizeList);
 }
 
+void BinaryMessage::addElementInt64Array(Field_Strings field, std::vector<int64_t> int64List, size_t dimensionCount, std::vector<size_t> sizeList){
+    addElementInt64Array(this->topObject, field, int64List, dimensionCount, sizeList);
+}
+
 
 void BinaryMessage::addElementUInt8Array(std::string label, std::vector<uint8_t> uint8List, size_t dimensionCount, std::vector<size_t> sizeList){
     addElementUInt8Array(this->topObject, label, uint8List, dimensionCount, sizeList);
+}
+
+void BinaryMessage::addElementUInt8Array(Field_Strings field, std::vector<uint8_t> uint8List, size_t dimensionCount, std::vector<size_t> sizeList){
+    addElementUInt8Array(this->topObject, field, uint8List, dimensionCount, sizeList);
 }
 
 
@@ -1154,9 +1474,17 @@ void BinaryMessage::addElementUInt16Array(std::string label, std::vector<uint16_
     addElementUInt16Array(this->topObject, label, uint16List, dimensionCount, sizeList);
 }
 
+void BinaryMessage::addElementUInt16Array(Field_Strings field, std::vector<uint16_t> uint16List, size_t dimensionCount, std::vector<size_t> sizeList){
+    addElementUInt16Array(this->topObject, field, uint16List, dimensionCount, sizeList);
+}
+
 
 void BinaryMessage::addElementUInt32Array(std::string label, std::vector<uint32_t> uint32List, size_t dimensionCount, std::vector<size_t> sizeList){
     addElementUInt32Array(this->topObject, label, uint32List, dimensionCount, sizeList);
+}
+
+void BinaryMessage::addElementUInt32Array(Field_Strings field, std::vector<uint32_t> uint32List, size_t dimensionCount, std::vector<size_t> sizeList){
+    addElementUInt32Array(this->topObject, field, uint32List, dimensionCount, sizeList);
 }
 
 
@@ -1164,14 +1492,26 @@ void BinaryMessage::addElementUInt64Array(std::string label, std::vector<uint64_
     addElementUInt64Array(this->topObject, label, uint64List, dimensionCount, sizeList);
 }
 
+void BinaryMessage::addElementUInt64Array(Field_Strings field, std::vector<uint64_t> uint64List, size_t dimensionCount, std::vector<size_t> sizeList){
+    addElementUInt64Array(this->topObject, field, uint64List, dimensionCount, sizeList);
+}
+
 
 void BinaryMessage::addElementFloat32Array(std::string label, std::vector<float> floatList, size_t dimensionCount, std::vector<size_t> sizeList){
     addElementFloat32Array(this->topObject, label, floatList, dimensionCount, sizeList);
 }
 
+void BinaryMessage::addElementFloat32Array(Field_Strings field, std::vector<float> floatList, size_t dimensionCount, std::vector<size_t> sizeList){
+    addElementFloat32Array(this->topObject, field, floatList, dimensionCount, sizeList);
+}
+
 
 void BinaryMessage::addElementFloat64Array(std::string label, std::vector<double> doubleList, size_t dimensionCount, std::vector<size_t> sizeList){
     addElementFloat64Array(this->topObject, label, doubleList, dimensionCount, sizeList);
+}
+
+void BinaryMessage::addElementFloat64Array(Field_Strings field, std::vector<double> doubleList, size_t dimensionCount, std::vector<size_t> sizeList){
+    addElementFloat64Array(this->topObject, field, doubleList, dimensionCount, sizeList);
 }
 
 
@@ -1579,6 +1919,12 @@ void BinaryMessage::encodeLabelBytes(std::shared_ptr<std::list<uint8_t>> bytes, 
     }
 }
 
+void BinaryMessage::encodeLabelBytes(std::shared_ptr<std::list<uint8_t>> bytes, Field_Strings field){
+    bytes->push_back(TYPE::UINT8);
+    bytes->push_back(static_cast<uint8_t>(field));
+}
+
+
 
 /* The Object Struct contains the following
             string label;
@@ -1642,7 +1988,12 @@ void BinaryMessage::encodeBytes(std::shared_ptr<std::list<uint8_t>> bytes, Objec
  * @param element 
  */
 void BinaryMessage::encodeBytes(std::shared_ptr<std::list<uint8_t>> bytes, Element element){
-    encodeLabelBytes(bytes, element.label);
+    if(element.label_is_field){
+        encodeLabelBytes(bytes, static_cast<Field_Strings>(element.label_field_id));
+    }
+    else {
+        encodeLabelBytes(bytes, element.label);
+    }
     bytes->push_back(element.type);
 
     /*NOTE: element.data is a list of Data unions (see BinaryMessage.hpp Data union)

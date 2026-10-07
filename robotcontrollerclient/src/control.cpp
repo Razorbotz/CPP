@@ -22,7 +22,6 @@
 #include <gtkmm.h>
 #include <gdkmm.h>
 #include <gtkmm/window.h>
-#include <webkit2/webkit2.h>
 #include <cairomm/context.h>
 #include <pangomm.h>
 #include <gdk-pixbuf/gdk-pixbuf.h>
@@ -40,6 +39,10 @@
 #include <regex>
 #include <mutex>
 #include <atomic>
+#include <zlib.h>
+#include <foxglove/websocket/websocket_notls.hpp>
+#include <foxglove/websocket/websocket_server.hpp>
+#include <nlohmann/json.hpp>
 
 extern "C" {
 #include <libavcodec/avcodec.h>
@@ -50,24 +53,30 @@ extern "C" {
 
 #include "InfoFrame.hpp"
 #include "BinaryMessage.hpp"
+#include "Speedometer.hpp"
+#include "ConfigDefinitions.hpp"
+#include "ConfigEditorWindow.hpp"
+#include "NetworkHandler.hpp"
+#include "ProximityBar.hpp"
+#include "PositionBar.hpp"
+#include "ArtificialHorizon.hpp"
+#include "BucketTiltIndicator.hpp"
+#include "BucketHeightIndicator.hpp"
+#include "BatteryBar.hpp"
+#include "BotConfig.hpp"
+#include "InputMapper.hpp"
 
 /*
 TODO: 
-Fix crash on video start
-Fix random seg faults
 Map Issues:
-Cosmic map isn't drawing robot in correct location
-Robot isn't drawing in correct location, need to offset for camera position
-Random segfaults when connected to the robot
-Random segfaults when robot starts ROS2
 
 */
 
-#define PORT 31337 
-#define VIDEO_PORT 31338
-#define ORIN_IP "192.168.1.6"
-#define NANO_IP "192.168.1.5"
+std::string ORIN_IP = "192.168.0.6";
+std::string NANO_IP = "192.168.0.5";
 bool useOrin = true;
+
+#define LOW_VOLTAGE 12.0f
 
 float parseFloat(const uint8_t* array){
     uint32_t axisYInteger=0;
@@ -107,19 +116,29 @@ void insert(int value,uint8_t* array){
     array[3]=uint8_t((uint32_t(*(static_cast<uint32_t*>(static_cast<void*>(&value))))>>0) & 0xff);
 }
 
-
+std::unique_ptr<foxglove::Server<foxglove::WebSocketNoTls>> foxglove_server;
 bool quit(GdkEventAny* event){
+    if (foxglove_server) {
+        foxglove_server->stop();
+    }
+    
     exit(0);
 }
 
 Gtk::ListBox* addressListBox;
 Gtk::Entry* ipAddressEntry;
 Gtk::Label* connectionStatusLabel;
+Gtk::Entry* ipAddressEntry2;
+Gtk::Label* connectionStatusLabel2;
   
 Gtk::Button* silentRunButton;
 Gtk::Button* connectButton;
+Gtk::Button* silentRunButton2;
+Gtk::Button* connectButton2;
 Gtk::Button* toggleModeButton;
 Gtk::Button* settingsButton;
+
+Gtk::Box* topControlsBox;
 
 Gtk::ListBox* videoAddressListBox;
 Gtk::Entry* videoIPAddressEntry;
@@ -127,171 +146,123 @@ Gtk::Label* videoConnectionStatusLabel;
   
 Gtk::Button* videoStreamButton;
 Gtk::Button* videoConnectButton;
-bool isStreamingActive = false;
 bool isGray = true;
 std::mutex frameMutex;
 cv::Mat latestFrame;
-bool newFrameAvailable;
+std::atomic<bool> newFrameAvailable;
 Glib::Dispatcher videoDisconnectDispatcher;
 std::atomic<bool> shouldVideoDisconnect = false;
+Glib::Dispatcher connection_finished_dispatcher;
+Glib::Dispatcher connection_finished_dispatcher2;
+Glib::Dispatcher video_connection_finished_dispatcher;
   
 Gtk::FlowBox* sensorBox;
 Gtk::Box* innerLeftBox;
 Gtk::Box* innerRightBox;
 Gtk::Box* bottomLowerBox;
+Gtk::Box* armPositionPlaceholder;
+Gtk::Box* bucketTiltPlaceholder;
+Gtk::Box* rollImagePlaceholder;
 
 Gtk::Window* window;
-int sock = 0; 
-bool connected=false;
-bool silentRunning=true;
-bool initialized = false;
 
 bool initVals = false;
 bool threeMonitors = false;
 bool smallLaptop = false;
+bool wsl = false;
+double GUI_SCALE = 1.0;
 bool noVideo = false;
-bool noArena = false;
-std::string mapUsed = "NASA";
+bool debugGladeBounds = false;
 bool testInput = false;
 bool useAltLayout = false;
 bool isController = false;
 bool twoJoysticks = false;
+BotConfig activeConfig = configs::primaryBot();
+bool disableFoxgloveServer = false;
 
-int videoSock = 0; 
-bool videoConnected=false;
+// Input rebinding config — loaded from JSON file at startup
+InputConfig inputConfig;
+std::string inputConfigFile; // Set via --input_config flag
+bool useInputConfig = false; // True when a valid JSON config was loaded
+
+// Backward-compatible flags — derived from activeConfig in processArguments().
+// Use these in code that hasn't been migrated to read activeConfig directly yet.
+// Once all if(primaryBot)/if(backupBot)/if(dumpBot) branches are converted to
+// use activeConfig or feature flags, remove these.
+bool primaryBot = true;
+bool backupBot = false;
+bool dumpBot = false;
+
+bool debugMotors = false;
+
+bool simulateNetwork = false;
+Gtk::Window* simulatorWindow = nullptr;
+Gtk::ComboBoxText* simTypeCombo = nullptr;
+Gtk::Box* simContentBox = nullptr;
+
+bool isFlightEngineer = false;
+
+std::map<std::string, Gtk::Widget*> activeSimWidgets;
+
+ProximityBar* proximityBar = nullptr;
+
+// --- Foxglove Globals ---
+foxglove::ChannelId arena_mesh_channel;
+foxglove::ChannelId tf_channel;
+std::chrono::high_resolution_clock::time_point lastFoxgloveTransmit = std::chrono::high_resolution_clock::now();
+
+// --- Encode Tool Globals ---
+bool start_encode_tool = false;
+Gtk::Window* encodeToolWindow = nullptr;
+Gtk::ComboBoxText* encodeTypeCombo = nullptr;
+Gtk::Box* encodeContentBox = nullptr;
+
+Gtk::CheckButton* cbUseFieldStrings = nullptr;
+Gtk::CheckButton* cbIncludeChecksum = nullptr;
+Gtk::CheckButton* cbApplyEnvelope   = nullptr;
+
+Gtk::CheckButton* cbShowDecoded = nullptr;
+Gtk::ComboBoxText* decodeStageCombo = nullptr;   // Raw / After checksum / After envelope
+Gtk::CheckButton* cbValidateChecksum = nullptr;
+
+Gtk::TextView* txtHexStringLabels = nullptr;
+Gtk::TextView* txtHexFieldLabels  = nullptr;
+Gtk::TextView* txtDecodedStringLabels = nullptr;
+Gtk::TextView* txtDecodedFieldLabels  = nullptr;
+Gtk::Label* encodeSummaryLabel = nullptr;
+
+std::map<std::string, Gtk::Widget*> encodeWidgets;
+std::map<std::string, uint8_t> encodeTypes;
+std::map<std::string, Gtk::CheckButton*> encodeInclude;
+
+static std::map<std::string, Field_Strings> LABEL_TO_FIELD;
+
+std::map<std::string, uint8_t> activeSimTypes;
+
+ServerUI server_ui;
+VideoServerUI video_server_ui;
 
 Gtk::Window* arenaWindow;
 Gtk::Window* sensorsWindow;
-Gtk::Window* configWindow;
+ConfigEditorWindow* configWindow = nullptr;
 Gtk::Window* motorWindow;
 int monitor_count = 0;
 
-std::string configFile = "config.txt";
+// For CSS backgrounds (transparent for video overlay)
+std::string darkBackgroundColorCSS = "rgba(11, 26, 33, 0.0)";
+std::string lightBackgroundColorCSS = "rgba(240, 250, 242, 0.0)";
 
-enum class ElementType {
-    UInt8, UInt16, Int8, Int32, Float32, Boolean, String
-};
-
-struct ElementInfo {
-    ElementType type;
-    std::string name;
-};
-
+// For Cairo drawing and RGBA widgets (opaque)
 std::string darkBackgroundColor = "#0b1a21";
 std::string lightBackgroundColor = "#f0faf2";
+
 bool isLightMode = true;
 
+static constexpr int ROLL_PITCH_IMAGE_SIZE = 200;
+static constexpr int BUCKET_TILT_IMAGE_SIZE = 200;
+static constexpr int BASE_EDGE_PANEL_WIDTH = 250;
+static int EDGE_PANEL_WIDTH = 250;
 
-// To add a new key, add it to the vector that the key belongs to and 
-// add it to the element_definitions below with the type of the element
-
-// To add a new type, create a new vector of strings below. Initialize it
-// in the initialize map function. Add it to the key_vectors. Create a 
-// local keys and copy the values to it.  Create various boxes and add them
-// to frame_entries. Create a new widget and add it to the options frame. 
-// Save the new values to the vector from the local copy.
-std::set<std::string> speedometer_keys = {
-    "DISPLAY_SPEED",
-    "NUMBERS_INSIDE",
-    "NUMBER_TICKS"
-};
-
-std::vector<std::string> talon_keys = {
-"Device ID", "Bus Voltage", "Output Current", "Output Percent",
-"Temperature", "Sensor Position", "Sensor Velocity", "Max Current"
-};
-std::vector<std::string> reset_talon_keys = {
- "Device ID", "Bus Voltage", "Output Current", "Output Percent",
-"Temperature", "Sensor Position", "Sensor Velocity", "Max Current"
-};   
-
-std::map<std::string, bool> talon_values;
-
-std::vector<std::string> falcon_keys = talon_keys;
-std::map<std::string, bool> falcon_values;
-std::vector<std::string> reset_falcon_keys = reset_talon_keys;
-
-std::vector<std::string> linear_keys = {
-    "Motor Number", "Speed", "Potentiometer", "Time Without Change",
-    "Max", "Min", "Error", "At Min", "At Max", "Distance", "Sensorless"
-};
-std::map<std::string, bool> linear_values;
-std::vector<std::string> reset_linear_keys = {
-    "Motor Number", "Speed", "Potentiometer", "Time Without Change",
-    "Max", "Min", "Error", "At Min", "At Max", "Distance", "Sensorless"
-};
-
-std::vector<std::string> power_keys = {
-    "Voltage", "Temp", "Current 0", "Current 1", "Current 2",
-    "Current 3", "Current 4", "Current 5", "Current 6"
-};
-std::map<std::string, bool> power_values;
-std::vector<std::string> reset_power_keys = {
-    "Voltage", "Temp", "Current 0", "Current 1", "Current 2",
-    "Current 3", "Current 4", "Current 5", "Current 6"
-};
-
-std::vector<std::string> power2_keys = {
-    "Current 7", "Current 8", "Current 9", "Current 10", "Current 11",
-    "Current 12", "Current 13", "Current 14", "Current 15"
-};
-std::map<std::string, bool> power2_values;
-std::vector<std::string> reset_power2_keys = {
-    "Current 7", "Current 8", "Current 9", "Current 10", "Current 11",
-    "Current 12", "Current 13", "Current 14", "Current 15"
-};
-
-std::vector<std::string> autonomy_keys = {
-    "Robot State", "Excavation State", "Error State", "Diagnostics State", 
-    "Tilt State", "Dump State", "Level Bucket", "Level Arms", "Dest X", "Dest Z"
-};
-std::map<std::string, bool> autonomy_values;
-std::vector<std::string> reset_autonomy_keys = {
-    "Robot State", "Excavation State", "Error State", "Diagnostics State", 
-    "Tilt State", "Dump State", "Level Bucket", "Level Arms", "Dest X", "Dest Z"
-};
-
-std::vector<std::string> zed_keys = {
-    "X", "Y", "Z", "roll", "pitch", "yaw", "aruco"
-};
-std::map<std::string, bool> zed_values;
-std::vector<std::string> reset_zed_keys = {
-    "X", "Y", "Z", "roll", "pitch", "yaw", "aruco"
-};
-
-std::vector<std::string> communication_keys = {
-    "RSSI", "Wi-Fi", "CAN Bus", "Using CAN1", "RX packets", "TX packets", "CAN Bus2", "RX2 packets", "TX2 packets", "Status"
-};
-std::map<std::string, bool> communication_values;
-std::vector<std::string> reset_communication_keys = {
-    "RSSI", "Wi-Fi", "CAN Bus", "Using CAN1", "RX packets", "TX packets", "CAN Bus2", "RX2 packets", "TX2 packets", "Status"
-};
-
-
-std::vector<std::string> drivetrain_keys = {
-    "F1 Vel", "F1 RPM", "F1 Speed", "F2 Vel", "F2 RPM", "F2 Speed", "F3 Vel", "F3 RPM", "F3 Speed", "F4 Vel", "F4 RPM", "F4 Speed"
-};
-std::map<std::string, bool> drivetrain_values;
-std::vector<std::string> reset_drivetrain_keys = {
-    "F1 Vel", "F1 RPM", "F1 Speed", "F2 Vel", "F2 RPM", "F2 Speed", "F3 Vel", "F3 RPM", "F3 Speed", "F4 Vel", "F4 RPM", "F4 Speed"
-};
-void initialize_bool_map(std::map<std::string, bool>& map, const std::vector<std::string>& keys) {
-    for (const auto& key : keys) {
-        map[key] = true;
-    }
-}
-
-void initialize_maps(){
-    initialize_bool_map(talon_values, talon_keys);
-    initialize_bool_map(falcon_values, falcon_keys);
-    initialize_bool_map(linear_values, linear_keys);
-    initialize_bool_map(power_values, power_keys);
-    initialize_bool_map(power2_values, power2_keys);
-    initialize_bool_map(autonomy_values, autonomy_keys);
-    initialize_bool_map(zed_values, zed_keys);
-    initialize_bool_map(communication_values, communication_keys);
-    initialize_bool_map(drivetrain_values, drivetrain_keys);
-}
 
 double roll_rotation_angle = 0.0;
 Glib::RefPtr<Gdk::Pixbuf> roll_pixbuf;
@@ -303,31 +274,14 @@ Glib::RefPtr<Gdk::Pixbuf> lvl_pixbuf;
 Gtk::Image* pitch_image;
 Gtk::Image* lvl_image;
 
+double bucket_rotation_angle = 0.0;
+BucketTiltIndicator* bucketTiltIndicator = nullptr;
 
-double MULTIPLIER_X = 1100.0 / 6.88;
-double MULTIPLIER_Y = 800.0 / 5.0;
-
-double ARENA_WIDTH_M = 6.88, ARENA_HEIGHT_M = 5.0;
-double ARENA_WIDTH_P = 1100.0, ARENA_HEIGHT_P = 800.0;
-
-double UCF_WIDTH_M = 8.14, UCF_HEIGHT_M = 4.57;
-double UCF_WIDTH_P = 1300.0, UCF_HEIGHT_P = 730;
-
-double COSMIC_WIDTH_M = 5.48, COSMIC_HEIGHT_M = 4.87;
-double COMSIC_WIDTH_P = 877, COSMIC_HEIGHT_P = 780;
-
-double LAB_WIDTH_M = 5.0, LAB_HEIGHT_M = 4.0;
-double LAB_WIDTH_P = 800, LAB_HEIGHT_P = 640;
-
-
-double MULTIPLIER_X = 1100.0 / 6.88;
-double MULTIPLIER_Y = 800.0 / 5.0;
-
-double ARENA_WIDTH_M = 6.88, ARENA_HEIGHT_M = 5.0;
-double ARENA_WIDTH_P = 1100.0, ARENA_HEIGHT_P = 800.0;
-
-double UCF_WIDTH_M = 8.14, UCF_HEIGHT_M = 4.57;
-double UCF_WIDTH_P = 1300.0, UCF_HEIGHT_P = 730;
+double robot_x_m = 0.0;
+double robot_y_m = 0.0;
+double robot_pitch_rad = 0.0;
+double arm_angle_deg = 0.0; 
+double bucket_angle_deg = 0.0;
 
 std::vector<InfoFrame*> infoFrameList;
 
@@ -370,216 +324,21 @@ class DrawingArea : public Gtk::DrawingArea {
         double ratio_;
     };
 
-DrawingArea* right_arm;
-DrawingArea* left_arm;
-DrawingArea* right_bucket;
-DrawingArea* left_bucket;
+PositionBar* right_arm = nullptr;
+PositionBar* left_arm = nullptr;
+PositionBar* right_bucket = nullptr;
+PositionBar* left_bucket = nullptr;
+PositionBar* elevation_bar = nullptr;
+BucketHeightIndicator* bucketHeightIndicator = nullptr;
+SyncStatusLabel* armSyncLabel = nullptr;
+SyncStatusLabel* bucketSyncLabel = nullptr;
+
 Gtk::Box* armBox;
 Gtk::Box* bucketBox;
 bool arm_init = false, bucket_init = false, roll_init = false, pitch_init = false, bucketLevel_init = false;
+bool bucketRot_init = false, bucketElevation_init = false;
 
-int right_arm_pos = 0, left_arm_pos = 0, right_bucket_pos = 0, left_bucket_pos = 0;
-
-class ImageOverlay : public Gtk::DrawingArea {
-    public:
-        ImageOverlay() :
-            img_x(100), img_y(50), rotation_angle(0.0), dest_x(-1), dest_y(-1) {
-                load_images();
-            }
-    
-        bool update_image_position(double x, double y){
-            img_x = x;
-            img_y = y;
-            queue_draw();
-            return true;
-        }
-
-        bool update_image_rotation(double rotation){
-            rotation_angle = ((rotation * M_PI) / 180);
-            queue_draw();
-            return true;
-        }
-
-        bool update_image_x(double x){
-            img_x = x;
-            queue_draw();
-            return true;
-        }
-
-        bool update_image_y(double y){
-            img_y = y;
-            queue_draw();
-            return true;
-        }
-
-        // Scale factor of map means 1m = 160px, so scale multiplier sets
-        // the size of the rock and hole to scale multiplier meters in radius
-        void add_rock_image(int x, int y, double scale_multiplier) {
-            rock_data.emplace_back(x, y, scale_multiplier);
-            queue_draw();
-        }
-
-        void add_hole_image(int x, int y, double scale_multiplier) {
-            hole_data.emplace_back(x, y, scale_multiplier);
-            queue_draw();
-        }
-
-        void add_dest_loc(int x, int y){
-            dest_x = x;
-            dest_y = y;
-            queue_draw();
-        }
-
-    protected:
-    bool on_draw(const Cairo::RefPtr<Cairo::Context>& cr) override {
-        if (!background || !overlay) return false;
-
-        int height = 0;
-        if(mapUsed == "NASA"){
-            height = ARENA_HEIGHT_P;
-        }
-        else if(mapUsed == "UCF"){
-            height = UCF_HEIGHT_P;
-        }
-        else if(mapUsed == "Cosmic"){
-            height = COSMIC_HEIGHT_P;
-        }
-        else if(mapUsed == "Lab"){
-            height = LAB_HEIGHT_P;
-        }
-        else{
-            height = ARENA_HEIGHT_P;
-        }
-    
-        // Get widget and image sizes to scale the images correctly
-        int widget_width = get_allocation().get_width();
-        int widget_height = get_allocation().get_height();
-    
-        int img_width = background->get_width();
-        int img_height = background->get_height();
-    
-        double scale_x = static_cast<double>(widget_width) / img_width;
-        double scale_y = static_cast<double>(widget_height) / img_height;
-        double scale = std::min(scale_x, scale_y);
-    
-        double scaled_width = img_width * scale;
-        double scaled_height = img_height * scale;
-        double offset_x = (widget_width - scaled_width) / 2.0;
-        double offset_y = (widget_height - scaled_height) / 2.0;
-    
-        // Apply transformations for both background and overlay
-        cr->save();
-        cr->translate(offset_x, offset_y);
-        cr->scale(scale, scale);
-    
-        cr->save();
-        Gdk::Cairo::set_source_pixbuf(cr, background, 0, 0);
-        cr->paint();
-        cr->restore();
-
-        cr->save();
-        
-        double cam_offset_x = 20.0; // meters * 160
-        double cam_offset_y = 60.0;
-
-        double cos_theta = std::cos(rotation_angle);
-        double sin_theta = std::sin(rotation_angle);
-        double rotated_offset_x = cam_offset_x * cos_theta - cam_offset_y * sin_theta;
-        double rotated_offset_y = cam_offset_x * sin_theta + cam_offset_y * cos_theta;
-
-        cr->translate(img_x + rotated_offset_x + overlay->get_width() / 2,
-                    height - (img_y + rotated_offset_y + overlay->get_height() / 2));
-        cr->rotate(rotation_angle);
-        cr->translate(-overlay->get_width() / 2, -overlay->get_height() / 2);
-
-        Gdk::Cairo::set_source_pixbuf(cr, overlay, 0, 0);
-        cr->paint();
-        cr->restore();
-
-        // Draw rocks
-        for (const auto& data : rock_data) {
-            int new_width = rock->get_width() * data.scale_multiplier;
-            int new_height = rock->get_height() * data.scale_multiplier;
-            auto scaled_pixbuf = rock->scale_simple(new_width, new_height, Gdk::INTERP_BILINEAR);
-            int draw_x = data.x - (new_width / 2);
-            int draw_y = height - (data.y + new_height / 2);
-            Gdk::Cairo::set_source_pixbuf(cr, scaled_pixbuf, draw_x, draw_y);
-            cr->paint();
-        }
-    
-        // Draw holes
-        for (const auto& data : hole_data) {
-            int new_width = hole->get_width() * data.scale_multiplier;
-            int new_height = hole->get_height() * data.scale_multiplier;
-            auto scaled_pixbuf = hole->scale_simple(new_width, new_height, Gdk::INTERP_BILINEAR);
-            int draw_x = data.x - (new_width / 2);
-            int draw_y = height - (data.y + new_height / 2);
-            Gdk::Cairo::set_source_pixbuf(cr, scaled_pixbuf, draw_x, draw_y);
-            cr->paint();
-        }
-
-        if(dest_x != -1 && dest_y != -1){
-            int dest_img_w = dest_image->get_width();
-            int dest_img_h = dest_image->get_height();
-
-            int draw_x = dest_x - dest_img_w / 2;
-            int draw_y = height - (dest_y + dest_img_h / 2);
-
-            Gdk::Cairo::set_source_pixbuf(cr, dest_image, draw_x, draw_y);
-            cr->paint();
-        }
-
-        cr->restore();
-        cr->reset_clip();
-    
-        return true;
-    }
-    
-    private:
-        Glib::RefPtr<Gdk::Pixbuf> background, overlay, rock, hole, dest_image;
-        double img_x, img_y;
-        double rotation_angle;
-
-        int dest_x, dest_y;
-
-        struct ImageData {
-            int x, y;
-            double scale_multiplier;
-            ImageData(int x, int y, double scale) : x(x), y(y), scale_multiplier(scale) {}
-        };
-        std::vector<ImageData> rock_data;
-        std::vector<ImageData> hole_data;
-        double m_scale_multiplier;
-    
-        void load_images(){
-            try{
-                if(mapUsed == "NASA"){
-                    background = Gdk::Pixbuf::create_from_file("../resources/Arena.png");
-                }
-                else if(mapUsed == "UCF"){
-                    background = Gdk::Pixbuf::create_from_file("../resources/UCFArena.png");
-                }
-                else if(mapUsed == "Cosmic"){
-                    background = Gdk::Pixbuf::create_from_file("../resources/CosmicArena.png");
-                }
-                else if(mapUsed == "Lab"){
-                    background = Gdk::Pixbuf::create_from_file("../resources/LabArena.png");
-                }
-                else{
-                    background = Gdk::Pixbuf::create_from_file("../resources/Arena.png");
-                }
-                overlay = Gdk::Pixbuf::create_from_file("../resources/RobotTop.png");
-                rock = Gdk::Pixbuf::create_from_file("../resources/Rock.png");
-                hole = Gdk::Pixbuf::create_from_file("../resources/Hole.png");
-                dest_image = Gdk::Pixbuf::create_from_file("../resources/X.png");
-            }
-            catch(const Glib::Exception& ex){
-                g_warning("Failed to load images: %s", ex.what().c_str());
-            }
-        }
-};
-
-ImageOverlay* overlay_area;
+int right_arm_pos = 0, left_arm_pos = 0, right_bucket_pos = 0, left_bucket_pos = 0, bucket_elevation_height = 0;
 
 bool set_source_hex_color(const Cairo::RefPtr<Cairo::Context>& cr, const std::string& color_string) {
     if (color_string.empty()) return false;
@@ -625,7 +384,7 @@ bool set_source_hex_color(const Cairo::RefPtr<Cairo::Context>& cr, const std::st
     return true;
 }
 
-Glib::RefPtr<Gdk::Pixbuf> rotate_image(Glib::RefPtr<Gdk::Pixbuf> pixbuf, double angle_deg, int target_width, int target_height) {
+Glib::RefPtr<Gdk::Pixbuf> rotate_image(Glib::RefPtr<Gdk::Pixbuf> pixbuf, double angle_deg, int target_width, int target_height, int high_angle, int low_angle) {
     double angle_rad = angle_deg * M_PI / 180.0;
 
     int width = pixbuf->get_width();
@@ -639,12 +398,7 @@ Glib::RefPtr<Gdk::Pixbuf> rotate_image(Glib::RefPtr<Gdk::Pixbuf> pixbuf, double 
 
     // Fill background
     cr->set_source_rgb(1.0, 1.0, 1.0); // Default to white
-    if (isLightMode) {
-        if (!set_source_hex_color(cr, lightBackgroundColor)) cr->set_source_rgb(1.0, 1.0, 1.0);
-    } else {
-        if (!set_source_hex_color(cr, darkBackgroundColor)) cr->set_source_rgb(0.0, 0.0, 0.0);
-    }
-    if (angle_deg > 30 || angle_deg < -30) {
+    if (angle_deg > high_angle || angle_deg < low_angle) {
         cr->set_source_rgb(1.0, 0.0, 0.0); // Red for high angle warning
     }
     cr->paint();
@@ -711,11 +465,19 @@ class BorderedBox : public Gtk::Box {
     
     protected:
         bool on_draw(const Cairo::RefPtr<Cairo::Context>& cr) override {
-            Gtk::Box::on_draw(cr); 
-    
             auto allocation = get_allocation();
             double width = allocation.get_width();
             double height = allocation.get_height();
+            
+            if (isLightMode) {
+                set_source_hex_color(cr, lightBackgroundColor);
+            } else {
+                set_source_hex_color(cr, darkBackgroundColor);
+            }
+            cr->rectangle(0, 0, width, height);
+            cr->fill();
+            
+            Gtk::Box::on_draw(cr); 
     
             cr->set_line_width(1.0);
             cr->set_source_rgb(0, 0, 0);
@@ -768,16 +530,30 @@ class CircleDrawingArea : public Gtk::DrawingArea{
         Gdk::RGBA background_color_;
     };
 
+// Circles for motor status indicators
+//Primary Bot - 3 Talons, 4 Falcons
+//Dump Bot - 4 Neos, 1 Falcon
+//Backup Bot - 4 Talons, 4 Falcons
 CircleDrawingArea* talon1Circle;
+CircleDrawingArea* talon2Circle;
 CircleDrawingArea* talon3Circle;
-CircleDrawingArea* falcon1Circle;
-CircleDrawingArea* falcon2Circle;
-CircleDrawingArea* falcon3Circle;
-CircleDrawingArea* falcon4Circle;
+CircleDrawingArea* talon4Circle;
+CircleDrawingArea* kraken1Circle;
+CircleDrawingArea* kraken2Circle;
+CircleDrawingArea* kraken3Circle;
+CircleDrawingArea* kraken4Circle;
+CircleDrawingArea* neo1Circle;
+CircleDrawingArea* neo2Circle;
+CircleDrawingArea* neo3Circle;
+CircleDrawingArea* neo4Circle;
 CircleDrawingArea* lowerFalcon1Circle;
 CircleDrawingArea* lowerFalcon2Circle;
 CircleDrawingArea* lowerFalcon3Circle;
 CircleDrawingArea* lowerFalcon4Circle;
+CircleDrawingArea* falcon1Circle;
+CircleDrawingArea* falcon2Circle;
+CircleDrawingArea* falcon3Circle;
+CircleDrawingArea* falcon4Circle;
 
 // TODO: Modify this to be more descriptive and make the graphs better
 // Not entirely sure what all that will entail
@@ -922,13 +698,27 @@ class MultiMotorGraph : public Gtk::Box {
             Gtk::Allocation alloc = graphArea->get_allocation();
             const int width = alloc.get_width();
             const int height = alloc.get_height();
+
+            // Define colors for text, grid, and border based on the current mode.
+            Gdk::RGBA text_color, grid_color, border_color;
+            if (isLightMode) {
+                set_source_hex_color(cr, lightBackgroundColor);
+                text_color.set("black");
+                grid_color.set_rgba(0.9, 0.9, 0.9, 1.0);
+                border_color.set_rgba(0.7, 0.7, 0.7, 1.0);
+            }
+            else {
+                set_source_hex_color(cr, darkBackgroundColor);
+                text_color.set("white");
+                grid_color.set_rgba(0.25, 0.25, 0.25, 1.0);
+                border_color.set_rgba(0.4, 0.4, 0.4, 1.0);
+            }
     
             // Clear background
-            cr->set_source_rgb(1, 1, 1);
             cr->paint();
     
             // Draw border
-            cr->set_source_rgb(0.7, 0.7, 0.7);
+            cr->set_source_rgba(border_color.get_red(), border_color.get_green(), border_color.get_blue(), border_color.get_alpha());
             cr->rectangle(0, 0, width, height);
             cr->stroke();
     
@@ -938,9 +728,11 @@ class MultiMotorGraph : public Gtk::Box {
             
             if (graphType == OUTPUT_PERCENT || graphType == SPEED) {
                 step = 0.1f; // 25% increments for output and speed
-            } else if (graphType == POTENTIOMETER) {
+            }
+            else if (graphType == POTENTIOMETER) {
                 step = 100.0f; // 1V increments for potentiometer
-            } else {
+            }
+            else {
                 step = (range > 1000) ? 100.0f :
                       (range > 20) ? 5.0f : 
                       (range > 10) ? 1.0f : 
@@ -948,19 +740,19 @@ class MultiMotorGraph : public Gtk::Box {
             }
     
             // Draw grid and labels
-            cr->set_source_rgb(0.9, 0.9, 0.9);
+            cr->set_source_rgba(grid_color.get_red(), grid_color.get_green(), grid_color.get_blue(), grid_color.get_alpha());
             cr->select_font_face("Sans", Cairo::FONT_SLANT_NORMAL, Cairo::FONT_WEIGHT_NORMAL);
             cr->set_font_size(10);
             
             // Special case for output percentage and speed to show 0 line
             if (graphType == OUTPUT_PERCENT || graphType == SPEED) {
                 float zeroY = height - ((0 - minVal) / range) * (height - 20);
-                cr->set_source_rgb(0.7, 0.7, 0.7);
+                cr->set_source_rgba(border_color.get_red(), border_color.get_green(), border_color.get_blue(), border_color.get_alpha());
                 cr->move_to(0, zeroY);
                 cr->line_to(width, zeroY);
                 cr->stroke();
                 
-                cr->set_source_rgb(0, 0, 0);
+                cr->set_source_rgba(text_color.get_red(), text_color.get_green(), text_color.get_blue(), text_color.get_alpha());
                 cr->move_to(5, zeroY - 5);
                 cr->show_text("0");
             }
@@ -972,22 +764,25 @@ class MultiMotorGraph : public Gtk::Box {
                 }
                 
                 float y = height - ((v - minVal) / range) * (height - 20);
-                cr->set_source_rgb(0.9, 0.9, 0.9);
+                cr->set_source_rgba(grid_color.get_red(), grid_color.get_green(), grid_color.get_blue(), grid_color.get_alpha());
                 cr->move_to(0, y);
                 cr->line_to(width, y);
                 cr->stroke();
                 
-                cr->set_source_rgb(0, 0, 0);
+                cr->set_source_rgba(text_color.get_red(), text_color.get_green(), text_color.get_blue(), text_color.get_alpha());
                 cr->move_to(5, y - 5);
                 
                 // Format label based on value size and type
                 if (graphType == OUTPUT_PERCENT || graphType == SPEED) {
                     cr->show_text(Glib::ustring::format(std::fixed, std::setprecision(0), v * 100) + "%");
-                } else if (graphType == POTENTIOMETER) {
+                }
+                else if (graphType == POTENTIOMETER) {
                     cr->show_text(Glib::ustring::format(std::fixed, std::setprecision(1), v) + "V");
-                } else if (maxVal > 100) {
+                }
+                else if (maxVal > 100) {
                     cr->show_text(Glib::ustring::format(std::fixed, std::setprecision(0), v));
-                } else {
+                }
+                else {
                     cr->show_text(Glib::ustring::format(std::fixed, std::setprecision(1), v));
                 }
             }
@@ -1035,7 +830,6 @@ MultiMotorGraph* talonCurrentGraph;
 MultiMotorGraph* talonPositionGraph;
 MultiMotorGraph* talonOutputGraph;
 
-
 MultiMotorGraph* falconVoltageGraph;
 MultiMotorGraph* falconCurrentGraph;
 MultiMotorGraph* falconPositionGraph;
@@ -1044,384 +838,141 @@ MultiMotorGraph* falconOutputGraph;
 MultiMotorGraph* linearSpeedGraph;
 MultiMotorGraph* linearPotentiometerGraph;
 
+/* Diagnostics Tool (ESP32) tab */
+Gtk::Label* diagConnectionLabel = nullptr;
+Gtk::Label* diagRssiLabel = nullptr;
+Gtk::Label* diagCanLabel = nullptr;
+Gtk::Grid* diagMotorGrid = nullptr;
+Gtk::Label* diagMotorLabels[10][7]; /* [motor_index][field] — name, type, status, percent, current, voltage, temp */
+int diagLastMotorCount = 0;
 
-class Speedometer : public Gtk::DrawingArea {
-public:
-    Speedometer(const std::string& label)
-        : label_(label), // Label for the Widget, will be displayed below
-          speed_(0.0), 
-          reverse_(false), // Should the value be displayed in red
-          min_speed_(0.0),
-          max_speed_(100.0),
-          num_major_divisions_(10), // e.g., 0, 10, 20 ... 100 (11 ticks)
-          num_minor_ticks_per_segment_(4), // 4 minor ticks = 5 small intervals
-          display_speed_(true),  // Display speed value at bottom of speedo
-          numbers_inside_(true), // Display numbers inside outer circle on speedo
-          numbers_on_ticks_(true), // Numbers displayed by ticks
-          angle_for_zero_(135.0), // Where should the zero value be 
-          angle_for_sweep_(270.0), // Number of degrees the speedo should travel
-          low_warning_(false), // Should there be a red warning band on the low side
-          low_warning_thresh_(0.2), // Where should the low warning band start
-          high_warning_(false), // Should there be a red warning band on the high side
-          high_warning_thresh_(0.2), // Where should the high warning bnd start
-          use_text_label_(false), // Should the speed label be text instead
-          text_label_("Label") // Text value for the label
-    {
-        // To change Speedometer sizes, need to change this value
-        // Set a minimum size for the widget
-        set_size_request(250, 250);
-    }
+/* Diagnostics structs - must match NetworkHandler.cpp exactly */
+#pragma pack(push, 1)
+struct DiagMotorData {
+    uint8_t  can_id;
+    uint8_t  motor_type;
+    uint8_t  status;
+    float    percent;
+    float    current;
+    float    voltage;
+    int32_t  position;
+    int32_t  temperature;
+};
+#pragma pack(pop)
 
-    void set_speed(double speed) {
-        if(speed < min_speed_){
-            set_reverse(true);
-            speed_ = std::clamp(-speed, min_speed_, max_speed_); // Assuming min_speed_ is typically 0 for magnitude
+struct DiagState {
+    bool     connected = false;
+    uint64_t last_heartbeat_ms = 0;
+    uint64_t last_telemetry_ms = 0;
+    uint8_t  active_motors = 0;
+    uint8_t  config_index = 0;
+    uint8_t  wifi_rssi = 0;
+    bool     can_active = false;
+    DiagMotorData motors[10] = {};
+    std::string esp32_ip;
+};
 
-        }
-        else{
-            speed_ = std::clamp(speed, min_speed_, max_speed_); // Assuming min_speed_ is typically 0 for magnitude
-            set_reverse(false);
-        }
-        queue_draw();
-    }
+/* Functions from NetworkHandler.cpp */
+DiagState getDiagState();
+bool isDiagDirty();
+bool isDiagConnected();
+void startDiagListener();
+void stopDiagListener();
 
-    void set_reverse(bool reverse) {
-        reverse_ = reverse;
-        queue_draw();
-    }
+/* ============================================================
+ * FLIGHT ENGINEER dashboard widgets
+ * Populated from feLayout.glade when --fe flag is used
+ * ============================================================ */
+Gtk::Label* feConnRobot1 = nullptr;
+Gtk::Label* feLatencyRobot1 = nullptr;
+Gtk::Label* feConnRobot2 = nullptr;
+Gtk::Label* feLatencyRobot2 = nullptr;
+Gtk::Label* feConnEsp32 = nullptr;
+Gtk::Label* feRssiEsp32 = nullptr;
+Gtk::Label* feClock = nullptr;
 
-    // Call this if you want the gauge to represent a range other than 0-max_speed
-    // Note: The current drawing logic primarily uses 0 as the start of the scale.
-    // Modifying this to a dynamic min_speed_ on the dial requires adjusting tick/needle logic.
-    void set_min_speed(double speed) {
-        min_speed_ = speed;
-        // Potentially adjust speed_ if it's now out of new bounds
-        speed_ = std::clamp(speed_, min_speed_, max_speed_);
-        queue_draw();
-    }
+/* Motor telemetry grid */
+Gtk::Grid* feMotorGrid = nullptr;
+Gtk::Label* feMotorLabels[16][6]; /* up to 16 motors, 6 fields: name, voltage, current, output%, position, status */
+int feMotorRowCount = 0;
+std::map<std::string, int> feMotorRowMap; /* label -> row index */
 
-    void set_max_speed(double speed) {
-        if (speed < min_speed_) { // Ensure max_speed is not less than min_speed
-            max_speed_ = min_speed_;
-        } else {
-            max_speed_ = speed;
-        }
-        // Potentially adjust speed_ if it's now out of new bounds
-        speed_ = std::clamp(speed_, min_speed_, max_speed_);
-        queue_draw();
-    }
+/* ESP32 section */
+Gtk::Label* feEsp32CanStatus = nullptr;
+Gtk::Label* feEsp32Config = nullptr;
+Gtk::Label* feEsp32MotorCount = nullptr;
+Gtk::Grid* feEsp32MotorGrid = nullptr;
+Gtk::Label* feEsp32MotorLabels[10][7];
 
-    void set_num_major_divisions(int divisions) {
-        if (divisions > 0) {
-            num_major_divisions_ = divisions;
-            queue_draw();
-        }
-    }
+/* Navigation */
+Gtk::Label* feNavR1Roll = nullptr;
+Gtk::Label* feNavR1Pitch = nullptr;
+Gtk::Label* feNavR1Yaw = nullptr;
+Gtk::Label* feNavR1X = nullptr;
+Gtk::Label* feNavR1Y = nullptr;
+Gtk::Label* feNavR2Roll = nullptr;
+Gtk::Label* feNavR2Pitch = nullptr;
+Gtk::Label* feNavR2Yaw = nullptr;
+Gtk::Label* feNavR2X = nullptr;
+Gtk::Label* feNavR2Y = nullptr;
 
-    void set_num_minor_ticks_per_segment(int minor_ticks) {
-        if (minor_ticks >= 0) {
-            num_minor_ticks_per_segment_ = minor_ticks;
-            queue_draw();
-        }
-    }
+/* Autonomy */
+Gtk::Label* feAutoR1State = nullptr;
+Gtk::Label* feAutoR1DestX = nullptr;
+Gtk::Label* feAutoR1DestZ = nullptr;
+Gtk::Label* feAutoR2State = nullptr;
+Gtk::Label* feAutoR2DestX = nullptr;
+Gtk::Label* feAutoR2DestZ = nullptr;
 
-    void set_display_speed(bool display_speed){
-        display_speed_ = display_speed;
-    }
+/* Lidar */
+Gtk::Label* feLidarR1 = nullptr;
+Gtk::Label* feLidarR2 = nullptr;
 
-    void set_numbers_inside(bool numbers_inside){
-        numbers_inside_ = numbers_inside;
-    }
+/* Communication */
+Gtk::Label* feCommR1Wifi = nullptr;
+Gtk::Label* feCommR1Wifi2 = nullptr;
+Gtk::Label* feCommR1Can = nullptr;
+Gtk::Label* feCommR2Wifi = nullptr;
+Gtk::Label* feCommR2Can = nullptr;
 
-    void set_numbers_on_ticks(bool numbers_on_ticks){
-        numbers_on_ticks_ = numbers_on_ticks;
-    }
+std::chrono::high_resolution_clock::time_point feStartTime;
 
-    void set_angle_for_zero(double angle_for_zero){
-        angle_for_zero_ = angle_for_zero;
-    }
-    
-    void set_angle_for_sweep(double angle_for_sweep){
-        angle_for_sweep_ = angle_for_sweep;
-    }
+/* Mission timer — counts down from a configurable duration.
+ * T key starts/pauses, R key resets. Duration set via --mission_time <seconds>. */
+Gtk::Label* feMissionTimer = nullptr;
+int feMissionDurationSec = 10 * 60;  // Default: 10 minutes
+bool feMissionTimerRunning = false;
+double feMissionElapsedSec = 0.0;
+std::chrono::high_resolution_clock::time_point feMissionTimerStart;
 
-    void set_low_warning(bool warning){
-        low_warning_ = warning;
-    }
+/* Forward declarations for FE update functions */
+void feUpdateMotorRow(const std::string& label, float voltage, float current, float output_pct, int position, bool error, bool lowVoltage);
+void updateFEDashboard();
 
-    void set_low_warning_thresh(double thresh){
-        low_warning_thresh_ = thresh;
-    }
+/* From NetworkHandler.cpp — which robot sent the last received packet */
+bool lastPacketFromRobot1();
 
-    void set_high_warning(bool warning){
-        high_warning_ = warning;
-    }
-
-    void set_high_warning_thresh(double thresh){
-        high_warning_thresh_ = thresh;
-    }
-
-    void set_use_text_label(bool text_label){
-        use_text_label_ = text_label;
-    }
-
-    void set_text_label(std::string label){
-        text_label_ = label;
-    }
-
-
-protected:
-    bool on_draw(const Cairo::RefPtr<Cairo::Context>& cr) override {
-        Gtk::Allocation alloc = get_allocation();
-        const int w = alloc.get_width() - 15;
-        const int h = alloc.get_height() - 15;
-
-        const double smallest_dim = std::min(w, h);
-        const double radius = smallest_dim / 2.5; // Main radius for ticks
-        const double cx = w / 2.0;
-        const double cy = h / 2.0; // Center of the gauge
-
-        const double angle_for_zero_value_rad = angle_for_zero_ * M_PI / 180.0;
-        const double total_sweep_angle_rad = angle_for_sweep_ * M_PI / 180.0;
-
-        // Colors
-        Gdk::RGBA color_dial_bg;
-        color_dial_bg.set_rgba(0.1, 0.1, 0.1, 1.0); // Dark grey
-        Gdk::RGBA color_bezel;
-        color_bezel.set_rgba(0.2, 0.2, 0.2, 1.0);
-        Gdk::RGBA color_tick_mark;
-        color_tick_mark.set_rgba(0.9, 0.9, 0.9, 1.0); // Light grey/white
-        Gdk::RGBA color_text;
-        color_text.set_rgba(0.9, 0.9, 0.9, 1.0);
-        Gdk::RGBA color_needle;
-        color_needle.set_rgba(1.0, 0.2, 0.2, 1.0); // Reddish
-        Gdk::RGBA color_needle_pivot;
-        color_needle_pivot.set_rgba(0.7, 0.7, 0.7, 1.0);
-        Gdk::RGBA color_speed_text_normal;
-        color_speed_text_normal.set_rgba(0.8, 0.8, 1.0, 1.0); // Light blueish
-        Gdk::RGBA color_speed_text_reverse;
-        color_speed_text_reverse.set_rgba(1.0, 0.8, 0.8, 1.0); // Light reddish
-        Gdk::RGBA label_text;
-        label_text.set_rgba(0.1, 0.1, 0.1, 1.0);
-
-
-        // 1. Bezel
-        cr->set_source_rgba(color_bezel.get_red(), color_bezel.get_green(), color_bezel.get_blue(), color_bezel.get_alpha());
-        cr->arc(cx, cy, radius + 10, 0, 2 * M_PI);
-        cr->fill();
-
-        // 2. Dial background
-        cr->set_source_rgba(color_dial_bg.get_red(), color_dial_bg.get_green(), color_dial_bg.get_blue(), color_dial_bg.get_alpha());
-        cr->arc(cx, cy, radius + 5, 0, 2 * M_PI);
-        cr->fill_preserve();
-        cr->set_source_rgba(0.3, 0.3, 0.3, 1.0); // Outline for the dial face
-        cr->set_line_width(1.0);
-        cr->stroke();
-
-        // 3. Ticks and Labels
-        const double major_tick_len = 10.0;
-        const double minor_tick_len = 5.0;
-        const double text_radius_offset = 20.0; // How far from ticks to place text
-
-        // Draw red arc for warning zone
-        auto draw_warning_arc = [&](double danger_speed_start, double danger_speed_end) {
-            if (danger_speed_start < danger_speed_end && max_speed_ > min_speed_) {
-                double ratio_start = (danger_speed_start - min_speed_) / (max_speed_ - min_speed_);
-                double ratio_end = (danger_speed_end - min_speed_) / (max_speed_ - min_speed_);
-
-                double angle_start = angle_for_zero_value_rad + ratio_start * total_sweep_angle_rad;
-                double angle_end = angle_for_zero_value_rad + ratio_end * total_sweep_angle_rad;
-
-                cr->set_line_width(major_tick_len * 1.5);
-                cr->set_source_rgb(1.0, 0.0, 0.0);
-                cr->arc(cx, cy, radius - major_tick_len / 2.0, angle_start, angle_end);
-                cr->stroke();
-            }
-        };
-
-        if (low_warning_) {
-            draw_warning_arc(min_speed_, min_speed_ + low_warning_thresh_ * (max_speed_ - min_speed_));
-        }
-        if (high_warning_) {
-            draw_warning_arc(max_speed_ - high_warning_thresh_ * (max_speed_ - min_speed_), max_speed_);
-        }
-
-
-        cr->set_source_rgba(color_tick_mark.get_red(), color_tick_mark.get_green(), color_tick_mark.get_blue(), color_tick_mark.get_alpha());
-        for (int i = 0; i <= num_major_divisions_; ++i) {
-            double tick_ratio = static_cast<double>(i) / num_major_divisions_;
-            double angle = angle_for_zero_value_rad + tick_ratio * total_sweep_angle_rad;
-
-            // Major tick
-            double x1 = cx + radius * cos(angle);
-            double y1 = cy + radius * sin(angle);
-            double x2 = cx + (radius - major_tick_len) * cos(angle);
-            double y2 = cy + (radius - major_tick_len) * sin(angle);
-
-            cr->set_line_width(2.0);
-            cr->move_to(x1, y1);
-            cr->line_to(x2, y2);
-            cr->stroke();
-
-            // Number label for major tick
-            // Ensure max_speed_ is not zero to avoid issues, though labels can be 0
-            double value = tick_ratio * (max_speed_ - min_speed_) + min_speed_;
-            std::string tick_text = std::to_string(static_cast<int>(round(value)));
-
-            Cairo::TextExtents extents;
-            cr->set_font_size(std::max(10.0, smallest_dim / 20.0)); // Responsive font size
-            cr->get_text_extents(tick_text, extents);
-
-            // Adjust text position to be centered and outside ticks
-            double label_distance = numbers_inside_
-                ? (radius - major_tick_len - text_radius_offset)
-                : (radius + text_radius_offset);
-
-            double tx = cx + label_distance * cos(angle) - (extents.width / 2.0 + extents.x_bearing);
-            double ty = cy + label_distance * sin(angle) - (extents.height / 2.0 + extents.y_bearing);
-            
-            if (numbers_inside_) {
-                cr->set_source_rgba(color_text.get_red(), color_text.get_green(), color_text.get_blue(), color_text.get_alpha());
-            }
-            else {
-                cr->set_source_rgb(0.0, 0.0, 0.0);
-            }
-            cr->move_to(tx, ty);
-            if(numbers_on_ticks_)
-                cr->show_text(tick_text);
-
-            // Reset color after drawing text
-            cr->set_source_rgba(color_text.get_red(), color_text.get_green(), color_text.get_blue(), color_text.get_alpha());
-
-            // Minor ticks (except after the last major tick)
-            if (i < num_major_divisions_) {
-                for (int j = 1; j <= num_minor_ticks_per_segment_; ++j) {
-                    double minor_tick_ratio = tick_ratio + (static_cast<double>(j) / num_major_divisions_ / (num_minor_ticks_per_segment_ + 1));
-                    // Ensure minor ticks don't overshoot total_sweep_angle_rad
-                    if (minor_tick_ratio * total_sweep_angle_rad > total_sweep_angle_rad + 1e-6) continue; 
-
-                    double minor_angle = angle_for_zero_value_rad + minor_tick_ratio * total_sweep_angle_rad;
-                    double mx1 = cx + radius * cos(minor_angle);
-                    double my1 = cy + radius * sin(minor_angle);
-                    double mx2 = cx + (radius - minor_tick_len) * cos(minor_angle);
-                    double my2 = cy + (radius - minor_tick_len) * sin(minor_angle);
-
-                    cr->set_line_width(1.0);
-                    cr->move_to(mx1, my1);
-                    cr->line_to(mx2, my2);
-                    cr->stroke();
-                }
-            }
-        }
-
-        // 4. Needle
-        double current_speed_ratio = 0.0;
-        if (max_speed_ > min_speed_) { // Avoid division by zero or undefined behavior
-             current_speed_ratio = (speed_ - min_speed_) / (max_speed_ - min_speed_);
-        }
-        else if (max_speed_ == min_speed_ && speed_ == min_speed_){
-             current_speed_ratio = 0.0; // Or 0.5 if middle, but for 0-max this is fine
-        }
-
-
-        double needle_angle = angle_for_zero_value_rad + current_speed_ratio * total_sweep_angle_rad;
-        cr->set_source_rgba(color_needle.get_red(), color_needle.get_green(), color_needle.get_blue(), color_needle.get_alpha());
-        cr->set_line_width(std::max(2.0, smallest_dim / 80.0)); // Responsive needle width
-        cr->move_to(cx, cy);
-        cr->line_to(cx + (radius - major_tick_len/2) * cos(needle_angle), cy + (radius - major_tick_len/2) * sin(needle_angle));
-        cr->stroke();
-
-        // 5. Needle Pivot
-        cr->set_source_rgba(color_needle_pivot.get_red(), color_needle_pivot.get_green(), color_needle_pivot.get_blue(), color_needle_pivot.get_alpha());
-        cr->arc(cx, cy, std::max(4.0, smallest_dim / 40.0), 0, 2 * M_PI);
-        cr->fill();
-        cr->set_source_rgba(0.1,0.1,0.1,1); // Pivot outline
-        cr->set_line_width(0.5);
-        cr->arc(cx, cy, std::max(4.0, smallest_dim / 40.0), 0, 2 * M_PI);
-        cr->stroke();
-
-
-        // 6. Speed Text Display
-        if(!use_text_label_){
-            std::ostringstream speed_stream;
-            speed_stream << std::fixed << std::setprecision(1) << speed_;
-            std::string speed_str = speed_stream.str();
-            if (reverse_) {
-                speed_str += " R";
-                cr->set_source_rgba(color_speed_text_reverse.get_red(), color_speed_text_reverse.get_green(), color_speed_text_reverse.get_blue(), color_speed_text_reverse.get_alpha());
-            } else {
-                cr->set_source_rgba(color_speed_text_normal.get_red(), color_speed_text_normal.get_green(), color_speed_text_normal.get_blue(), color_speed_text_normal.get_alpha());
-            }
-
-            cr->select_font_face("Sans", Cairo::FONT_SLANT_NORMAL, Cairo::FONT_WEIGHT_BOLD);
-            cr->set_font_size(std::max(14.0, smallest_dim / 12.0));
-
-            Cairo::TextExtents speed_extents;
-            cr->get_text_extents(speed_str, speed_extents);
-            cr->move_to(cx - (speed_extents.width / 2.0 + speed_extents.x_bearing), cy + radius * 0.5); // Position below center
-            if(display_speed_)
-                cr->show_text(speed_str);
-        }
-        else{
-            cr->set_source_rgba(color_speed_text_normal.get_red(), color_speed_text_normal.get_green(), color_speed_text_normal.get_blue(), color_speed_text_normal.get_alpha());
-
-            cr->select_font_face("Sans", Cairo::FONT_SLANT_NORMAL, Cairo::FONT_WEIGHT_BOLD);
-            cr->set_font_size(std::max(14.0, smallest_dim / 12.0));
-
-            Cairo::TextExtents speed_extents;
-            cr->get_text_extents(text_label_, speed_extents);
-            cr->move_to(cx - (speed_extents.width / 2.0 + speed_extents.x_bearing), cy + radius * 0.5); // Position below center
-            if(display_speed_)
-                cr->show_text(text_label_);
-        }
-
-        // 7. Main Label (e.g., "Left Speed")
-        cr->set_source_rgba(label_text.get_red(), label_text.get_green(), label_text.get_blue(), label_text.get_alpha());
-        cr->select_font_face("Sans", Cairo::FONT_SLANT_NORMAL, Cairo::FONT_WEIGHT_NORMAL);
-        cr->set_font_size(std::max(16.0, smallest_dim / 15.0));
-        Cairo::TextExtents label_extents;
-        cr->get_text_extents(label_, label_extents);
-        cr->move_to(cx - (label_extents.width / 2.0 + label_extents.x_bearing), cy + radius + 15 + label_extents.height); // Position below gauge
-        cr->show_text(label_);
-
-        return true;
-    }
-
-private:
-    std::string label_;
-    double speed_;
-    bool reverse_;
-    double min_speed_;
-    double max_speed_;
-    int num_major_divisions_;
-    int num_minor_ticks_per_segment_;
-    bool display_speed_;
-    bool numbers_inside_;
-    bool numbers_on_ticks_;
-    double angle_for_zero_;
-    double angle_for_sweep_;
-    bool low_warning_;
-    double low_warning_thresh_;
-    bool high_warning_;
-    double high_warning_thresh_;
-    bool use_text_label_;
-    std::string text_label_;
-};    
-
-Speedometer* leftSpeedometer;
-Speedometer* rightSpeedometer;
+Speedometer* leftSpeedometer = nullptr;
+Speedometer* rightSpeedometer = nullptr;
 bool displaySpeed = true;
 bool numbersInside = true;
 bool numberTicks = true;
 
 std::string motorDisplayed = "Talon 1";
-Speedometer* voltageDial;
-Speedometer* temperatureDial;
-DrawingArea* positionDial;
-Speedometer* percentDial;
-Speedometer* velocityDial;
-Speedometer* currentDial;
+Speedometer* voltageDial = nullptr;
+Speedometer* temperatureDial = nullptr;
+DrawingArea* positionDial = nullptr;
+Speedometer* percentDial = nullptr;
+Speedometer* velocityDial = nullptr;
+Speedometer* currentDial = nullptr;
 bool displayMotor = false;
+
+ArtificialHorizon* attitudeIndicator = nullptr;
+
+std::map<std::string, Gtk::Label*> motorTelemetryLabels;
+bool showMotorTelemetry = true;
+
+BatteryBar* batteryBar = nullptr;
 
 
 extern "C" void destroy_pixbuf_data(const guint8* data) {
@@ -1526,202 +1077,20 @@ private:
 };
 
 VideoWidget* videoArea;
+VideoWidget* feVideoAreaRobot1 = nullptr;
+VideoWidget* feVideoAreaRobot2 = nullptr;
 
+extern cv::Mat fe_left_frame;
+extern cv::Mat fe_right_frame;
 
-void initRoll(){
-    if(!roll_init){
-        roll_image = Gtk::manage(new Gtk::Image());
-        
-        if(noVideo)
-            sensorBox->add(*roll_image);
-        else
-            bottomLowerBox->add(*roll_image);
-        
-        try{
-            roll_pixbuf = Gdk::Pixbuf::create_from_file("../resources/RobotSide.png");
-        }
-        catch(const Glib::FileError& e){
-            g_print("Failed to load image: %s\n", e.what().c_str());
-            return;
-        }
-
-        if(!noVideo){
-            Gtk::Box* padding = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
-            padding->set_size_request(100, 100);
-            bottomLowerBox->add(*padding);
-        }
-        
-        Glib::RefPtr<Gdk::Pixbuf> newrollpixbuf = rotate_image(roll_pixbuf, roll_rotation_angle, 200, 200);
-        roll_image->set(newrollpixbuf);
-        roll_init = true;
-        window->show_all();
-    }
-}
-
-
-void initPitch(){
-    if(!pitch_init){
-        if(!noVideo){
-            Gtk::Box* padding = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
-            padding->set_size_request(100, 100);
-            bottomLowerBox->add(*padding);
-        }
-        pitch_image = Gtk::manage(new Gtk::Image());
-        if(noVideo)
-            sensorBox->add(*pitch_image);
-        else
-            bottomLowerBox->add(*pitch_image);
-        
-        try{
-            pitch_pixbuf = Gdk::Pixbuf::create_from_file("../resources/RobotBack.png");
-        }
-        catch(const Glib::FileError& e){
-            g_print("Failed to load image: %s\n", e.what().c_str());
-            return;
-        }
-        
-        Glib::RefPtr<Gdk::Pixbuf> newpitchpixbuf = rotate_image(pitch_pixbuf, pitch_rotation_angle, 200, 200);
-        pitch_image->set(newpitchpixbuf);
-        pitch_init = true;
-        window->show_all();
-    }
-}
-
-void initBucketLvl(){
-    if(!bucketLevel_init){
-        Gtk::Box* padding = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
-        padding->set_size_request(100, 100);
-        bottomLowerBox->add(*padding);
-        lvl_image = Gtk::manage(new Gtk::Image());
-        try{
-            lvl_pixbuf = Gdk::Pixbuf::create_from_file("../resources/bucket.png");
-        }
-        catch(const Glib::FileError& e){
-            g_print("Failed to load image: %s\n", e.what().c_str());
-            return;
-        }
-
-        if(noVideo)
-            sensorBox->add(*lvl_image);
-        else
-            bottomLowerBox->add(*lvl_image);
-
-
-        Glib::RefPtr<Gdk::Pixbuf> newlvlpixbuf = rotate_image(lvl_pixbuf, 0, 200, 200);
-        lvl_image->set(newlvlpixbuf);
-        bucketLevel_init = true;
-        window->show_all();
-    }
-}
-
-void initArmPos(){
-    if(!arm_init){
-        Gtk::Box* armTextBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL,2));
-        armBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,5));
-        armBox->set_size_request(110, -1);
-        
-        left_arm = Gtk::manage(new DrawingArea());
-        left_arm->set_size_request(40, 180);
-        left_arm->set_hexpand(true);
-        left_arm->set_halign(Gtk::ALIGN_CENTER);
-        armBox->add(*left_arm);
-        left_arm->show();
-        
-        right_arm = Gtk::manage(new DrawingArea());
-        right_arm->set_size_request(40, 180);
-        right_arm->set_hexpand(true);
-        right_arm->set_halign(Gtk::ALIGN_CENTER);
-        armBox->add(*right_arm);
-        right_arm->show();
-        right_arm->set_height_ratio(0.5);
-        
-        armBox->set_halign(Gtk::ALIGN_CENTER);
-        armBox->set_valign(Gtk::ALIGN_CENTER);
-        
-        armTextBox->add(*armBox);
-        armTextBox->set_halign(Gtk::ALIGN_CENTER);
-        
-        Gtk::Label* armPosLabel = Gtk::manage(new Gtk::Label("L 		R"));
-        Gtk::Label* armLabel = Gtk::manage(new Gtk::Label("Arm Positions"));
-        
-        armPosLabel->set_halign(Gtk::ALIGN_CENTER);    
-        armLabel->set_halign(Gtk::ALIGN_CENTER);
-        
-        armTextBox->add(*armPosLabel);
-        armTextBox->add(*armLabel);
-        
-        if(noVideo)
-            sensorBox->add(*armTextBox);
-        else
-            innerLeftBox->add(*armTextBox);
-
-        arm_init = true;
-        window->show_all();
-    }
-}
-
-
-void initBucketPos(){
-    if(!bucket_init){
-        Gtk::Box* bucketTextBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL,3));
-        bucketBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,20));
-        bucketBox->set_size_request(110, -1);
-        
-        left_bucket = Gtk::manage(new DrawingArea());
-        left_bucket->set_size_request(40, 180);
-        left_bucket->set_hexpand(true);
-        left_bucket->set_halign(Gtk::ALIGN_CENTER);
-        bucketBox->add(*left_bucket);
-        left_bucket->show();
-        
-        right_bucket = Gtk::manage(new DrawingArea());
-        right_bucket->set_size_request(40, 180);
-        right_bucket->set_hexpand(true);
-        right_bucket->set_halign(Gtk::ALIGN_CENTER);
-        bucketBox->add(*right_bucket);
-        right_bucket->show();
-        right_bucket->set_height_ratio(0.5);
-        
-        bucketBox->set_halign(Gtk::ALIGN_CENTER);
-        bucketBox->set_valign(Gtk::ALIGN_CENTER);
-        
-        bucketTextBox->add(*bucketBox);
-        Gtk::Label* bucketPosLabel = Gtk::manage(new Gtk::Label("L 		R"));
-        Gtk::Label* bucketLabel = Gtk::manage(new Gtk::Label("Bucket Positions"));
-        bucketTextBox->add(*bucketPosLabel);
-        bucketTextBox->add(*bucketLabel);
-        
-        if(noVideo)
-            sensorBox->add(*bucketTextBox);
-        else
-            innerRightBox->add(*bucketTextBox);
-        bucket_init = true;
-        window->show_all();
-    }
-}
+std::map<std::string, CircleDrawingArea*> motorCircles;
 
 void setBackgroundColors(Gdk::RGBA color){
-    if(talon1Circle)
-        talon1Circle->set_background_color(color);
-    if(talon3Circle)
-        talon3Circle->set_background_color(color);
-
-    if(falcon1Circle)
-        falcon1Circle->set_background_color(color);
-    if(falcon2Circle)
-        falcon2Circle->set_background_color(color);
-    if(falcon3Circle)
-        falcon3Circle->set_background_color(color);
-    if(falcon4Circle)
-        falcon4Circle->set_background_color(color);
-    if(lowerFalcon1Circle)
-        lowerFalcon1Circle->set_background_color(color);
-    if(lowerFalcon2Circle)
-        lowerFalcon2Circle->set_background_color(color);
-    if(lowerFalcon3Circle)
-        lowerFalcon3Circle->set_background_color(color);
-    if(lowerFalcon4Circle)
-        lowerFalcon4Circle->set_background_color(color);
+    for (auto& kv : motorCircles) {
+        if (kv.second) {
+            kv.second->set_background_color(color);
+        }
+    }
 }
 
 InfoFrame* getInfoFrame(std::string label){
@@ -1744,6 +1113,7 @@ Gtk::Widget* get_flowbox_child_for(Gtk::FlowBox& flowbox, Gtk::Widget* target_wi
     return nullptr;
 }
 
+
 // Dark mode
 std::string darkMode =
     "* { font-family: 'Proxima Nova'; font-weight: bold; }\n"
@@ -1762,45 +1132,40 @@ std::string lightMode =
 std::string generateDarkModeString(const std::string& color) {
     return
         "* { font-family: 'Proxima Nova'; font-weight: bold; }\n"
-    "window { background-color: " + color + "; }\n"
-    "#dark_text, #dark_text label { color: #000000; }\n"
-    "label, button, entry { color: #edf6fa; }\n"
-    "button { border: 1px solid #edf6fa; background-color: transparent; }\n";
+        "window, notebook, box, flowbox { background-color: " + color + "; }\n"
+        "#topControlsBox { background-color: " + darkBackgroundColor + "; }\n"
+        ".edge-panel { background-color: " + darkBackgroundColor + "; }\n"
+        "#dark_text, #dark_text label { color: #000000; }\n"
+        "label, button, entry { color: #edf6fa; }\n"
+        "button { border: 1px solid #edf6fa; background-color: transparent; }\n"
+        
+        "notebook tab { background-color: #2a2a2e; border-color: #444; }\n"
+        "notebook tab label { color: #edf6fa; }\n"
+        "notebook tab:checked { background-color: " + color + "; }\n";
 }
 
 // Light mode
 std::string generateLightModeString(const std::string& color) {
     return
         "* { font-family: 'Proxima Nova'; font-weight: bold }\n"
-    "window { background-color: " + color + "; }\n"
-    "label, button, entry { color: #000000; }\n"
-    "button {  border: 1px solid #000000; background-color: #f0f0f0; }\n";
+        "window, notebook, box, flowbox { background-color: " + color + "; }\n"
+        "#topControlsBox { background-color: " + lightBackgroundColor + "; }\n"
+        ".edge-panel { background-color: " + lightBackgroundColor + "; }\n"
+        "label, button, entry { color: #000000; }\n"
+        "button { border: 1px solid #000000; background-color: #f0f0f0; }\n"
+        
+        "notebook tab { background-color: #e6e6e6; border-color: #cccccc; }\n"
+        "notebook tab label { color: #000000; }\n"
+        "notebook tab:checked { background-color: " + color + "; }\n";
 }
 
-
-void toggleMode() {
-    auto css_provider = Gtk::CssProvider::create();
-    Gdk::RGBA background;
-
-    if (isLightMode) {
-        css_provider->load_from_data(generateDarkModeString(darkBackgroundColor));
-        isLightMode = false;
-        background.set(darkBackgroundColor);
-    } 
-    else {
-        css_provider->load_from_data(generateLightModeString(lightBackgroundColor));
-        isLightMode = true;
-        background.set(lightBackgroundColor);
+void applyEdgePanelStyle(Gtk::Widget* widget) {
+    if (!widget) {
+        return;
     }
-    if(!noVideo)
-        setBackgroundColors(background);
 
-    auto screen = Gdk::Screen::get_default();
-    Gtk::StyleContext::add_provider_for_screen(
-        screen, css_provider, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION
-    );
-} 
-
+    widget->get_style_context()->add_class("edge-panel");
+}
 
 void updateBackgroundColor(InfoFrame* infoFrame, std::string label){
     if(isLightMode){
@@ -1813,6 +1178,123 @@ void updateBackgroundColor(InfoFrame* infoFrame, std::string label){
     }
 }
 
+void toggleMode() {
+    Gdk::RGBA background;
+    isLightMode = !isLightMode;
+
+    auto css_provider = Gtk::CssProvider::create();
+    if (isLightMode) {
+        // FE has no video underlay — use opaque colors so text is readable
+        std::string bg = isFlightEngineer ? lightBackgroundColor : lightBackgroundColorCSS;
+        css_provider->load_from_data(generateLightModeString(bg));
+        background.set(lightBackgroundColor);    
+    }
+    else {
+        std::string bg = isFlightEngineer ? darkBackgroundColor : darkBackgroundColorCSS;
+        css_provider->load_from_data(generateDarkModeString(bg));
+        background.set(darkBackgroundColor);
+    }
+
+    auto screen = Gdk::Screen::get_default();
+    Gtk::StyleContext::add_provider_for_screen(
+        screen, css_provider, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION
+    );
+    
+    for (InfoFrame* frame : infoFrameList) {
+        std::string label = frame->get_label();
+        std::vector<std::string> keys = getKeys(label);
+        for (const std::string& key : keys) {
+            updateBackgroundColor(frame, key);
+        }
+    }
+
+    if (arenaWindow) {
+        auto arena_css = Gtk::CssProvider::create();
+        std::string arena_bg_css = "window { background-color: " + (isLightMode ? lightBackgroundColor : darkBackgroundColor) + "; }";
+        arena_css->load_from_data(arena_bg_css);
+        arenaWindow->get_style_context()->add_provider(arena_css, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+    }
+    
+    if (sensorsWindow) {
+        auto sensors_css = Gtk::CssProvider::create();
+        std::string sensors_bg_css = "window { background-color: " + (isLightMode ? lightBackgroundColor : darkBackgroundColor) + "; }";
+        sensors_css->load_from_data(sensors_bg_css);
+        sensorsWindow->get_style_context()->add_provider(sensors_css, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+    }
+
+    if (simulatorWindow) {
+        auto sim_css = Gtk::CssProvider::create();
+        std::string sim_bg_css = "window { background-color: " + (isLightMode ? lightBackgroundColor : darkBackgroundColor) + "; }";
+        sim_css->load_from_data(sim_bg_css);
+        simulatorWindow->get_style_context()->add_provider(sim_css, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+    }
+
+    if (configWindow) {
+        auto config_css = Gtk::CssProvider::create();
+        std::string config_bg = "window { background-color: " + (isLightMode ? lightBackgroundColor : darkBackgroundColor) + "; }"
+                                " label { color: " + (isLightMode ? std::string("#000000") : std::string("#edf6fa")) + "; }";
+        config_css->load_from_data(config_bg);
+        configWindow->get_style_context()->add_provider(config_css, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+    }
+
+    if(!noVideo) {
+        setBackgroundColors(background);
+    }
+    if (proximityBar) {
+        proximityBar->set_light_mode(isLightMode);
+    }
+    if (attitudeIndicator) attitudeIndicator->set_light_mode(isLightMode);
+    if (batteryBar) batteryBar->set_light_mode(isLightMode);
+    if (armSyncLabel) armSyncLabel->set_light_mode(isLightMode);
+    if (bucketSyncLabel) bucketSyncLabel->set_light_mode(isLightMode);
+    if (left_arm) left_arm->set_light_mode(isLightMode);
+    if (right_arm) right_arm->set_light_mode(isLightMode);
+    if (left_bucket) left_bucket->set_light_mode(isLightMode);
+    if (right_bucket) right_bucket->set_light_mode(isLightMode);
+    if (bucketTiltIndicator) bucketTiltIndicator->set_light_mode(isLightMode);
+    if (bucketHeightIndicator) bucketHeightIndicator->set_light_mode(isLightMode);
+
+    // FE mode: update static labels and grid text colors to match new mode
+    if (isFlightEngineer) {
+        Gdk::RGBA labelColor;
+        if (isLightMode) labelColor.set("black");
+        else             labelColor.set("white");
+
+        // Update FE dashboard labels that use plain text (not colored markup)
+        auto recolorLabel = [&](Gtk::Label* lbl) {
+            if (lbl) lbl->override_color(labelColor);
+        };
+        recolorLabel(feLatencyRobot1);
+        recolorLabel(feLatencyRobot2);
+        recolorLabel(feClock);
+        recolorLabel(feMissionTimer);
+        recolorLabel(feEsp32Config);
+        recolorLabel(feEsp32MotorCount);
+        recolorLabel(feNavR1X);
+        recolorLabel(feNavR1Y);
+        recolorLabel(feNavR2X);
+        recolorLabel(feNavR2Y);
+
+        // Recolor motor grid labels
+        for (int row = 0; row < 16; row++) {
+            for (int col = 0; col < 6; col++) {
+                recolorLabel(feMotorLabels[row][col]);
+            }
+        }
+
+        // Recolor ESP32 motor grid labels
+        for (int row = 0; row < 10; row++) {
+            for (int col = 0; col < 7; col++) {
+                recolorLabel(feEsp32MotorLabels[row][col]);
+            }
+        }
+
+        // Force a dashboard refresh to re-apply colored markup on status labels
+        updateFEDashboard();
+
+        if (window) window->queue_draw();
+    }
+}
 
 void updateBackgroundColor(Gtk::Box* box, bool synced){
     if(synced){
@@ -1827,16 +1309,40 @@ void updateBackgroundColor(Gtk::Box* box, bool synced){
     }
 }
 
-const std::set<std::string> talonLabels = {"Talon 1", "Talon 3"};
-const std::set<std::string> falconLabels = {"Falcon 1", "Falcon 2", "Falcon 3", "Falcon 4"};
+// Config-derived label sets and display name map.
+// These are populated by rebuildConfigDerivedGlobals() after processArguments()
+// selects the active config. They cannot be initialized at file scope because
+// activeConfig may change during argument parsing.
+std::set<std::string> talonLabels;
+std::set<std::string> falconLabels;
+std::set<std::string> krakenLabels;
+std::set<std::string> neoLabels;
+std::map<std::string, std::string> displayNameMap;
 
+void rebuildConfigDerivedGlobals() {
+    talonLabels  = activeConfig.getLabelsForType(MotorType::TALON);
+    falconLabels = activeConfig.getLabelsForType(MotorType::FALCON);
+    krakenLabels = activeConfig.getLabelsForType(MotorType::KRAKEN);
+    neoLabels    = activeConfig.getLabelsForType(MotorType::NEO);
+    displayNameMap = activeConfig.getDisplayNameMap();
+}
+
+CircleDrawingArea** getOrCreateCircle(const std::string& label) {
+    return &motorCircles[label];  // auto-creates entry if missing
+}
+
+CircleDrawingArea* getMotorCircle(const std::string& label) {
+    auto it = motorCircles.find(label);
+    return (it != motorCircles.end()) ? it->second : nullptr;
+}
 
 CircleDrawingArea* getTalonCircle(const std::string& label) {
     if (label == "Talon 1") return talon1Circle;
+    if (label == "Talon 2") return talon2Circle;
     if (label == "Talon 3") return talon3Circle;
+    if (label == "Talon 4") return talon4Circle;
     return nullptr;
 }
-
 
 CircleDrawingArea* getFalconCircle(const std::string& label) {
     if (label == "Falcon 1") return falcon1Circle;
@@ -1854,13 +1360,31 @@ CircleDrawingArea* getLowerFalconCircle(const std::string& label) {
     return nullptr;
 }
 
+CircleDrawingArea* getNeoCircle(const std::string& label) {
+    if (label == "Neo 1") return neo1Circle;
+    if (label == "Neo 2") return neo2Circle;
+    if (label == "Neo 3") return neo3Circle;
+    if (label == "Neo 4") return neo4Circle;
+    return nullptr;
+}
 
-void updateCircleColor(CircleDrawingArea* circle, bool lowVoltage) {
+CircleDrawingArea* getKrakenCircle(const std::string& label) {
+    if (label == "Kraken 1") return kraken1Circle;
+    if (label == "Kraken 2") return kraken2Circle;
+    if (label == "Kraken 3") return kraken3Circle;
+    if (label == "Kraken 4") return kraken4Circle;
+    return nullptr;
+}
+
+
+void updateCircleColor(CircleDrawingArea* circle, bool lowVoltage, bool error) {
     if (!circle || noVideo) return;
 
     Gdk::RGBA color;
-    if (lowVoltage)
+    if (error)
         color.set_rgba(1.0, 0.0, 0.0, 1.0); // Red
+    else if (lowVoltage)
+        color.set_rgba(1.0, 1.0, 0.0, 1.0); // Yellow
     else
         color.set_rgba(0.0, 1.0, 0.0, 1.0); // Green
 
@@ -1874,197 +1398,9 @@ void updateCircleColor(CircleDrawingArea* circle, Gdk::RGBA color) {
 }
 
 
-void handleZedElements(const std::vector<Element>& elements) {
-    for (const auto& element : elements) {
-        if (element.type != TYPE::FLOAT32) continue;
-        float value = element.data.front().float32;
-
-        if (element.label == "roll") {
-            roll_rotation_angle = std::round(value);
-            roll_image->set(rotate_image(roll_pixbuf, -roll_rotation_angle, 200, 200));
-        }
-        else if (element.label == "yaw") {
-            pitch_rotation_angle = std::round(value);
-            pitch_image->set(rotate_image(pitch_pixbuf, pitch_rotation_angle, 200, 200));
-        }
-        else if (element.label == "pitch" && !noArena) {
-            overlay_area->update_image_rotation(value - 90);
-        }
-        else if (element.label == "Z" && !noArena) {
-            overlay_area->update_image_y(value * MULTIPLIER_Y);
-        }
-        else if (element.label == "X" && !noArena) {
-            overlay_area->update_image_x(value * MULTIPLIER_X);
-        }
-    }
-}
-
-void handleDrivetrainElements(const std::vector<Element>& elements) {
-    
-}
-
-void handleTalonElements(const std::string& label, const std::vector<Element>& elements) {
-    for (const auto& element : elements) {
-        if (element.label == "Sensor Position") {
-            int pos = element.data.front().uint16;
-            if (label == "Talon 1") {
-                left_arm_pos = pos;
-                left_arm->set_height_ratio((920 - pos) / 920.0);
-            }
-            else if (label == "Talon 3") {
-                left_bucket_pos = pos;
-                left_bucket->set_height_ratio((700 - pos) / 700.0);
-            }
-
-            bool synced = std::abs(left_arm_pos - right_arm_pos) > 50;
-            if (label == "Talon 1" || label == "Talon 2")
-                updateBackgroundColor(armBox, synced);
-            else
-                updateBackgroundColor(bucketBox, synced);
-
-            if (!noVideo) talonPositionGraph->update_data(label, pos);
-        }
-        else if (element.label == "Bus Voltage") {
-            float voltage = element.data.front().uint16 / 100.0f;
-            if (!noVideo) talonVoltageGraph->update_data(label, voltage);
-            updateCircleColor(getTalonCircle(label), voltage < 15.0f);
-        }
-        else if (element.label == "Output Current") {
-            float current = element.data.front().uint16 / 100.0f;
-            if (!noVideo) talonCurrentGraph->update_data(label, current);
-        }
-        else if (element.label == "Output Percent") {
-            float percent = element.data.front().float32;
-            if (!noVideo) talonOutputGraph->update_data(label, percent);
-        }
-    }
-}
-
-void handleFalconElements(const std::string& label, const std::vector<Element>& elements) {
-    for (const auto& element : elements) {
-        if (element.label == "Bus Voltage") {
-            float voltage = element.data.front().uint16 / 100.0f;
-            if (!noVideo) falconVoltageGraph->update_data(label, voltage);
-            updateCircleColor(getFalconCircle(label), voltage < 15.0f);
-        }
-        else if (element.label == "Output Current") {
-            float current = element.data.front().uint16 / 100.0f;
-            if (!noVideo) falconCurrentGraph->update_data(label, current);
-        }
-        else if (element.label == "Output Percent") {
-            float percent = element.data.front().float32;
-            if (!noVideo) falconOutputGraph->update_data(label, percent);
-            if(label == "Falcon 2" || label == "Falcon 4"){
-                leftSpeedometer->set_speed(percent * 100.0);
-            }
-            if(label == "Falcon 1" || label == "Falcon 3"){
-                rightSpeedometer->set_speed(percent * 100.0);
-            }
-        }
-        else if (element.label == "Error"){
-            bool error = element.data.front().boolean;
-            updateCircleColor(getLowerFalconCircle(label), error);
-        }
-    }
-}
-
-void handleCommunicationElements(InfoFrame* frame, const std::vector<Element>& elements) {
-    for (const auto& element : elements) {
-        if (element.label != "Wi-Fi" && element.label != "CAN Bus") continue;
-
-        std::string text;
-        for (const auto& c : element.data) text += c.character;
-
-        if (text == "NON-FUNCTIONAL" || text == "INTERFERENCE" || text == "DOWN") {
-            frame->setBackground(element.label, "#FF0000");
-            frame->setTextColor(element.label, "white", true);
-        }
-        else {
-            updateBackgroundColor(frame, element.label);
-        }
-    }
-}
-
-
-void handleAutonomyElements(const std::string& label, const std::vector<Element>& elements) {
-    int destX = -1;
-    int destY = -1;
-    for (const auto& element : elements) {
-        if (element.label == "Dest X") {
-            destX = element.data.front().float32 * MULTIPLIER_X;
-            if(destY != -1){
-                overlay_area->add_dest_loc(destX, destY);
-                break;
-            }
-        }
-        else if(element.label == "Dest Z"){
-            destY = element.data.front().float32 * MULTIPLIER_Y;
-            if(destX != -1){
-                overlay_area->add_dest_loc(destX, destY);
-                break;
-            }
-        }
-    }
-}
-
-
-std::map<std::string, bool>& getMap(std::string label){
-    if(label.rfind("Talon", 0) == 0){
-        return talon_values;
-    }
-    if(label.rfind("Falcon", 0) == 0){
-        return falcon_values;
-    }
-    if(label.rfind("Linear", 0) == 0){
-        return linear_values;
-    }
-    if(label.rfind("Autonomy", 0) == 0){
-        return autonomy_values;
-    }
-    if(label.rfind("Communication", 0) == 0){
-        return communication_values;
-    }
-    if(label.rfind("Power2", 0) == 0){
-        return power2_values;
-    }
-    else if(label.rfind("Power", 0) == 0){
-        return power_values;
-    }
-    if(label.rfind("Zed", 0) == 0){
-        return zed_values;
-    }
-    if(label.rfind("Drivetrain", 0) == 0){
-        return drivetrain_values;
-    }
-    return talon_values;
-}
-
-std::map<std::string, std::vector<std::string>*> key_vectors = {
-    {"Talon", &talon_keys},
-    {"Falcon", &falcon_keys},
-    {"Linear", &linear_keys},
-    {"Autonomy", &autonomy_keys},
-    {"Communication", &communication_keys},
-    {"Power2", &power2_keys},
-    {"Power", &power_keys},
-    {"Zed", &zed_keys},
-    {"Drivetrain", &drivetrain_keys}
-};
-
-std::vector<std::string> getKeys(const std::string& label) {
-    if(label == "Power2"){
-        return power2_keys;
-    }
-    for (const auto& [prefix, keys_ptr] : key_vectors) {
-        if (label.rfind(prefix, 0) == 0) {
-            return *keys_ptr;
-        }
-    }
-    return talon_keys;
-}
-
+/* Functions associated with the motor details window */
 bool updateMotorDetails = false;
-
+bool allowMotorsDoubleClick = true;
 void updateMotor(std::string label, const std::vector<Element>& elements) {
     if(label != motorDisplayed)
         return;
@@ -2098,105 +1434,10 @@ void updateMotor(std::string label, const std::vector<Element>& elements) {
     }
 }
 
-
-void handleGenericElements(std::string label, InfoFrame* frame, const std::vector<Element>& elements) {
-    std::map<std::string, bool>& values = getMap(label);
-    for (const auto& element : elements) {
-        auto it = values.find(element.label);
-        if(it == values.end() || !it->second)
-            continue;
-        const auto& value = element.data.front();
-
-        if (element.type == TYPE::BOOLEAN)       frame->setItem(element.label, value.boolean);
-        else if (element.type == TYPE::UINT8)     frame->setItem(element.label, value.uint8);
-        else if (element.type == TYPE::INT8)      frame->setItem(element.label, value.int8);
-        else if (element.type == TYPE::UINT16) {
-            if(element.label == "Bus Voltage" || element.label == "Output Current"){
-                float val = value.uint16 / 100.0f;
-                if (element.label == "Bus Voltage" && val < 15.0f) {
-                    frame->setBackground(element.label, "#FF0000");
-                    frame->setTextColor(element.label, "white", true);
-                }
-                else updateBackgroundColor(frame, element.label);
-                frame->setItem(element.label, val);
-            }
-            else{
-                frame->setItem(element.label, value.uint16);
-            }
-
-        }
-        else if (element.type == TYPE::INT16)     frame->setItem(element.label, value.int16);
-        else if (element.type == TYPE::UINT32)    frame->setItem(element.label, value.uint32);
-        else if (element.type == TYPE::INT32)     frame->setItem(element.label, value.int32);
-        else if (element.type == TYPE::UINT64)    frame->setItem(element.label, value.uint64);
-        else if (element.type == TYPE::INT64)     frame->setItem(element.label, value.int64);
-        else if (element.type == TYPE::FLOAT32)   frame->setItem(element.label, value.float32);
-        else if (element.type == TYPE::FLOAT64)   frame->setItem(element.label, value.float64);
-        else if (element.type == TYPE::STRING) {
-            std::string text;
-            for (const auto& c : element.data) text += c.character;
-            frame->setItem(element.label, text);
-        }
-    }
-    frame->show_all();
-}
-
-const std::unordered_set<std::string> validLabels = {
-    "Falcon 1", "Falcon 2", "Falcon 3", "Falcon 4",
-    "Talon 1", "Talon 2", "Talon 3", "Talon 4",
-    "Linear 1", "Linear 2", "Linear 3", "Linear 4",
-    "Zed", "Autonomy", "Communication", "Power", "Power2", "Drivetrain"
-};
-
-void addElementToInfoFrame(InfoFrame* frame, const Element& element) {
-    frame->addItem(element.label);
-    const auto& data = element.data.front();
-    switch (element.type) {
-        case TYPE::BOOLEAN:   frame->setItem(element.label, data.boolean); break;
-        case TYPE::INT8:      frame->setItem(element.label, data.int8); break;
-        case TYPE::UINT8:     frame->setItem(element.label, data.uint8); break;
-        case TYPE::INT16:     frame->setItem(element.label, data.int16); break;
-        case TYPE::UINT16:
-            if (element.label == "Bus Voltage" || element.label == "Output Current")
-                frame->setItem(element.label, data.uint16 / 100.0f);
-            else
-                frame->setItem(element.label, data.uint16);
-            break;
-        case TYPE::INT32:     frame->setItem(element.label, data.int32); break;
-        case TYPE::UINT32:    frame->setItem(element.label, data.uint32); break;
-        case TYPE::INT64:     frame->setItem(element.label, data.int64); break;
-        case TYPE::UINT64:    frame->setItem(element.label, data.uint64); break;
-        case TYPE::FLOAT32:   frame->setItem(element.label, data.float32); break;
-        case TYPE::FLOAT64:   frame->setItem(element.label, data.float64); break;
-        case TYPE::STRING: {
-            std::string text;
-            for (const auto& c : element.data) text += c.character;
-            frame->setItem(element.label, text);
-            break;
-        }
-        default: break;
-    }
-}
-
-
-void addElementToInfoFrame(std::string label, InfoFrame* frame, const Element& element) {
-    std::map<std::string, bool>& values = getMap(label);
-    auto it = values.find(element.label);
-    bool end = it == values.end();
-    if(it == values.end() || !it->second){
-        return;
-    }
-
-    addElementToInfoFrame(frame, element);
-}
-
-bool allowMotorsDoubleClick = true;
-
-
 Speedometer* createDial(std::string label, double min_speed, double max_speed, 
                         int major_divisions, int minor_ticks, double zero_angle, double sweep){
     auto speedometer = Gtk::manage(new Speedometer(label));
-    speedometer->set_size_request(300, 300);
+    speedometer->set_size_request(300 * GUI_SCALE, 300 * GUI_SCALE);
     speedometer->set_display_speed(displaySpeed);
     speedometer->set_numbers_inside(numbersInside);
     speedometer->set_numbers_on_ticks(numberTicks);
@@ -2210,8 +1451,6 @@ Speedometer* createDial(std::string label, double min_speed, double max_speed,
     return speedometer;
 }
 
-// TODO: Figure out what information should be displayed here and 
-// how it should be displayed
 void create_motor_detail_window(const std::string& label){
     motorDisplayed = label;
     motorWindow = new Gtk::Window();
@@ -2281,6 +1520,9 @@ void create_motor_detail_window(const std::string& label){
     motorWindow->signal_hide().connect([]() {
         allowMotorsDoubleClick = true;
         updateMotorDetails = false;
+        motorWindow->hide();
+        delete motorWindow; 
+        motorWindow = nullptr;
     });
 
     motorWindow->show_all_children();
@@ -2299,6 +1541,1297 @@ bool onMotorClick(GdkEventButton* event, const std::string& label){
     return false;
 }
 
+
+/*** Functions associated with GUI initialization ***/
+/**
+ * Creates a position indicator widget composed of two vertical bars and labels.
+ */
+Gtk::Box* createPositionIndicator(const std::string& title, int spacing,
+                                  PositionBar*& left_indicator,
+                                  PositionBar*& right_indicator,
+                                  Gtk::Box*& container_box,
+                                  SyncStatusLabel*& sync_label,
+                                  int max_val = 920,
+                                  int box_width = 110,
+                                  int indicator_width = 40,
+                                  int indicator_height = 200)
+{
+    auto text_box = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 2));
+    container_box = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, spacing));
+    container_box->set_size_request(box_width * GUI_SCALE, -1);
+ 
+    left_indicator = Gtk::manage(new PositionBar());
+    left_indicator->set_size_request(indicator_width * GUI_SCALE, indicator_height * GUI_SCALE);
+    left_indicator->set_range(0, max_val);
+    left_indicator->set_warning_limits(max_val / 10, max_val * 9 / 10);
+    left_indicator->set_light_mode(isLightMode);
+    left_indicator->set_hexpand(true);
+    left_indicator->set_halign(Gtk::ALIGN_CENTER);
+    container_box->add(*left_indicator);
+    left_indicator->show();
+ 
+    right_indicator = Gtk::manage(new PositionBar());
+    right_indicator->set_size_request(indicator_width * GUI_SCALE, indicator_height * GUI_SCALE);
+    right_indicator->set_range(0, max_val);
+    right_indicator->set_warning_limits(max_val / 10, max_val * 9 / 10);
+    right_indicator->set_light_mode(isLightMode);
+    right_indicator->set_hexpand(true);
+    right_indicator->set_halign(Gtk::ALIGN_CENTER);
+    container_box->add(*right_indicator);
+    right_indicator->show();
+ 
+    container_box->set_halign(Gtk::ALIGN_CENTER);
+    container_box->set_valign(Gtk::ALIGN_CENTER);
+ 
+    text_box->add(*container_box);
+    text_box->set_halign(Gtk::ALIGN_CENTER);
+ 
+    auto pos_label = Gtk::manage(new Gtk::Label("L         R"));
+    auto title_label = Gtk::manage(new Gtk::Label(title));
+    pos_label->set_halign(Gtk::ALIGN_CENTER);
+    title_label->set_halign(Gtk::ALIGN_CENTER);
+ 
+    text_box->add(*pos_label);
+    text_box->add(*title_label);
+ 
+    // Sync status badge
+    sync_label = Gtk::manage(new SyncStatusLabel());
+    sync_label->set_light_mode(isLightMode);
+    sync_label->set_halign(Gtk::ALIGN_CENTER);
+    text_box->add(*sync_label);
+ 
+    return text_box;
+}
+ 
+Gtk::Box* createSinglePositionIndicator(const std::string& title,
+                                         PositionBar*& indicator,
+                                         int max_val = 920,
+                                         int indicator_width = 40,
+                                         int indicator_height = 200)
+{
+    auto text_box = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 2));
+    text_box->set_halign(Gtk::ALIGN_CENTER);
+ 
+    indicator = Gtk::manage(new PositionBar());
+    indicator->set_size_request(indicator_width * GUI_SCALE, indicator_height * GUI_SCALE);
+    indicator->set_range(0, max_val);
+    indicator->set_warning_limits(max_val / 10, max_val * 9 / 10);
+    indicator->set_light_mode(isLightMode);
+    indicator->set_hexpand(false);
+    indicator->set_halign(Gtk::ALIGN_CENTER);
+    text_box->add(*indicator);
+    indicator->show();
+ 
+    auto title_label = Gtk::manage(new Gtk::Label(title));
+    title_label->set_halign(Gtk::ALIGN_CENTER);
+    text_box->add(*title_label);
+ 
+    return text_box;
+}
+
+/**
+ * Creates and initializes an image widget from a file.
+ */
+bool createImageIndicator(Gtk::Image*& image_widget, Glib::RefPtr<Gdk::Pixbuf>& pixbuf, 
+                          const std::string& file_path, Gtk::Container* parent, double initial_rotation,
+                          int high_angle, int low_angle, int target_size = 200)
+{
+    if(activeConfig.findMechanism("Bucket")){
+        image_widget = Gtk::manage(new Gtk::Image());
+        try {
+            pixbuf = Gdk::Pixbuf::create_from_file(file_path);
+        } catch(const Glib::FileError& e) {
+            g_print("Failed to load image: %s\n", e.what().c_str());
+            return false;
+        }
+            parent->add(*image_widget);
+            Glib::RefPtr<Gdk::Pixbuf> new_pixbuf = rotate_image(pixbuf, initial_rotation, target_size, target_size, high_angle, low_angle);
+            image_widget->set(new_pixbuf);
+    }
+    return true;
+}
+
+static void center_image_widget(Gtk::Image* image_widget) {
+    if (!image_widget) return;
+    image_widget->set_hexpand(true);
+    image_widget->set_vexpand(true);
+    image_widget->set_halign(Gtk::ALIGN_CENTER);
+    image_widget->set_valign(Gtk::ALIGN_CENTER);
+}
+
+void initRoll() {
+    if (!roll_init) {
+        if (isFlightEngineer) {
+            roll_init = true;
+            return;
+        }
+        attitudeIndicator = Gtk::manage(new ArtificialHorizon("Attitude"));
+        attitudeIndicator->set_size_request(ROLL_PITCH_IMAGE_SIZE * GUI_SCALE,
+                                             (ROLL_PITCH_IMAGE_SIZE + 30) * GUI_SCALE);
+        attitudeIndicator->set_warning_angles(30.0, -30.0);
+        attitudeIndicator->set_light_mode(isLightMode);
+        attitudeIndicator->set_halign(Gtk::ALIGN_CENTER);
+        attitudeIndicator->set_valign(Gtk::ALIGN_END);
+
+        Gtk::Container* parent = noVideo
+            ? static_cast<Gtk::Container*>(sensorBox)
+            : (rollImagePlaceholder
+                ? static_cast<Gtk::Container*>(rollImagePlaceholder)
+                : static_cast<Gtk::Container*>(bottomLowerBox));
+
+        parent->add(*attitudeIndicator);
+        roll_init = true;
+        pitch_init = true;  // Combined widget handles both axes
+        window->show_all();
+    }
+}
+
+void initPitch() {
+    // Combined attitude indicator is created by initRoll().
+    // This function exists so existing call sites don't break.
+    if (!pitch_init && !roll_init) {
+        initRoll();
+    }
+    pitch_init = true;
+}
+
+void initMechanisms() {
+    for (const auto& mech : activeConfig.mechanisms) {
+        if (mech.name == "Arm") {
+            if (mech.mode == MechanismMode::PAIRED) {
+                auto* widget = createPositionIndicator("Arm Positions", 4,
+                    left_arm, right_arm, armBox, armSyncLabel,
+                    mech.sensorMax, 90, 28, 200);
+            }
+            else if (mech.mode == MechanismMode::SINGLE) {
+                auto* widget = createSinglePositionIndicator(
+                    "Arm Position", left_arm, mech.sensorMax, 40, 200);
+            }
+            // NONE mode: do nothing
+            arm_init = true;
+        }
+        else if (mech.name == "Bucket") {
+            // Same pattern
+            bucket_init = true;
+        }
+    }
+    // If no Arm mechanism defined, arm_init stays false until data arrives
+    // and the lazy init in updateGUI handles it — or just set the flag:
+    if (!activeConfig.findMechanism("Arm")) arm_init = true;
+    if (!activeConfig.findMechanism("Bucket")) bucket_init = true;
+}
+void initBucketLvl() {
+    if (!bucketLevel_init) {
+        if (!noVideo && !isFlightEngineer) {
+            auto* padding = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
+            padding->set_size_request(100, 100);
+            bottomLowerBox->add(*padding);
+        }
+
+        Gtk::Container* parent = noVideo ? static_cast<Gtk::Container*>(sensorBox) : bottomLowerBox;
+        if (createImageIndicator(lvl_image, lvl_pixbuf, "../resources/newbucket.png", parent, 0, 30, -30)) {
+            bucketLevel_init = true;
+            window->show_all();
+        }
+    }
+}
+
+void initArmPos() {
+    if (!arm_init) {
+        if (isFlightEngineer) {
+            arm_init = true;
+            return;
+        }
+        if (dumpBot) {
+            arm_init = true;
+            return;
+        }
+ 
+        Gtk::Widget* arm_widget;
+        if (backupBot) {
+            arm_widget = createSinglePositionIndicator("Arm Position", left_arm, 920, 40, 200);
+        }
+        else {
+            arm_widget = createSinglePositionIndicator("Arm Position", left_arm, 920, 40, 200);
+            
+            // Currently the primary and backup bot both have a single arm actuator
+            // This might change depending on the new bot design
+            //arm_widget = createPositionIndicator(
+            //    "Arm Positions", 4,
+            //    left_arm, right_arm, armBox, armSyncLabel,
+            //    920, 90, 28, 200);
+        }
+ 
+        if (noVideo)
+            sensorBox->add(*arm_widget);
+        else if (armPositionPlaceholder)
+            armPositionPlaceholder->add(*arm_widget);
+        else
+            innerLeftBox->add(*arm_widget);
+ 
+        arm_init = true;
+        window->show_all();
+    }
+}
+
+void initBucketPos() {
+    if (!bucket_init) {
+        if (isFlightEngineer) {
+            bucket_init = true;
+            return;
+        }
+        if (dumpBot) {
+            bucket_init = true;
+            return;
+        }
+ 
+        Gtk::Widget* bucket_widget;
+        if (backupBot) {
+            bucket_widget = createSinglePositionIndicator("Bucket Position", left_bucket, 920, 40, 180);
+        }
+        else {
+            bucket_widget = createSinglePositionIndicator("Bucket Position", left_bucket, 920, 40, 180);
+            //bucket_widget = createPositionIndicator(
+            //    "Bucket Positions", 20,
+            //    left_bucket, right_bucket, bucketBox, bucketSyncLabel,
+            //    700, 110, 40, 180);
+        }
+ 
+        if (noVideo)
+            sensorBox->add(*bucket_widget);
+        else
+            innerRightBox->add(*bucket_widget);
+ 
+        bucket_init = true;
+        window->show_all();
+    }
+}
+
+void initBucketElevation() {
+    if (!bucketElevation_init) {
+        if (isFlightEngineer) {
+            bucketElevation_init = true;
+            return;
+        }
+        if (dumpBot) {
+            bucketElevation_init = true;
+            return;
+        }
+
+        bucketHeightIndicator = Gtk::manage(new BucketHeightIndicator("Bucket Height"));
+
+        // Per-bot geometry (cm) — same values the old updateBucketElevationBar
+        // used. Keep these in sync if the hardware changes.
+        if (backupBot) {
+            bucketHeightIndicator->set_geometry_cm(16.375, 80.0, 38.1);
+        } else { // primaryBot
+            bucketHeightIndicator->set_geometry_cm(17.0, 68.3, 30.9);
+        }
+
+        // Caution within 5 cm of ground, red at/below ground.
+        bucketHeightIndicator->set_thresholds_cm(5.0, 0.0);
+        bucketHeightIndicator->set_light_mode(isLightMode);
+        bucketHeightIndicator->set_halign(Gtk::ALIGN_CENTER);
+        bucketHeightIndicator->set_valign(Gtk::ALIGN_CENTER);
+        bucketHeightIndicator->set_size_request(260 * GUI_SCALE, 240 * GUI_SCALE);
+
+        if (noVideo)
+            sensorBox->add(*bucketHeightIndicator);
+        else
+            innerRightBox->add(*bucketHeightIndicator);
+
+        bucketElevation_init = true;
+        window->show_all();
+    }
+}
+
+void initBucketRot() {
+    if (!bucketRot_init) {
+        if (isFlightEngineer) {
+            return;
+        }
+        if (!activeConfig.findMechanism("Bucket")) {
+            bucketRot_init = true;
+            return;
+        }
+
+        Gtk::Container* parent = noVideo ? static_cast<Gtk::Container*>(sensorBox)
+                                         : (bucketTiltPlaceholder ? static_cast<Gtk::Container*>(bucketTiltPlaceholder)
+                                                                  : static_cast<Gtk::Container*>(innerLeftBox));
+
+        bucketTiltIndicator = Gtk::manage(new BucketTiltIndicator("Bucket Tilt"));
+        bucketTiltIndicator->set_size_request(
+            BUCKET_TILT_IMAGE_SIZE * GUI_SCALE,
+            (BUCKET_TILT_IMAGE_SIZE + 40) * GUI_SCALE);
+
+        // URDF Bucket_Joint allows -0.45 .. 2.2 rad (-26 .. +126 deg).
+        // We're measuring world-frame tilt (roll + arm + bucket), so leave
+        // a bit of margin past the joint limit. Tune to taste.
+        bucketTiltIndicator->set_warning_angles(-30.0, 130.0);
+        bucketTiltIndicator->set_caution_margin(15.0);
+        bucketTiltIndicator->set_light_mode(isLightMode);
+        bucketTiltIndicator->set_halign(Gtk::ALIGN_CENTER);
+        bucketTiltIndicator->set_valign(Gtk::ALIGN_CENTER);
+
+        parent->add(*bucketTiltIndicator);
+        bucketRot_init = true;
+        window->show_all();
+    }
+}
+
+void updateMotorTelemetry(const std::string& display_name, float voltage, float current) {
+    auto it = motorTelemetryLabels.find(display_name);
+    if (it == motorTelemetryLabels.end() || !it->second) return;
+ 
+    char buf[32];
+    std::snprintf(buf, sizeof(buf), "%.1fV  %.1fA", voltage, current);
+    it->second->set_text(buf);
+ 
+    Gdk::RGBA color;
+    if (voltage < LOW_VOLTAGE) {
+        color.set_rgba(0.94, 0.27, 0.27, 1.0);
+    } else if (voltage < LOW_VOLTAGE + 1.0f) {
+        color.set_rgba(0.98, 0.75, 0.17, 1.0);
+    } else {
+        color.set_rgba(0.29, 0.85, 0.50, 1.0);
+    }
+    it->second->override_color(color);
+}
+
+/*** Functions associated with GUI Updates ***/
+const std::unordered_set<std::string> validLabels = {
+    "Falcon 1", "Falcon 2", "Falcon 3", "Falcon 4",
+    "Talon 1", "Talon 2", "Talon 3", "Talon 4",
+    "Neo 1", "Neo 2", "Neo 3", "Neo 4",
+    "Kraken 1", "Kraken 2", "Kraken 3", "Kraken 4",
+    "Linear 1", "Linear 2", "Linear 3", "Linear 4",
+    "Zed", "Autonomy", "Communication", "Power", "Power2", "Drivetrain", "Lidar"
+};
+
+void addElementToInfoFrame(std::string label, InfoFrame* frame, const Element& element) {
+    std::map<std::string, bool>& values = getMap(label);
+    auto it = values.find(element.label);
+    bool end = it == values.end();
+    if(it == values.end() || !it->second){
+        return;
+    }
+
+    addElementToInfoFrame(frame, element);
+}
+
+void updateBucketRotationImage() {
+    // Offset calibrated from real measurements:
+    // arm=900 + bucket=0   -> +45 deg
+    // arm=900 + bucket=900 -> -40 deg
+    // bucket slope = -85.0 over 900 units.
+    // At arm=900: arm_angle=+48.89, bucket_angle=+1.89, sum=50.78 -> offset = 45 - 50.78 = -5.78
+    static constexpr double BUCKET_ANGLE_OFFSET = -5.78;
+    bucket_rotation_angle = -roll_rotation_angle + arm_angle_deg + bucket_angle_deg + BUCKET_ANGLE_OFFSET;
+
+    if (bucketTiltIndicator) {
+        bucketTiltIndicator->set_angle(bucket_rotation_angle);
+    }
+}
+
+void updateBucketElevationBar() {
+    /*
+    Bucket-tip height above ground (cm) is computed inside the widget,
+    using the per-bot geometry (H, L_arm, L_bucket) set at init time:
+        height = H - L_arm * sin(arm) - L_bucket * sin(arm + bucket)
+    Here we just hand it the live angles and let it redraw.
+    */
+    if (!bucketHeightIndicator) return;
+    bucketHeightIndicator->set_angles_deg(arm_angle_deg, bucket_angle_deg);
+    bucket_elevation_height = static_cast<int>(bucketHeightIndicator->height_cm());
+}
+
+/*
+The following functions with the names handleNodeElements handle any 
+specific logic that is required to update any widgets that use the 
+values from the node. The Generic elements function then updates the 
+values displayed in the sensors tab.
+*/
+void handleZedElements(const std::vector<Element>& elements) {
+    float yaw_val = 0, x_val = 0, y_val = 0;
+    for (const auto& element : elements) {
+        if (element.type != TYPE::FLOAT32) continue;
+        float value = element.data.front().float32;
+
+        if (element.label == "yaw") {
+            pitch_rotation_angle = std::round(value);
+            yaw_val = value;
+            if (attitudeIndicator) attitudeIndicator->set_pitch(pitch_rotation_angle);
+        }
+        else if (element.label == "Z") {
+            robot_y_m = -value;
+            y_val = -value;
+        }
+        else if (element.label == "X") {
+            robot_x_m = -value;
+            x_val = -value;
+        }
+        else if (element.label == "pitch") {
+            robot_pitch_rad = value * (M_PI / 180.0);
+        }
+        else if (element.label == "roll") {
+            roll_rotation_angle = std::round(value);
+            if (attitudeIndicator) attitudeIndicator->set_roll(-roll_rotation_angle);
+        
+            updateBucketRotationImage();
+        }
+    }
+
+    /* FE: update navigation labels — route to R1 or R2 based on source */
+    if (isFlightEngineer) {
+        bool r1 = lastPacketFromRobot1();
+        char buf[16];
+        Gtk::Label* lRoll  = r1 ? feNavR1Roll  : feNavR2Roll;
+        Gtk::Label* lPitch = r1 ? feNavR1Pitch : feNavR2Pitch;
+        Gtk::Label* lYaw   = r1 ? feNavR1Yaw   : feNavR2Yaw;
+        Gtk::Label* lX     = r1 ? feNavR1X     : feNavR2X;
+        Gtk::Label* lY     = r1 ? feNavR1Y     : feNavR2Y;
+        if (lRoll)  { snprintf(buf, sizeof(buf), "%.1f", roll_rotation_angle); lRoll->set_text(std::string(buf) + "\u00B0"); }
+        if (lPitch) { snprintf(buf, sizeof(buf), "%.1f", (float)(robot_pitch_rad * 180.0 / M_PI)); lPitch->set_text(std::string(buf) + "\u00B0"); }
+        if (lYaw)   { snprintf(buf, sizeof(buf), "%.1f", yaw_val); lYaw->set_text(std::string(buf) + "\u00B0"); }
+        if (lX)     { snprintf(buf, sizeof(buf), "%.3f", x_val); lX->set_text(buf); }
+        if (lY)     { snprintf(buf, sizeof(buf), "%.3f", y_val); lY->set_text(buf); }
+    }
+}
+
+void handleDrivetrainElements(const std::vector<Element>& elements) {
+    
+}
+
+void handleLidarElements(const std::vector<Element>& elements) {
+    for (const auto& element : elements) {
+        if (element.label == "Distance") {
+            float distance_m = 0.0f;
+            if (element.type == TYPE::UINT16) {
+                distance_m = element.data.front().uint16 / 1000.0f;
+            }
+ 
+            if (proximityBar) {
+                proximityBar->set_distance(distance_m);
+            }
+
+            if (isFlightEngineer) {
+                Gtk::Label* lbl = lastPacketFromRobot1() ? feLidarR1 : feLidarR2;
+                if (lbl) {
+                    char buf[16];
+                    snprintf(buf, sizeof(buf), "%.3f m", distance_m);
+                    lbl->set_text(buf);
+                }
+            }
+        }
+    }
+}
+
+struct MotorState {
+    bool error = false;
+    bool lowVoltage = false;
+    float voltage = 0.0f;
+    float current = 0.0f;
+    float outputPct = 0.0f;
+    uint16_t temperature = 0;
+    int position = 0;
+    bool hasData = false;
+    std::string displayName;
+    std::chrono::high_resolution_clock::time_point lastUpdate;
+};
+
+std::map<std::string, MotorState> motorStates;
+
+/* Helper to update the global motorStates from any motor handler */
+static void updateMotorStateEntry(const std::string& label, float voltage, float current, float outputPct, uint16_t temperature, int position, bool error, bool lowVoltage) {
+    auto& ms = motorStates[label];
+    ms.voltage = voltage;
+    ms.current = current;
+    ms.outputPct = outputPct;
+    ms.temperature = temperature;
+    ms.position = position;
+    ms.error = error;
+    ms.lowVoltage = lowVoltage;
+    ms.hasData = true;
+    ms.lastUpdate = std::chrono::high_resolution_clock::now();
+    auto nameIt = displayNameMap.find(label);
+    if (nameIt != displayNameMap.end()) ms.displayName = nameIt->second;
+}
+
+void handleTalonElements(const std::string& label, const std::vector<Element>& elements) {
+    // Seed from existing cached state so fields not present in this (diff) packet
+    // are preserved instead of being overwritten with zero. The comms node only
+    // sends fields whose values have changed; absence means "unchanged".
+    auto& msPrev = motorStates[label];
+    float    voltage_val  = msPrev.voltage;
+    float    current_val  = msPrev.current;
+    float    output_pct   = msPrev.outputPct;
+    uint16_t temp_val     = msPrev.temperature;
+    int      position_val = msPrev.position;
+    bool     lowVoltage   = msPrev.lowVoltage;
+    for (const auto& element : elements) {
+        if (element.label == "Sensor Position") {
+            int pos = element.data.front().uint16;
+            position_val = pos;
+            if (label == "Talon 1") {
+                left_arm_pos = pos;
+                if (left_arm) left_arm->set_position(pos);
+                arm_angle_deg = ((pos - 20) / 900.0) * 50.0;
+                updateBucketRotationImage();
+                updateBucketElevationBar();
+                if (proximityBar) {
+                    proximityBar->set_arm_position(pos);
+                }
+            }
+            else if (label == "Talon 2") {
+                right_arm_pos = pos;
+                if (right_arm) right_arm->set_position(pos);
+            }
+            else if (label == "Talon 3") {
+                left_bucket_pos = pos;
+                if (left_bucket) left_bucket->set_position(pos);
+
+                bucket_angle_deg = ((pos - 20) / 900.0) * -85.0;
+
+                updateBucketRotationImage();
+                updateBucketElevationBar();
+            }
+            else if (label == "Talon 4") {
+                right_bucket_pos = pos;
+                if (right_bucket) right_bucket->set_position(pos);
+            }
+
+            if (label == "Talon 1" || label == "Talon 2"){
+                if (armSyncLabel) armSyncLabel->update(left_arm_pos, right_arm_pos, 50);
+            }
+            else{
+                if (bucketSyncLabel) bucketSyncLabel->update(left_bucket_pos, right_bucket_pos, 50);
+            }
+            if (!noVideo && !isFlightEngineer) talonPositionGraph->update_data(label, pos);
+        }
+        else if (element.label == "Bus Voltage") {
+            float voltage = element.data.front().uint16 / 100.0f;
+            voltage_val = voltage;
+            if (!noVideo && !isFlightEngineer) talonVoltageGraph->update_data(label, voltage);
+            lowVoltage = voltage < LOW_VOLTAGE;
+            if (batteryBar) batteryBar->report_voltage(label, voltage);
+        }
+        else if (element.label == "Output Current") {
+            float current = element.data.front().uint16 / 100.0f;
+            current_val = current;
+            if (!noVideo && !isFlightEngineer) talonCurrentGraph->update_data(label, current);
+        }
+        else if (element.label == "Output Percent") {
+            float percent = element.data.front().float32;
+            output_pct = percent;
+            if (!noVideo && !isFlightEngineer) talonOutputGraph->update_data(label, percent);
+        }
+        else if (element.label == "Temperature") {
+            temp_val = element.data.front().uint16;
+        }
+    }
+    updateCircleColor(getMotorCircle(label), false, lowVoltage);
+    updateMotorStateEntry(label, voltage_val, current_val, output_pct, temp_val, position_val, false, lowVoltage);
+
+    auto nameIt = displayNameMap.find(label);
+    if (nameIt != displayNameMap.end()) {
+        updateMotorTelemetry(nameIt->second, voltage_val, current_val);
+    }
+    if (isFlightEngineer) {
+        std::string feLabel = (lastPacketFromRobot1() ? "R1 " : "R2 ") + label;
+        feUpdateMotorRow(feLabel, voltage_val, current_val, output_pct, position_val, false, lowVoltage);
+    }
+}
+
+/* ============================================================
+ * Motor Status Dashboard — replaces the old time-series graphs
+ * in the sensors window with a status-at-a-glance grid.
+ * ============================================================ */
+Gtk::Label* dashAlertLabel = nullptr;
+Gtk::Label* dashHealthVoltage = nullptr;
+Gtk::Label* dashHealthCurrent = nullptr;
+Gtk::Label* dashHealthTemp = nullptr;
+Gtk::Label* dashHealthOnline = nullptr;
+Gtk::LevelBar* dashBarVoltage = nullptr;
+Gtk::LevelBar* dashBarCurrent = nullptr;
+Gtk::LevelBar* dashBarTemp = nullptr;
+Gtk::LevelBar* dashBarOnline = nullptr;
+Gtk::Grid* dashMotorGrid = nullptr;
+Gtk::Label* dashMotorLabels[16][8]; // [row][col]: name, status, voltage, current, output%, temp, position, temp_alert
+int dashMotorRowCount = 0;
+std::map<std::string, int> dashMotorRowMap;
+
+#define TEMP_ANOMALY_THRESHOLD 8.0f  // degrees C above average = anomaly warning
+
+/* --- Autonomy state tracking --- */
+Gtk::Label* dashAutoState = nullptr;
+Gtk::Label* dashAutoDestX = nullptr;
+Gtk::Label* dashAutoDestZ = nullptr;
+Gtk::Label* dashAutoDistToTarget = nullptr;
+std::string currentAutoState = "Unknown";
+float currentAutoDestX = 0.0f;
+float currentAutoDestZ = 0.0f;
+
+/* --- Network throughput tracking --- */
+Gtk::Label* dashNetBytesPerSec = nullptr;
+Gtk::Label* dashNetPacketsPerSec = nullptr;
+Gtk::Label* dashNetLatency = nullptr;
+Gtk::Label* dashNetWifiStatus = nullptr;
+Gtk::Label* dashNetCanStatus = nullptr;
+Gtk::LevelBar* dashBarBandwidth = nullptr;
+
+static uint64_t netBytesAccum = 0;
+static uint64_t netPacketsAccum = 0;
+static double netBytesPerSec = 0.0;
+static double netPacketsPerSec = 0.0;
+static std::chrono::high_resolution_clock::time_point netLastSampleTime = std::chrono::high_resolution_clock::now();
+static std::string lastWifiStatus = "--";
+static std::string lastCanStatus = "--";
+
+/* --- Power budget tracking --- */
+Gtk::Label* dashPowerAvgCurrent = nullptr;
+Gtk::Label* dashPowerTotalDraw = nullptr;
+Gtk::Label* dashPowerTimeRemaining = nullptr;
+Gtk::LevelBar* dashBarPowerRemaining = nullptr;
+
+static double powerBatteryCapacityAh = 18.0;  // Default: 18Ah, set via --battery_capacity
+static double netMaxBandwidthBps = 5.0 * 1024 * 1024;  // Default: 5 MB/s, set via --max_bandwidth
+static double powerCurrentSum = 0.0;
+static int powerCurrentSamples = 0;
+static double powerCoulombsUsed = 0.0;  // Running integral of current over time
+static std::chrono::high_resolution_clock::time_point powerLastSampleTime = std::chrono::high_resolution_clock::now();
+
+static void updateMotorStatusDashboard() {
+    if (!dashMotorGrid) return;
+
+    // Collect stats for health cards
+    float minVoltage = 999.0f, maxCurrent = 0.0f, maxTemp = 0.0f;
+    int onlineCount = 0, totalCount = 0;
+    float tempSum = 0.0f;
+    int tempCount = 0;
+
+    auto now = std::chrono::high_resolution_clock::now();
+
+    for (auto& [label, ms] : motorStates) {
+        if (!ms.hasData) continue;
+        totalCount++;
+
+        double age = std::chrono::duration_cast<std::chrono::duration<double>>(now - ms.lastUpdate).count();
+        if (age < 5.0) onlineCount++;
+
+        if (ms.voltage > 0.1f && ms.voltage < minVoltage) minVoltage = ms.voltage;
+        if (ms.current > maxCurrent) maxCurrent = ms.current;
+        if (ms.temperature > maxTemp) maxTemp = ms.temperature;
+        if (ms.temperature > 0) {
+            tempSum += ms.temperature;
+            tempCount++;
+        }
+    }
+
+    float avgTemp = (tempCount > 0) ? (tempSum / tempCount) : 0.0f;
+    if (minVoltage > 900.0f) minVoltage = 0.0f;
+
+    // Update health cards
+    char buf[64];
+    if (dashHealthVoltage) {
+        snprintf(buf, sizeof(buf), "%.1fV", minVoltage);
+        dashHealthVoltage->set_text(buf);
+    }
+    if (dashBarVoltage && minVoltage > 0.1f) {
+        dashBarVoltage->set_value(std::min(1.0, (minVoltage - 10.0) / 8.0)); // 10V=0, 18V=1
+    }
+    if (dashHealthCurrent) {
+        snprintf(buf, sizeof(buf), "%.1fA", maxCurrent);
+        dashHealthCurrent->set_text(buf);
+    }
+    if (dashBarCurrent) {
+        dashBarCurrent->set_value(std::min(1.0, maxCurrent / 50.0));
+    }
+    if (dashHealthTemp) {
+        snprintf(buf, sizeof(buf), "%d\u00B0C", (int)maxTemp);
+        dashHealthTemp->set_text(buf);
+    }
+    if (dashBarTemp) {
+        dashBarTemp->set_value(std::min(1.0, maxTemp / 80.0));
+    }
+    if (dashHealthOnline) {
+        snprintf(buf, sizeof(buf), "%d / %d", onlineCount, totalCount);
+        dashHealthOnline->set_text(buf);
+    }
+    if (dashBarOnline && totalCount > 0) {
+        dashBarOnline->set_value((double)onlineCount / totalCount);
+    }
+
+    // Build alert string
+    std::string alertText;
+    for (auto& [label, ms] : motorStates) {
+        if (!ms.hasData) continue;
+        std::string name = ms.displayName.empty() ? label : ms.displayName;
+
+        if (ms.error) {
+            if (!alertText.empty()) alertText += "  |  ";
+            alertText += name + ": ERROR";
+        }
+        else if (ms.lowVoltage) {
+            if (!alertText.empty()) alertText += "  |  ";
+            snprintf(buf, sizeof(buf), "%s: voltage low (%.1fV)", name.c_str(), ms.voltage);
+            alertText += buf;
+        }
+
+        // Temperature anomaly: flag if this motor is significantly hotter than average
+        if (tempCount >= 2 && ms.temperature > 0 && (ms.temperature - avgTemp) > TEMP_ANOMALY_THRESHOLD) {
+            if (!alertText.empty()) alertText += "  |  ";
+            snprintf(buf, sizeof(buf), "%s: temp anomaly (%d\u00B0C, avg %d\u00B0C)", name.c_str(), ms.temperature, (int)avgTemp);
+            alertText += buf;
+        }
+    }
+    if (dashAlertLabel) {
+        if (alertText.empty()) {
+            dashAlertLabel->set_markup("<span foreground='#1D9E75'>\u25CF All systems nominal</span>");
+        } else {
+            dashAlertLabel->set_markup("<span foreground='#E24B4A'>\u26A0 " + alertText + "</span>");
+        }
+    }
+
+    // Update motor rows
+    for (auto& [label, ms] : motorStates) {
+        if (!ms.hasData) continue;
+
+        auto it = dashMotorRowMap.find(label);
+        int row;
+        if (it == dashMotorRowMap.end()) {
+            if (dashMotorRowCount >= 16) continue;
+            row = dashMotorRowCount++;
+            dashMotorRowMap[label] = row;
+            for (int col = 0; col < 8; col++)
+                dashMotorLabels[row][col]->set_visible(true);
+        } else {
+            row = it->second;
+        }
+
+        std::string name = ms.displayName.empty() ? label : (label + " (" + ms.displayName + ")");
+        double age = std::chrono::duration_cast<std::chrono::duration<double>>(now - ms.lastUpdate).count();
+        bool stale = (age > 5.0);
+
+        // Col 0: Name with status dot
+        std::string dotColor = stale ? "#888780" : (ms.error ? "#E24B4A" : (ms.lowVoltage ? "#EF9F27" : "#1D9E75"));
+        dashMotorLabels[row][0]->set_markup("<span foreground='" + dotColor + "'>\u25CF</span> " + name);
+
+        // Col 1: Status badge
+        if (stale) {
+            dashMotorLabels[row][1]->set_markup("<span foreground='#888780'>Offline</span>");
+        } else if (ms.error) {
+            dashMotorLabels[row][1]->set_markup("<span foreground='#E24B4A' weight='bold'>ERROR</span>");
+        } else if (ms.lowVoltage) {
+            dashMotorLabels[row][1]->set_markup("<span foreground='#EF9F27' weight='bold'>Low V</span>");
+        } else {
+            dashMotorLabels[row][1]->set_markup("<span foreground='#1D9E75'>OK</span>");
+        }
+
+        // Col 2: Voltage
+        snprintf(buf, sizeof(buf), "%.1fV", ms.voltage);
+        if (ms.lowVoltage) {
+            dashMotorLabels[row][2]->set_markup(std::string("<span foreground='#EF9F27' weight='bold'>") + buf + "</span>");
+        } else {
+            dashMotorLabels[row][2]->set_text(buf);
+        }
+
+        // Col 3: Current
+        snprintf(buf, sizeof(buf), "%.1fA", ms.current);
+        dashMotorLabels[row][3]->set_text(buf);
+
+        // Col 4: Output %
+        snprintf(buf, sizeof(buf), "%.0f%%", ms.outputPct * 100.0f);
+        dashMotorLabels[row][4]->set_text(buf);
+
+        // Col 5: Temperature
+        snprintf(buf, sizeof(buf), "%d\u00B0C", ms.temperature);
+        bool tempAnomaly = (tempCount >= 2 && ms.temperature > 0 && (ms.temperature - avgTemp) > TEMP_ANOMALY_THRESHOLD);
+        if (tempAnomaly) {
+            dashMotorLabels[row][5]->set_markup(std::string("<span foreground='#E24B4A' weight='bold'>") + buf + "</span>");
+        } else {
+            dashMotorLabels[row][5]->set_text(buf);
+        }
+
+        // Col 6: Position
+        if (ms.position != 0) {
+            dashMotorLabels[row][6]->set_text(std::to_string(ms.position));
+        } else {
+            dashMotorLabels[row][6]->set_text("\u2014");
+        }
+
+        // Col 7: Temp anomaly indicator
+        if (tempAnomaly) {
+            snprintf(buf, sizeof(buf), "+%d\u00B0 vs avg", (int)(ms.temperature - avgTemp));
+            dashMotorLabels[row][7]->set_markup(std::string("<span foreground='#E24B4A'>") + buf + "</span>");
+        } else {
+            dashMotorLabels[row][7]->set_text("");
+        }
+    }
+
+    /* --- Autonomy state panel --- */
+    if (dashAutoState) {
+        bool active = (currentAutoState == "Active" || currentAutoState == "Running" || currentAutoState == "Navigating");
+        std::string color = active ? "#1D9E75" : "#888780";
+        dashAutoState->set_markup("<span foreground='" + color + "' weight='bold'>" + currentAutoState + "</span>");
+    }
+    if (dashAutoDestX) {
+        snprintf(buf, sizeof(buf), "%.2f", currentAutoDestX);
+        dashAutoDestX->set_text(buf);
+    }
+    if (dashAutoDestZ) {
+        snprintf(buf, sizeof(buf), "%.2f", currentAutoDestZ);
+        dashAutoDestZ->set_text(buf);
+    }
+    if (dashAutoDistToTarget) {
+        // Distance from current robot position to autonomy target
+        double dx = currentAutoDestX - robot_x_m;
+        double dz = currentAutoDestZ - robot_y_m;
+        double dist = std::sqrt(dx*dx + dz*dz);
+        snprintf(buf, sizeof(buf), "%.2fm", dist);
+        dashAutoDistToTarget->set_text(buf);
+    }
+
+    /* --- Network throughput panel --- */
+    {
+        double elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now - netLastSampleTime).count();
+        if (elapsed >= 1.0) {
+            netBytesPerSec = netBytesAccum / elapsed;
+            netPacketsPerSec = netPacketsAccum / elapsed;
+            netBytesAccum = 0;
+            netPacketsAccum = 0;
+            netLastSampleTime = now;
+        }
+        if (dashNetBytesPerSec) {
+            if (netBytesPerSec > 1024*1024)
+                snprintf(buf, sizeof(buf), "%.1f MB/s", netBytesPerSec / (1024*1024));
+            else if (netBytesPerSec > 1024)
+                snprintf(buf, sizeof(buf), "%.1f KB/s", netBytesPerSec / 1024);
+            else
+                snprintf(buf, sizeof(buf), "%.0f B/s", netBytesPerSec);
+            dashNetBytesPerSec->set_text(buf);
+        }
+        if (dashNetPacketsPerSec) {
+            snprintf(buf, sizeof(buf), "%.0f pkt/s", netPacketsPerSec);
+            dashNetPacketsPerSec->set_text(buf);
+        }
+        if (dashBarBandwidth) {
+            // Scale bar: assume 5 MB/s is max expected throughput
+            dashBarBandwidth->set_value(std::min(1.0, netBytesPerSec / netMaxBandwidthBps));
+        }
+        if (dashNetLatency) {
+            double orinAge = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastPacketOrinMs()).count();
+            snprintf(buf, sizeof(buf), "%.0fms", orinAge * 1000.0);
+            dashNetLatency->set_text(buf);
+        }
+        if (dashNetWifiStatus) {
+            bool bad = (lastWifiStatus == "NON-FUNCTIONAL" || lastWifiStatus == "INTERFERENCE" || lastWifiStatus == "DOWN");
+            std::string color = bad ? "#E24B4A" : "#1D9E75";
+            dashNetWifiStatus->set_markup("<span foreground='" + color + "'>" + lastWifiStatus + "</span>");
+        }
+        if (dashNetCanStatus) {
+            bool bad = (lastCanStatus == "NON-FUNCTIONAL" || lastCanStatus == "DOWN");
+            std::string color = bad ? "#E24B4A" : "#1D9E75";
+            dashNetCanStatus->set_markup("<span foreground='" + color + "'>" + lastCanStatus + "</span>");
+        }
+    }
+
+    /* --- Power budget panel --- */
+    {
+        // Calculate total current draw across all motors
+        float totalCurrent = 0.0f;
+        int activeMotors = 0;
+        for (auto& [label, ms] : motorStates) {
+            if (!ms.hasData) continue;
+            totalCurrent += ms.current;
+            activeMotors++;
+        }
+
+        // Update running average and coulomb counter
+        double elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now - powerLastSampleTime).count();
+        if (elapsed > 0.0 && elapsed < 2.0 && activeMotors > 0) {
+            powerCoulombsUsed += totalCurrent * elapsed / 3600.0;  // Ah
+            powerCurrentSum += totalCurrent;
+            powerCurrentSamples++;
+        }
+        powerLastSampleTime = now;
+
+        float avgCurrent = (powerCurrentSamples > 0) ? (powerCurrentSum / powerCurrentSamples) : 0.0f;
+        double ahRemaining = powerBatteryCapacityAh - powerCoulombsUsed;
+        if (ahRemaining < 0) ahRemaining = 0;
+
+        // Estimate time remaining at average current draw
+        double minutesRemaining = 0.0;
+        if (avgCurrent > 0.5f) {
+            minutesRemaining = (ahRemaining / avgCurrent) * 60.0;
+        }
+
+        if (dashPowerAvgCurrent) {
+            snprintf(buf, sizeof(buf), "%.1fA avg", avgCurrent);
+            dashPowerAvgCurrent->set_text(buf);
+        }
+        if (dashPowerTotalDraw) {
+            snprintf(buf, sizeof(buf), "%.1fA total (%.2f Ah used)", totalCurrent, powerCoulombsUsed);
+            dashPowerTotalDraw->set_text(buf);
+        }
+        if (dashPowerTimeRemaining) {
+            if (avgCurrent < 0.5f) {
+                dashPowerTimeRemaining->set_text("-- (no load)");
+            } else if (minutesRemaining < 10.0) {
+                snprintf(buf, sizeof(buf), "%.0f min", minutesRemaining);
+                dashPowerTimeRemaining->set_markup(std::string("<span foreground='#E24B4A' weight='bold'>") + buf + "</span>");
+            } else if (minutesRemaining < 20.0) {
+                snprintf(buf, sizeof(buf), "%.0f min", minutesRemaining);
+                dashPowerTimeRemaining->set_markup(std::string("<span foreground='#EF9F27' weight='bold'>") + buf + "</span>");
+            } else {
+                snprintf(buf, sizeof(buf), "%.0f min", minutesRemaining);
+                dashPowerTimeRemaining->set_text(buf);
+            }
+        }
+        if (dashBarPowerRemaining) {
+            dashBarPowerRemaining->set_value(std::min(1.0, ahRemaining / powerBatteryCapacityAh));
+        }
+    }
+}
+
+void handleFalconElements(const std::string& label, const std::vector<Element>& elements) {
+    auto& msPrev = motorStates[label];
+    float voltage_val = msPrev.voltage;
+    float current_val = msPrev.current;
+    float output_pct  = msPrev.outputPct;
+    int   temp_val    = msPrev.temperature;
+    bool  errorFlag   = msPrev.error;
+    bool  lowVoltage  = msPrev.lowVoltage;
+    //Prints fields for debugging purposes, can be removed later
+    if(debugMotors){
+        std::cerr << "\n[" << label << "]  Packet contents:" << std::endl;
+        for (const auto& e : elements) {
+            std::cerr << "  - " << std::setw(20) << std::left << e.label << ": ";
+            
+            if (e.label == "Error") {
+                std::cerr << (e.data.front().boolean ? "TRUE" : "FALSE");
+            }
+            else if (e.label == "Device ID" || e.label == "Temperature") {
+                std::cerr << (int)e.data.front().uint8;
+            }
+            else if (e.label == "Bus Voltage" || e.label == "Output Current") {
+                std::cerr << std::fixed << std::setprecision(2) 
+                        << (e.data.front().uint16 / 100.0f);
+            }
+            else {
+                std::cerr << std::fixed << std::setprecision(2) 
+                        << e.data.front().float32;
+            }
+            
+            std::cerr << std::endl;
+        }
+    }
+    for (const auto& element : elements) {
+        if (element.label == "Bus Voltage") {
+            float voltage = element.data.front().uint16 / 100.0f;
+            voltage_val = voltage;
+            if (!noVideo && !isFlightEngineer) falconVoltageGraph->update_data(label, voltage);
+            lowVoltage = voltage < LOW_VOLTAGE;
+            if (batteryBar) batteryBar->report_voltage(label, voltage);
+        }
+        else if (element.label == "Output Current") {
+            float current = element.data.front().uint16 / 100.0f;
+            current_val = current;
+            if (!noVideo && !isFlightEngineer) falconCurrentGraph->update_data(label, current);
+        }
+        else if (element.label == "Output Percent") {
+            float percent = element.data.front().float32;
+            output_pct = percent;
+            if (!noVideo && !isFlightEngineer && falconOutputGraph) falconOutputGraph->update_data(label, percent);
+            if ((label == "Falcon 2" || label == "Falcon 4") && leftSpeedometer) {
+                leftSpeedometer->set_speed(percent * 100.0);
+            }
+            if ((label == "Falcon 1" || label == "Falcon 3") && rightSpeedometer) {
+                rightSpeedometer->set_speed(percent * 100.0);
+            }
+        }
+        else if (element.label == "Error"){
+            errorFlag = element.data.front().boolean;
+        }
+        else if (element.label == "Temperature"){
+            temp_val = element.data.front().uint16;
+        }
+    }
+    updateCircleColor(getMotorCircle(label), lowVoltage, errorFlag);
+    updateMotorStateEntry(label, voltage_val, current_val, output_pct, temp_val, 0, errorFlag, lowVoltage);
+
+    auto nameIt = displayNameMap.find(label);
+    if (nameIt != displayNameMap.end()) {
+        updateMotorTelemetry(nameIt->second, voltage_val, current_val);
+    }
+    if (isFlightEngineer) {
+        std::string feLabel = (lastPacketFromRobot1() ? "R1 " : "R2 ") + label;
+        feUpdateMotorRow(feLabel, voltage_val, current_val, output_pct, 0, errorFlag, lowVoltage);
+    }
+}
+
+void handleNeoElements(const std::string& label, const std::vector<Element>& elements) {
+    float voltage_val = 0.0f;
+    float current_val = 0.0f;
+    float output_pct = 0.0f;
+    int temp_val = 0;
+    bool errorFlag = false;
+    bool lowVoltage = false;
+    //Prints fields for debugging purposes, can be removed later
+    if(debugMotors){
+        std::cerr << "\n[" << label << "]  Packet contents:" << std::endl;
+        for (const auto& e : elements) {
+            std::cerr << "  - " << std::setw(20) << std::left << e.label << ": ";
+            
+            if (e.label == "Error") {
+                std::cerr << (e.data.front().boolean ? "TRUE" : "FALSE");
+            }
+            else if (e.label == "Device ID" || e.label == "Temperature") {
+                std::cerr << (int)e.data.front().uint8;
+            }
+            else if (e.label == "Bus Voltage" || e.label == "Output Current") {
+                std::cerr << std::fixed << std::setprecision(2) 
+                        << (e.data.front().uint16 / 100.0f);
+            }
+            else {
+                std::cerr << std::fixed << std::setprecision(2) 
+                        << e.data.front().float32;
+            }
+            
+            std::cerr << std::endl;
+        }
+    }
+
+    for (const auto& element : elements) {
+        if (element.label == "Bus Voltage") {
+            float voltage = element.data.front().uint16 / 100.0f;
+            voltage_val = voltage;
+            if (!noVideo && !isFlightEngineer) falconVoltageGraph->update_data(label, voltage);
+            lowVoltage = voltage < LOW_VOLTAGE;
+            if (batteryBar) batteryBar->report_voltage(label, voltage);
+        }
+        else if (element.label == "Output Current") {
+            float current = element.data.front().uint16 / 100.0f;
+            current_val = current;
+            if (!noVideo && !isFlightEngineer) falconCurrentGraph->update_data(label, current);
+        }
+        else if (element.label == "Output Percent") {
+            float percent = element.data.front().float32;
+            output_pct = percent;
+            if (!noVideo && !isFlightEngineer) falconOutputGraph->update_data(label, percent);
+            if((label == "Neo 2" || label == "Neo 4") && leftSpeedometer){
+                leftSpeedometer->set_speed(percent * 100.0);
+            }
+            if((label == "Neo 1" || label == "Neo 3") && rightSpeedometer){
+                rightSpeedometer->set_speed(percent * 100.0);
+            }
+        }
+        else if (element.label == "Error"){
+            errorFlag = element.data.front().boolean;
+        }
+        else if (element.label == "Temperature"){
+            temp_val = element.data.front().uint16;
+        }
+    }
+    updateCircleColor(getMotorCircle(label), lowVoltage, errorFlag);
+    updateMotorStateEntry(label, voltage_val, current_val, output_pct, temp_val, 0, errorFlag, lowVoltage);
+    auto neoNameIt = displayNameMap.find(label);
+    if (neoNameIt != displayNameMap.end()) {
+        updateMotorTelemetry(neoNameIt->second, voltage_val, current_val);
+    }
+    if (isFlightEngineer) {
+        std::string feLabel = (lastPacketFromRobot1() ? "R1 " : "R2 ") + label;
+        feUpdateMotorRow(feLabel, voltage_val, current_val, output_pct, 0, errorFlag, lowVoltage);
+    }
+}
+
+void handleKrakenElements(const std::string& label, const std::vector<Element>& elements) {
+    auto& msPrev = motorStates[label];
+    float voltage_val = msPrev.voltage;
+    float current_val = msPrev.current;
+    float output_pct  = msPrev.outputPct;
+    int   temp_val    = msPrev.temperature;
+    bool  errorFlag   = msPrev.error;
+    bool  lowVoltage  = msPrev.lowVoltage;
+    //Prints fields for debugging purposes, can be removed later
+    if(debugMotors){
+        std::cerr << "\n[" << label << "]  Packet contents:" << std::endl;
+        for (const auto& e : elements) {
+            std::cerr << "  - " << std::setw(20) << std::left << e.label << ": ";
+            
+            if (e.label == "Error") {
+                std::cerr << (e.data.front().boolean ? "TRUE" : "FALSE");
+            }
+            else if (e.label == "Device ID" || e.label == "Temperature") {
+                std::cerr << (int)e.data.front().uint8;
+            }
+            else if (e.label == "Bus Voltage" || e.label == "Output Current") {
+                std::cerr << std::fixed << std::setprecision(2) 
+                        << (e.data.front().uint16 / 100.0f);
+            }
+            else {
+                std::cerr << std::fixed << std::setprecision(2) 
+                        << e.data.front().float32;
+            }
+            
+            std::cerr << std::endl;
+        }
+    }
+    
+    for (const auto& element : elements) {
+        if (element.label == "Bus Voltage") {
+            float voltage = element.data.front().uint16 / 100.0f;
+            voltage_val = voltage;
+            if (!noVideo && !isFlightEngineer) falconVoltageGraph->update_data(label, voltage);
+            lowVoltage = voltage < LOW_VOLTAGE;
+            if (batteryBar) batteryBar->report_voltage(label, voltage);
+        }
+        else if (element.label == "Output Current") {
+            float current = element.data.front().uint16 / 100.0f;
+            current_val = current;
+            if (!noVideo && !isFlightEngineer) falconCurrentGraph->update_data(label, current);
+        }
+        else if (element.label == "Output Percent") {
+            float percent = element.data.front().float32;
+            output_pct = percent;
+            if (!noVideo && !isFlightEngineer) falconOutputGraph->update_data(label, percent);
+            if((label == "Kraken 2" || label == "Kraken 4") && leftSpeedometer){
+                leftSpeedometer->set_speed(percent * 100.0);
+            }
+            if((label == "Kraken 1" || label == "Kraken 3") && rightSpeedometer){
+                rightSpeedometer->set_speed(percent * 100.0);
+            }
+        }
+        else if (element.label == "Error"){
+            errorFlag = element.data.front().boolean;
+        }
+        else if (element.label == "Temperature"){
+            temp_val = element.data.front().uint16;
+        }
+    }
+    updateCircleColor(getMotorCircle(label), lowVoltage, errorFlag);
+    updateMotorStateEntry(label, voltage_val, current_val, output_pct, temp_val, 0, errorFlag, lowVoltage);
+    auto krakenNameIt = displayNameMap.find(label);
+    if (krakenNameIt != displayNameMap.end()) {
+        updateMotorTelemetry(krakenNameIt->second, voltage_val, current_val);
+    }
+    if (isFlightEngineer) {
+        std::string feLabel = (lastPacketFromRobot1() ? "R1 " : "R2 ") + label;
+        feUpdateMotorRow(feLabel, voltage_val, current_val, output_pct, 0, errorFlag, lowVoltage);
+    }
+}
+
+void handleCommunicationElements(InfoFrame* frame, const std::vector<Element>& elements) {
+    for (const auto& element : elements) {
+        if (element.label != "Wi-Fi" && element.label != "CAN Bus") continue;
+
+        std::string text;
+        for (const auto& c : element.data) text += c.character;
+
+        // Track for dashboard
+        if (element.label == "Wi-Fi") lastWifiStatus = text;
+        if (element.label == "CAN Bus") lastCanStatus = text;
+
+        if (text == "NON-FUNCTIONAL" || text == "INTERFERENCE" || text == "DOWN") {
+            frame->setBackground(element.label, "#FF0000");
+            frame->setTextColor(element.label, "white", true);
+        }
+        else {
+            updateBackgroundColor(frame, element.label);
+        }
+
+        /* FE: update communication labels — route to R1 or R2 based on source */
+        if (isFlightEngineer) {
+            bool r1 = lastPacketFromRobot1();
+            bool bad = (text == "NON-FUNCTIONAL" || text == "INTERFERENCE" || text == "DOWN");
+            std::string color = bad ? "#cc0000" : "#00cc00";
+            std::string markup = "<span foreground='" + color + "'>" + text + "</span>";
+            if (element.label == "Wi-Fi") {
+                Gtk::Label* lbl = r1 ? feCommR1Wifi : feCommR2Wifi;
+                if (lbl) lbl->set_markup(markup);
+            }
+            if (element.label == "CAN Bus") {
+                Gtk::Label* lbl = r1 ? feCommR1Can : feCommR2Can;
+                if (lbl) lbl->set_markup(markup);
+            }
+        }
+    }
+}
+
+void handleAutonomyElements(const std::string& label, const std::vector<Element>& elements) {
+    float destX = -1, destZ = -1;
+    for (const auto& element : elements) {
+        if (element.label == "Dest X") {
+            destX = element.data.front().float32;
+            currentAutoDestX = destX;
+        }
+        else if(element.label == "Dest Z"){
+            destZ = element.data.front().float32;
+            currentAutoDestZ = destZ;
+        }
+        // Capture any state string field from the autonomy message
+        else if (element.type == TYPE::STRING) {
+            std::string text;
+            for (const auto& c : element.data) text += c.character;
+            if (!text.empty()) currentAutoState = text;
+        }
+        else if (element.type == TYPE::BOOLEAN && element.label == "Active") {
+            currentAutoState = element.data.front().boolean ? "Active" : "Inactive";
+        }
+    }
+
+    if (isFlightEngineer) {
+        bool r1 = lastPacketFromRobot1();
+        Gtk::Label* lDestX = r1 ? feAutoR1DestX : feAutoR2DestX;
+        Gtk::Label* lDestZ = r1 ? feAutoR1DestZ : feAutoR2DestZ;
+        if (lDestX && destX >= 0) lDestX->set_text(std::to_string((int)destX));
+        if (lDestZ && destZ >= 0) lDestZ->set_text(std::to_string((int)destZ));
+    }
+}
+
+void handleGenericElements(std::string label, InfoFrame* frame, const std::vector<Element>& elements) {
+    std::map<std::string, bool>& values = getMap(label);
+    for (const auto& element : elements) {
+        auto it = values.find(element.label);
+        if(it == values.end() || !it->second)
+            continue;
+        const auto& value = element.data.front();
+
+        if (element.type == TYPE::BOOLEAN)       frame->setItem(element.label, value.boolean);
+        else if (element.type == TYPE::UINT8)     frame->setItem(element.label, value.uint8);
+        else if (element.type == TYPE::INT8)      frame->setItem(element.label, value.int8);
+        else if (element.type == TYPE::UINT16) {
+            if(element.label == "Bus Voltage" || element.label == "Output Current"){
+                float val = value.uint16 / 100.0f;
+                updateBackgroundColor(frame, element.label);
+
+                if (element.label == "Bus Voltage" && val < LOW_VOLTAGE) {
+                    frame->setBackground(element.label, "#FF0000");
+                    frame->setTextColor(element.label, "white", true);
+                }
+                
+                frame->setItem(element.label, val);
+            }
+            else{
+                frame->setItem(element.label, value.uint16);
+            }
+
+        }
+        else if (element.type == TYPE::INT16)     frame->setItem(element.label, value.int16);
+        else if (element.type == TYPE::UINT32)    frame->setItem(element.label, value.uint32);
+        else if (element.type == TYPE::INT32)     frame->setItem(element.label, value.int32);
+        else if (element.type == TYPE::UINT64)    frame->setItem(element.label, value.uint64);
+        else if (element.type == TYPE::INT64)     frame->setItem(element.label, value.int64);
+        else if (element.type == TYPE::FLOAT32)   frame->setItem(element.label, value.float32);
+        else if (element.type == TYPE::FLOAT64)   frame->setItem(element.label, value.float64);
+        else if (element.type == TYPE::STRING) {
+            std::string text;
+            for (const auto& c : element.data) text += c.character;
+            frame->setItem(element.label, text);
+        }
+    }
+    frame->show_all();
+}
+
 void updateGUI(BinaryMessage& message) {
     std::string label = message.getLabel();
 
@@ -2307,20 +2840,30 @@ void updateGUI(BinaryMessage& message) {
 
         const auto& elements = message.getObject().elementList;
 
+        const MotorDef* motorDef = activeConfig.findMotor(label);
+        if (motorDef) {
+            switch (motorDef->type) {
+                case MotorType::TALON:  handleTalonElements(label, elements);  break;
+                case MotorType::FALCON: handleFalconElements(label, elements); break;
+                case MotorType::NEO:    handleNeoElements(label, elements);    break;
+                case MotorType::KRAKEN: handleKrakenElements(label, elements); break;
+            }
+        }
         if (label == "Zed") {
             handleZedElements(elements);
         }
         else if (label == "Communication") {
             handleCommunicationElements(frame, elements);
         }
-        else if (talonLabels.count(label)) {
-            handleTalonElements(label, elements);
-        }
-        else if (falconLabels.count(label)) {
-            handleFalconElements(label, elements);
-        }
         else if(label == "Autonomy"){
             handleAutonomyElements(label, elements);
+        }
+        else if(label == "Drivetrain"){
+            handleDrivetrainElements(elements);
+        }
+        else if (label == "Lidar" && activeConfig.features.hasLidar) {
+            printf("Updating Lidar Elements\n");
+            handleLidarElements(elements);
         }
         if(updateMotorDetails){
             updateMotor(label, elements);
@@ -2333,8 +2876,11 @@ void updateGUI(BinaryMessage& message) {
 
     if ((label == "Talon 1" || label == "Talon 2") && !arm_init) 
         initArmPos();
-    if ((label == "Talon 3" || label == "Talon 4") && !bucket_init) 
+    if ((label == "Talon 3" || label == "Talon 4") && !bucket_init){
         initBucketPos();
+        initBucketRot();
+        initBucketElevation();
+    }
     if (label == "Zed" && !roll_init) 
         initRoll();
     if(label == "Zed" && !pitch_init)
@@ -2350,8 +2896,10 @@ void updateGUI(BinaryMessage& message) {
     Gtk::EventBox* frameBox = Gtk::manage(new Gtk::EventBox());
     frameBox->add(*infoFrame);
     frameBox->show_all();
-    if(label == "Talon 1" || label == "Talon 3" ||
-       label == "Falcon 1" || label == "Falcon 2" || label == "Falcon 3" || label == "Falcon 4"){
+    if(label == "Talon 1" || label == "Talon 2" || label == "Talon 3" || label == "Talon 4" || 
+       label == "Falcon 1" || label == "Falcon 2" || label == "Falcon 3" || label == "Falcon 4"
+       || label == "Neo 1" || label == "Neo 2" || label == "Neo 3" || label == "Neo 4"
+       || label == "Kraken 1" || label == "Kraken 2" || label == "Kraken 3" || label == "Kraken 4") {
         frameBox->signal_button_press_event().connect(
             [label](GdkEventButton* event) -> bool {
                 return onMotorClick(event, label);
@@ -2364,152 +2912,71 @@ void updateGUI(BinaryMessage& message) {
     infoFrame->show_all();
 }
 
+/**
+ * @brief Processes an incoming payload, decompressing it only if necessary.
+ * * This function reads the first byte of the payload as a flag.
+ * - If the flag is '1', it assumes the data is compressed, extracts the
+ * original size, and performs zlib decompression.
+ * - If the flag is '0', it assumes the data is uncompressed and copies it directly.
+ * * @param received_payload The raw data buffer received from the socket.
+ * @param processed_data A vector that will be filled with the final, usable data.
+ * @return True if processing was successful, false otherwise.
+ */
+bool process_payload(const std::vector<uint8_t>& received_payload, std::vector<uint8_t>& processed_data) {
+    if (received_payload.empty()) {
+        return false;
+    }
 
-// Define element-adding lambdas keyed by prefix
-// This creates the binary messages associated with the string
-std::map<std::string, std::vector<ElementInfo>> element_definitions = {
-    {"TALON", {
-        {ElementType::UInt8, "Device ID"},
-        {ElementType::UInt16, "Bus Voltage"},
-        {ElementType::UInt16, "Output Current"},
-        {ElementType::Float32, "Output Percent"},
-        {ElementType::Float32, "Sensor Velocity"},
-        {ElementType::UInt8, "Temperature"},
-        {ElementType::UInt16, "Sensor Position"},
-        {ElementType::Float32, "Max Current"}
-    }},
-    {"FALCON", {
-        {ElementType::UInt8, "Device ID"},
-        {ElementType::UInt16, "Bus Voltage"},
-        {ElementType::UInt16, "Output Current"},
-        {ElementType::Float32, "Output Percent"},
-        {ElementType::UInt8, "Temperature"},
-        {ElementType::Float32, "Sensor Position"},
-        {ElementType::Float32, "Sensor Velocity"},
-        {ElementType::Float32, "Max Current"}
-    }},
-    {"LINEAR", {
-        {ElementType::UInt8, "Motor Number"},
-        {ElementType::Float32, "Speed"},
-        {ElementType::UInt16, "Potentiometer"},
-        {ElementType::UInt8, "Time Without Change"},
-        {ElementType::UInt16, "Max"},
-        {ElementType::UInt16, "Min"},
-        {ElementType::String, "Error"},
-        {ElementType::Boolean, "At Min"},
-        {ElementType::Boolean, "At Max"},
-        {ElementType::Float32, "Distance"},
-        {ElementType::Boolean, "Sensorless"}
-    }},
-    {"AUTONOMY", {
-        {ElementType::String, "Robot State"},
-        {ElementType::String, "Excavation State"},
-        {ElementType::String, "Error State"},
-        {ElementType::String, "Diagnostics State"},
-        {ElementType::String, "Tilt State"},
-        {ElementType::String, "Dump State"},
-        {ElementType::String, "Level Bucket"},
-        {ElementType::String, "Level Arms"},
-        {ElementType::Float32, "Dest X"},
-        {ElementType::Float32, "Dest Z"}
-    }},
-    {"ZED", {
-        {ElementType::Float32, "X"},
-        {ElementType::Float32, "Y"},
-        {ElementType::Float32, "Z"},
-        {ElementType::Float32, "roll"},
-        {ElementType::Float32, "pitch"},
-        {ElementType::Float32, "yaw"},
-        {ElementType::Boolean, "aruco"}
-    }},
-    {"COMMUNICATION", {
-        {ElementType::Int32, "RSSI"},
-        {ElementType::String, "Wi-Fi"},
-        {ElementType::String, "CAN Bus"},
-        {ElementType::Boolean, "Using CAN1"},
-        {ElementType::Int32, "RX packets"},
-        {ElementType::Int32, "TX packets"},
-        {ElementType::String, "CAN Bus2"},
-        {ElementType::Int32, "RX2 packets"},
-        {ElementType::Int32, "TX2 packets"},
-        {ElementType::String, "Status"}
-    }},
-    {"POWER", {
-        {ElementType::Float32, "Voltage"},
-        {ElementType::Float32, "Temp"},
-        {ElementType::Float32, "Current 0"},
-        {ElementType::Float32, "Current 1"},
-        {ElementType::Float32, "Current 2"},
-        {ElementType::Float32, "Current 3"},
-        {ElementType::Float32, "Current 4"},
-        {ElementType::Float32, "Current 5"},
-        {ElementType::Float32, "Current 6"}
-    }},
-    {"POWER2", {
-        {ElementType::Float32, "Current 7"},
-        {ElementType::Float32, "Current 8"},
-        {ElementType::Float32, "Current 9"},
-        {ElementType::Float32, "Current 10"},
-        {ElementType::Float32, "Current 11"},
-        {ElementType::Float32, "Current 12"},
-        {ElementType::Float32, "Current 13"},
-        {ElementType::Float32, "Current 14"},
-        {ElementType::Float32, "Current 15"}
-    }},
-    {"DRIVETRAIN", {
-        {ElementType::Float32, "F1 Vel"},
-        {ElementType::Float32, "F1 RPM"},
-        {ElementType::Float32, "F1 Speed"},
-        {ElementType::Float32, "F2 Vel"},
-        {ElementType::Float32, "F2 RPM"},
-        {ElementType::Float32, "F2 Speed"},
-        {ElementType::Float32, "F3 Vel"},
-        {ElementType::Float32, "F3 RPM"},
-        {ElementType::Float32, "F3 Speed"},
-        {ElementType::Float32, "F4 Vel"},
-        {ElementType::Float32, "F4 RPM"},
-        {ElementType::Float32, "F4 Speed"}
-    }}
-};
+    // Read the first byte as the compression flag.
+    uint8_t compression_flag = received_payload[0];
 
+    if (compression_flag == 1) {
+        if (received_payload.size() < 5) { // 1-byte flag + 4-byte size
+            std::cerr << "Error: Compressed payload is too small." << std::endl;
+            return false;
+        }
 
-std::string getNameFromPrefix(std::string label){
-    if(label.rfind("TALON", 0) == 0){
-        return "Talon";
+        // Extract the original uncompressed size from the next 4 bytes.
+        uLong original_size = 0;
+        original_size |= static_cast<uLong>(received_payload[1]) << 24;
+        original_size |= static_cast<uLong>(received_payload[2]) << 16;
+        original_size |= static_cast<uLong>(received_payload[3]) << 8;
+        original_size |= static_cast<uLong>(received_payload[4]) << 0;
+        
+        if (original_size > 5000000) { // Example: 5MB limit
+            std::cerr << "Payload too large, dropping packet." << std::endl;
+            return false;
+        }
+        processed_data.resize(original_size);
+        uLongf dest_len = processed_data.size();
+
+        // Point to the actual compressed data (after flag and size).
+        const Bytef* source = received_payload.data() + 5;
+        uLong source_len = received_payload.size() - 5;
+
+        // Perform decompression.
+        int result = uncompress(processed_data.data(), &dest_len, source, source_len);
+        if (result != Z_OK) {
+            std::cerr << "Decompression failed with error: " << result << std::endl;
+            return false;
+        }
+        processed_data.resize(dest_len);
+
+    } else {
+        // Just copy the data, skipping the '0' flag byte.
+        processed_data.assign(received_payload.begin() + 1, received_payload.end());
     }
-    if(label.rfind("FALCON", 0) == 0){
-        return "Falcon";
-    }
-    if(label.rfind("LINEAR", 0) == 0){
-        return "Linear";
-    }
-    if(label.rfind("AUTONOMY", 0) == 0){
-        return "Autonomy";
-    }
-    if(label.rfind("COMMUNICATION", 0) == 0){
-        return "Communication";
-    }
-    if(label.rfind("POWER2", 0) == 0){
-        return "Power2";
-    }
-    if(label.rfind("POWER", 0) == 0){
-        return "Power";
-    }
-    if(label.rfind("ZED", 0) == 0){
-        return "Zed";
-    }
-    if(label.rfind("TEST", 0) == 0){
-        return "Test";
-    }
-    return "Talon";
+
+    return true;
 }
 
-
+// This function populates a binary message with default values for all of the values that are
+// associated with the particular info frame
 void populateBinaryMessage(const std::string& name, const std::string& prefix, BinaryMessage& message) {
     std::string vector_name = getNameFromPrefix(prefix);
-    auto keys_it = key_vectors.find(vector_name);
-    auto defs_it = element_definitions.find(prefix);
-    if (keys_it == key_vectors.end() || defs_it == element_definitions.end()) {
+    auto keys_it = get_key_vectors().find(vector_name);
+    auto defs_it = get_element_definitions().find(prefix);
+    if (keys_it == get_key_vectors().end() || defs_it == get_element_definitions().end()) {
         std::cerr << "Warning: Missing keys or definitions for prefix " << prefix << std::endl;
         return;
     }
@@ -2535,30 +3002,54 @@ void populateBinaryMessage(const std::string& name, const std::string& prefix, B
     }
 }
 
-
 void createMessage(std::string name, std::string prefix){
     BinaryMessage message(name);
     populateBinaryMessage(name, prefix, message);
     updateGUI(message);
 }
 
-
 void initGUI() {
     if(initVals){
-        createMessage("Talon 1", "TALON");
-        createMessage("Talon 3", "TALON");
-        createMessage("Falcon 1", "FALCON");
-        createMessage("Falcon 2", "FALCON");
-        createMessage("Falcon 3", "FALCON");
-        createMessage("Falcon 4", "FALCON");
-        
-        createMessage("Linear 1", "LINEAR");
-        createMessage("Linear 3", "LINEAR");
+        if(primaryBot){
+            createMessage("Talon 1", "TALON");
+            createMessage("Talon 3", "TALON");
+            createMessage("Kraken 1", "KRAKEN");
+            createMessage("Kraken 2", "KRAKEN");
+            createMessage("Kraken 3", "KRAKEN");
+            createMessage("Kraken 4", "KRAKEN");
+            createMessage("Linear 1", "LINEAR");
+            createMessage("Linear 3", "LINEAR");
+            //createMessage("Lidar", "LIDAR");
+        }
+        else if(backupBot){
+            createMessage("Talon 1", "TALON");
+            createMessage("Talon 3", "TALON");
+            createMessage("Falcon 1", "FALCON");
+            createMessage("Falcon 2", "FALCON");
+            createMessage("Falcon 3", "FALCON");
+            createMessage("Falcon 4", "FALCON");
+            createMessage("Linear 1", "LINEAR");
+            createMessage("Linear 3", "LINEAR");
+            //createMessage("Lidar", "LIDAR");
+        }
+        else if(dumpBot){
+            createMessage("Falcon 1", "FALCON");
+            createMessage("Falcon 2", "FALCON");
+            createMessage("Falcon 3", "FALCON");
+            createMessage("Falcon 4", "FALCON");
+            createMessage("Neo 1", "NEO");
+        }
         
         initRoll();
         initPitch();
-        initArmPos();
-        initBucketPos();
+        if (!activeConfig.findMechanism("Bucket")) {
+            initBucketPos();
+            initBucketElevation();
+            initBucketRot();
+        }
+        if(!activeConfig.findMechanism("Arm")) {
+            initArmPos();
+        }
         
         createMessage("Communication", "COMMUNICATION");
         createMessage("Autonomy", "AUTONOMY");
@@ -2573,7 +3064,6 @@ void initGUI() {
     window->show_all();
 }
 
-
 void updateGUI(){
     for (InfoFrame* frame : infoFrameList) {
         std::string label = frame->get_label();
@@ -2584,6 +3074,7 @@ void updateGUI(){
             auto it = values.find(key);
             if (it != values.end() && it->second) {
                 frame->addItem(key);
+                updateBackgroundColor(frame, key); 
             }
         }
     }
@@ -2592,273 +3083,88 @@ void updateGUI(){
 }
 
 
-void setDisconnectedState(){
-    connectButton->set_label("Connect");
-    connectionStatusLabel->set_text("Not Connected");
-    silentRunButton->set_label("Silent Running");
-    Gdk::RGBA red;
-    red.set_rgba(1.0,0,0,1.0);
-    connectionStatusLabel->override_background_color(red);
-    ipAddressEntry->set_can_focus(true);
-    ipAddressEntry->set_editable(true);
-    connected=false;
-    silentRunning = true;
-    initialized = false;
+/*** Helper functions and variables for the video and robot server connections ***/
+bool contains(std::vector<std::string>& list, std::string& value){
+    for(std::string storedValue: list) if(storedValue==value) return true;
+    return false;
+}
 
-    if (connected) {
-        if (sock > 0) {
-            if (close(sock) != 0) {
-                perror("Failed to close socket");
-            }
-            sock = 0;
-        }
+
+/*** Functions associated with the server ***/
+void resetUIOnDisconnect() {
+    for (InfoFrame* frame : infoFrameList) {
+        frame->setAllItemsStale();
     }
 
-    arm_init = false;
-    bucket_init = false;
-    roll_init = false;
 
-    if(!noVideo){
+    // Reset the motor status indicator circles to black
+    if(!noVideo && !isFlightEngineer) {
         Gdk::RGBA black;
         black.set_rgba(0.0, 0.0, 0.0, 1.0);
-        updateCircleColor(talon1Circle, black);
-        updateCircleColor(talon3Circle, black);
-        updateCircleColor(falcon1Circle, black);
-        updateCircleColor(falcon2Circle, black);
-        updateCircleColor(falcon3Circle, black);
-        updateCircleColor(falcon4Circle, black);
-        updateCircleColor(lowerFalcon1Circle, black);
-        updateCircleColor(lowerFalcon2Circle, black);
-        updateCircleColor(lowerFalcon3Circle, black);
-        updateCircleColor(lowerFalcon4Circle, black);
+        for (auto& kv : motorCircles) {
+            updateCircleColor(kv.second, black);
+        }
     }
+    if (batteryBar) batteryBar->reset_cycle();
 }
 
 
-void setConnectedState(){
-    connectButton->set_label("Disconnect");
-    connectionStatusLabel->set_text("Connected");
-    Gdk::RGBA green;
-    green.set_rgba(0,1.0,0,1.0);
-    connectionStatusLabel->override_background_color(green);
-    ipAddressEntry->set_can_focus(false);
-    ipAddressEntry->set_editable(false);
-    connected=true;
-}
+/*** Functions associated with the Gear Select dial ***/
+/* This is intended to show the user the speed multiplier that
+the robot is currently using. It should be updated to something
+better than the current, rudimentary impelementation. */
 
-
-void setVideoDisconnectedState(){
-    videoConnectButton->set_label("Connect");
-    videoConnectionStatusLabel->set_text("Not Connected");
-    videoStreamButton->set_label("Not Video Streaming");
-    Gdk::RGBA red;
-    red.set_rgba(1.0,0,0,1.0);
-    videoConnectionStatusLabel->override_background_color(red);
-    videoIPAddressEntry->set_can_focus(true);
-    videoIPAddressEntry->set_editable(true);
-    videoConnected=false;
-
-}
-
-
-void setVideoConnectedState(){
-    videoConnectButton->set_label("Disconnect");
-    videoConnectionStatusLabel->set_text("Connected");
-    Gdk::RGBA green;
-    green.set_rgba(0,1.0,0,1.0);
-    videoConnectionStatusLabel->override_background_color(green);
-    videoIPAddressEntry->set_can_focus(false);
-    videoIPAddressEntry->set_editable(false);
-    videoConnected=true;
-}
-
-
-void connectToVideoServer(){
-    if(videoConnected==true)return;
-    struct sockaddr_in address; 
-    int bytesRead; 
-    struct sockaddr_in serv_addr; 
-    std::string hello("Hello Robot"); 
-
-    memset(&serv_addr, '0', sizeof(serv_addr)); 
-
-    serv_addr.sin_family = AF_INET; 
-    serv_addr.sin_port = htons(VIDEO_PORT);
-
-    char buffer[1024] = {0}; 
-    if ((videoSock = socket(AF_INET, SOCK_STREAM, 0)) < 0) { 
-
-        printf("\n Socket creation error \n");
-
-        setVideoDisconnectedState();
-        return; 
-    } 
-    if(inet_pton(AF_INET, videoIPAddressEntry->get_text().c_str(), &serv_addr.sin_addr)<=0)  { 
-
-        printf("\nInvalid address/ Address not supported \n");
-
-        Gtk::MessageDialog dialog(*window,"Invalid Address",false,Gtk::MESSAGE_QUESTION,Gtk::BUTTONS_OK);
-        int result=dialog.run();
-
-        setVideoDisconnectedState();
-        return;
-    } 
-    if(connect(videoSock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
-        printf("\nConnection Failed \n");
-
-        Gtk::MessageDialog dialog(*window,"Connection Failed",false,Gtk::MESSAGE_QUESTION,Gtk::BUTTONS_OK);
-        int result=dialog.run();
-
-        setVideoDisconnectedState();
-    }
-    else{
-        send(videoSock , hello.c_str() , strlen(hello.c_str()) , 0 );
-        bytesRead = read( videoSock , buffer, 1024);
-        fcntl(videoSock,F_SETFL, O_NONBLOCK);
-
-        setVideoConnectedState();
-    }
-}
-
-
-void disconnectFromVideoServer(){
-    Gtk::MessageDialog dialog(*window,"Disconnect now?",false,Gtk::MESSAGE_QUESTION,Gtk::BUTTONS_OK_CANCEL);
-    //dialog.set_secondary_text("Do you want to shutdown now?");
-    int result=dialog.run();
-
-    switch(result) {
-        case (Gtk::RESPONSE_OK): 
-            if(shutdown(videoSock,SHUT_RDWR)==-1){
-                Gtk::MessageDialog dialog(*window,"Failed Shutdown",false,Gtk::MESSAGE_ERROR,Gtk::BUTTONS_OK);
-                int result=dialog.run();
-            }
-            if(close(videoSock)==0){
-                setVideoDisconnectedState();
-            }
-            else{
-                Gtk::MessageDialog dialog(*window,"Failed Close",false,Gtk::MESSAGE_ERROR,Gtk::BUTTONS_OK);
-                int result=dialog.run();
-            }
-            break;
-        case (Gtk::RESPONSE_CANCEL):
-        case (Gtk::RESPONSE_NONE):
-        default:
-            break;
-    }
-}
-
-
-void videoConnectOrDisconnect(){
-    Glib::ustring string=videoConnectButton->get_label();
-    //std::cout << "connect" << string << std::endl;
-    if(string=="Connect"){
-        connectToVideoServer();
-    }
-    else{
-        disconnectFromVideoServer();
-    }
-}
-
-
-void videoStream(){
-    if(!videoConnected)return;
-    std::string currentButtonState=videoStreamButton->get_label();
-    if(currentButtonState=="Not Video Streaming"){
-        int messageSize=3;
-        uint8_t command=1;// silence 
-        uint8_t message[messageSize];
-        message[0]=messageSize;
-        message[1]=command;
-        message[2]=1;
-        send(videoSock, message, messageSize, 0); 
-
-        videoStreamButton->set_label("Video Streaming");
-        isStreamingActive = true;
-    }
-    else{
-        int messageSize=3;
-        uint8_t command=1;// silence 
-        uint8_t message[messageSize];
-        message[0]=messageSize;
-        message[1]=command;
-        message[2]=0;
-        send(videoSock, message, messageSize, 0); 
-
-        videoStreamButton->set_label("Not Video Streaming");
-        isStreamingActive = true;
-    }
-}
-
-
-void videoRowActivated(Gtk::ListBoxRow* listBoxRow){
-    Gtk::Label* label=static_cast<Gtk::Label*>(listBoxRow->get_child());
-    Glib::ustring connectionString(label->get_text());
-    int index=connectionString.rfind('@');
-    if(index==-1)return;
-    ++index;
-    Glib::ustring addressString=connectionString.substr(index,connectionString.length()-index);
-    videoIPAddressEntry->set_text(addressString);
-}
-
-
-
-Gtk::ScrolledWindow* create_gear_dial(const std::vector<std::string>& gears,
-                                      std::map<std::string, Gtk::Label*>& gear_labels,
-                                      Gtk::Box*& label_container)
+Gtk::Stack* create_gear_dial(const std::string& initial_gear,
+                             const std::vector<std::string>& gears,
+                             std::map<std::string, Gtk::Label*>& gear_labels)
 {
-    auto* scroll = new Gtk::ScrolledWindow();
-    scroll->set_policy(Gtk::POLICY_NEVER, Gtk::POLICY_AUTOMATIC);
-    scroll->set_propagate_natural_height(true);
-    scroll->set_size_request(80, 120); // Dial size
-
-    label_container = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 0));
-    scroll->add(*label_container);
+    auto* stack = Gtk::manage(new Gtk::Stack());
+    stack->set_size_request(80, 120);
+    stack->set_transition_type(Gtk::STACK_TRANSITION_TYPE_NONE);
 
     for (const auto& gear : gears) {
-        auto* label = Gtk::manage(new Gtk::Label(gear));
+        auto* label = Gtk::manage(new Gtk::Label());
         label->set_margin_top(8);
         label->set_margin_bottom(8);
         label->set_alignment(0.5, 0.5);
-        label->set_markup("<span size='8000' foreground='gray'>" + gear + "</span>");
-
+        label->set_markup("<span size='20480' weight='bold' foreground='black'>" + gear + "</span>");
         gear_labels[gear] = label;
-        label_container->pack_start(*label, Gtk::PACK_SHRINK);
+        label->show();
+
+        stack->add(*label, gear);  // gear string becomes child name
     }
 
-    return scroll;
+    if (gear_labels.find(initial_gear) != gear_labels.end()) {
+        stack->set_visible_child(initial_gear);
+    }
+
+    return stack;
 }
 
-
-void highlight_gear_and_scroll(const std::string& current_gear,
-                               const std::vector<std::string>& gears,
-                               const std::map<std::string, Gtk::Label*>& gear_labels,
-                               Gtk::ScrolledWindow* scroll,
-                               Gtk::Box* label_container)
+void highlight_gear(const std::string& current_gear,
+                    const std::vector<std::string>& gears,
+                    const std::map<std::string, Gtk::Label*>& gear_labels,
+                    Gtk::Stack* stack)
 {
-    int gear_index = 0;
-    for (size_t i = 0; i < gears.size(); ++i) {
-        const auto& gear = gears[i];
+    for (const auto& gear : gears) {
         auto* label = gear_labels.at(gear);
 
-        if (gear == current_gear) {
-            label->set_markup("<span size='12000' weight='bold' background='red' foreground='white'>" + gear + "</span>");
-            gear_index = i;
-        } else {
-            label->set_markup("<span size='8000' foreground='gray'>" + gear + "</span>");
+        if (gear != current_gear) // indicates an error with the gear widget
+        {
+            label->set_markup("<span size='20480' weight='bold' foreground='red'>" + gear + "</span>");
+        }
+        else
+        {
+            label->set_markup("<span size='20480' weight='bold' foreground='black'>" + gear + "</span>");
         }
     }
 
-    // Scroll so current gear is in the middle
-    auto adj = scroll->get_vadjustment();
-    double row_height = 30.0; // Approximate
-    double new_value = std::max(0.0, gear_index * row_height - scroll->get_height() / 2);
-    adj->set_value(new_value);
+    stack->set_visible_child(current_gear);
 }
 
 std::vector<std::string> gears = {"M", "5", "4", "3", "2", "1"};
 std::map<std::string, Gtk::Label*> gear_labels;
-Gtk::Box* gear_label_box = nullptr;
-Gtk::ScrolledWindow* gear_dial = nullptr;
+Gtk::Stack* gear_dial = nullptr;
 std::string currentGear = "3";
 
 void increaseGear(){
@@ -2866,7 +3172,7 @@ void increaseGear(){
     if (it != gears.begin()) {
         std::string nextGear = *std::prev(it);  // Increase gear
         currentGear = nextGear;
-        highlight_gear_and_scroll(currentGear, gears, gear_labels, gear_dial, gear_label_box);
+        highlight_gear(currentGear, gears, gear_labels, gear_dial);
     } else {
         std::cout << "Already at highest gear." << std::endl;
     }
@@ -2877,439 +3183,20 @@ void decreaseGear(){
     if (it != gears.end() && std::next(it) != gears.end()) {
         std::string nextGear = *std::next(it);  // Decrease gear
         currentGear = nextGear;
-        highlight_gear_and_scroll(currentGear, gears, gear_labels, gear_dial, gear_label_box);
+        highlight_gear(currentGear, gears, gear_labels, gear_dial);
     } else {
         std::cout << "Already at lowest gear." << std::endl;
     }
 }
 
 
-// Server address
-struct sockaddr_in serv_addr; 
-socklen_t addr_len = sizeof(serv_addr);
-std::chrono::high_resolution_clock::time_point lastHeartbeatTime;
-
-//UDP Version
-void connectToServer(){
-    if(connected==true) return;
-
-    std::string hello("Hello Robot"); 
-
-    memset(&serv_addr, '0', sizeof(serv_addr)); 
-
-    serv_addr.sin_family = AF_INET; 
-    serv_addr.sin_port = htons(PORT);
-
-    if(useOrin) {
-        if(inet_pton(AF_INET, ORIN_IP, &serv_addr.sin_addr) <= 0) {
-            std::cerr << "Invalid ORIN_IP" << std::endl;
-            return;
-        }
-    }
-    else {
-        if(inet_pton(AF_INET, NANO_IP, &serv_addr.sin_addr) <= 0) {
-            std::cerr << "Invalid NANO_IP" << std::endl;
-            return;
-        }
-    }
-
-    if ((sock = socket(AF_INET, SOCK_DGRAM, 0)) < 0) { 
-        perror("Socket creation error");
-        setDisconnectedState();
-        return; 
-    }
-    fcntl(sock, F_SETFL, O_NONBLOCK);
-
-    sendto(sock, hello.c_str(), hello.length(), 0, (struct sockaddr *)&serv_addr, addr_len);
-    std::cout << "Hello sent to server." << std::endl;
-
-    auto startTime = std::chrono::steady_clock::now();
-    bool replyReceived = false;
-    char buffer[2048] = {0};
-    int bytesRead = 0;
-
-    while (std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - startTime).count() < 2) {
-        bytesRead = recvfrom(sock, buffer, 2048, 0, (struct sockaddr *)&serv_addr, &addr_len);
-        if (bytesRead > 0) {
-            replyReceived = true;
-            break;
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(50));
-    }
-    
-    if (replyReceived) {
-        std::cout << "Received reply from server. Connection established." << std::endl;
-        setConnectedState();
-        ipAddressEntry->set_text(inet_ntoa(serv_addr.sin_addr));
-        initialized = true;
-        lastHeartbeatTime = std::chrono::high_resolution_clock::now();
-    }
-    else {
-        std::cout << "Did not receive reply from server (timeout). Connection failed." << std::endl;
-        setDisconnectedState();
-        close(sock);
-        sock = 0;
-    }
-}
-
-
-void disconnectFromServer(){
-    Gtk::MessageDialog dialog(*window,"Disconnect now?",false,Gtk::MESSAGE_QUESTION,Gtk::BUTTONS_OK_CANCEL);
-    //dialog.set_secondary_text("Do you want to shutdown now?");
-    int result=dialog.run();
-
-    switch(result) {
-        case (Gtk::RESPONSE_OK): 
-            if(close(sock)==0){
-                setDisconnectedState();
-            }
-            else{
-                Gtk::MessageDialog dialog(*window,"Failed Close",false,Gtk::MESSAGE_ERROR,Gtk::BUTTONS_OK);
-                int result=dialog.run();
-            }
-            break;
-        case (Gtk::RESPONSE_CANCEL):
-        case (Gtk::RESPONSE_NONE):
-        default:
-            break;
-    }
-}
-
-
-void connectOrDisconnect(){
-    Glib::ustring string=connectButton->get_label();
-    //std::cout << "connect" << string << std::endl;
-    if(string=="Connect"){
-        connectToServer();
-    }
-    else{
-        disconnectFromServer();
-    }
-}
-
-void encodeOrNot(){
-    Glib::ustring string=toggleEncodeButton->get_label();
-    if(string=="Enable Encoding"){
-        enableEncoding();
-    }
-    else{
-        disbleEncoding();
-    }
-}
-
-
-void silentRun(){
-    if(!connected)return;
-    std::string currentButtonState=silentRunButton->get_label();
-    if(currentButtonState=="Silent Running"){
-        int messageSize=3;
-        uint8_t command=7;// silence 
-        uint8_t message[messageSize];
-        message[0]=messageSize;
-        message[1]=command;
-        message[2]=0;
-        // send(sock, message, messageSize, 0);
-        sendto(sock , message , messageSize , 0 ,(struct sockaddr *)&serv_addr, addr_len);
-
-
-        silentRunButton->set_label("Not Silent Running");
-        silentRunning = false;
-    }
-    else{
-        int messageSize=3;
-        uint8_t command=7;// silence 
-        uint8_t message[messageSize];
-        message[0]=messageSize;
-        message[1]=command;
-        message[2]=1;
-        // send(sock, message, messageSize, 0); 
-        sendto(sock , message , messageSize , 0 ,(struct sockaddr *)&serv_addr, addr_len);
-
-        silentRunButton->set_label("Silent Running");
-        silentRunning = true;
-    }
-}
-
-
-void rowActivated(Gtk::ListBoxRow* listBoxRow){
-    Gtk::Label* label=static_cast<Gtk::Label*>(listBoxRow->get_child());
-    Glib::ustring connectionString(label->get_text());
-    int index=connectionString.rfind('@');
-    if(index==-1)return;
-    ++index;
-    Glib::ustring addressString=connectionString.substr(index,connectionString.length()-index);
-    ipAddressEntry->set_text(addressString);
-}
-
-
-void shutdownRobot(){
-    int messageSize=2;
-    uint8_t command=8;// shutdown
-    uint8_t message[messageSize];
-    message[0]=messageSize;
-    message[1]=command;
-    // send(sock, message, messageSize, 0);
-    sendto(sock , message , messageSize , 0 ,(struct sockaddr *)&serv_addr, addr_len);
-}
-
-
-void shutdownDialog(Gtk::Window* parentWindow){
-    Gtk::MessageDialog dialog(*parentWindow,"Shutdown now?",false,Gtk::MESSAGE_QUESTION,Gtk::BUTTONS_OK_CANCEL);
-    int result=dialog.run();
-
-    switch(result) {
-        case (Gtk::RESPONSE_OK):
-            shutdownRobot();
-            break;
-        case (Gtk::RESPONSE_CANCEL):
-        case (Gtk::RESPONSE_NONE):
-        default:
-            break;
-    }
-}
-
-std::string current_ip = "http://192.168.1.8";
-
-void send_servo_command(const std::string& direction) {
-    CURL* curl = curl_easy_init();
-    if (curl) {
-        std::string url = current_ip + "/action?go=" + direction;
-        curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-        curl_easy_setopt(curl, CURLOPT_TIMEOUT, 2L);  // Short timeout
-        CURLcode res = curl_easy_perform(curl);
-        if (res != CURLE_OK)
-            std::cerr << "curl_easy_perform() failed: " << curl_easy_strerror(res) << std::endl;
-        curl_easy_cleanup(curl);
-    }
-}
-
-
-bool on_key_release_event(GdkEventKey* key_event){
-    switch (key_event->keyval) {
-        case GDK_KEY_u:
-        case GDK_KEY_i:
-        case GDK_KEY_o:
-        case GDK_KEY_p:
-            send_servo_command("stop");
-            return false;
-            break;
-    }
-    int messageSize=5;
-    uint8_t command=2;// keyboard
-    uint8_t message[messageSize];
-    message[0]=messageSize;
-    message[1]=command;
-    message[2]=(uint8_t)(((key_event->keyval)>>8)& 0xff);
-    message[3]=(uint8_t)(((key_event->keyval)>>0)& 0xff);
-    message[4]=0;
-    // send(sock, message, messageSize, 0);
-    sendto(sock , message , messageSize , 0 ,(struct sockaddr *)&serv_addr, addr_len);
-
-
-    return false;
-}
-
-
-bool on_key_press_event(GdkEventKey* key_event){
-    switch (key_event->keyval) {
-        case GDK_KEY_u:
-            send_servo_command("left");
-            return false;
-            break;
-        case GDK_KEY_i:
-            send_servo_command("right");
-            return false;
-            break;
-        case GDK_KEY_o:
-            send_servo_command("up");
-            return false;
-            break;
-        case GDK_KEY_p:
-            send_servo_command("down");
-            return false;
-            break;
-        case GDK_KEY_1:
-            current_ip = "http://192.168.1.8";
-            std::cout << "Switched to IP 1: " << current_ip << std::endl;
-            return false;
-            break;
-        case GDK_KEY_2:
-            current_ip = "http://192.168.1.9";
-            std::cout << "Switched to IP 2: " << current_ip << std::endl;
-            return false;
-            break;
-        case GDK_KEY_minus:
-            decreaseGear();
-            break;
-        case GDK_KEY_plus:
-            if(key_event->state & GDK_SHIFT_MASK)
-                increaseGear();
-            break;
-    }
-
-    int messageSize=5;
-    uint8_t command=2;// keyboard
-    uint8_t message[messageSize];
-    message[0]=messageSize;
-    message[1]=command;
-    message[2]=(uint8_t)(((key_event->keyval)>>8)& 0xff);
-    message[3]=(uint8_t)(((key_event->keyval)>>0)& 0xff);
-    message[4]=1;
-    // send(sock, message, messageSize, 0);
-    sendto(sock , message , messageSize , 0 ,(struct sockaddr *)&serv_addr, addr_len);
-
-
-    return false;
-}
-
-
-Gtk::EventBox* create_labeled_box(const Glib::ustring& label_text, CircleDrawingArea*& out_circle, bool right = false) {
-    auto event_box = Gtk::manage(new Gtk::EventBox());
-
-    auto box = Gtk::manage(new BorderedBox(Gtk::ORIENTATION_HORIZONTAL, 5));
-    box->set_size_request(300, 75);
-
-    auto label = Gtk::manage(new Gtk::Label(label_text));
-    label->set_hexpand(true);
-
-    Pango::FontDescription font;
-    font.set_size(20 * Pango::SCALE);
-    label->override_font(font);
-
-    out_circle = Gtk::manage(new CircleDrawingArea());
-    out_circle->set_size_request(75, 75);
-    out_circle->set_hexpand(false);
-    out_circle->set_halign(Gtk::ALIGN_CENTER);
-
-    if(right){
-        box->add(*label);
-        box->add(*out_circle);
-    }
-    else{
-        box->add(*out_circle);
-        box->add(*label);
-    }   
-
-    event_box->add(*box);
-    event_box->add_events(Gdk::BUTTON_PRESS_MASK);
-    event_box->set_visible_window(false);
-
-    return event_box;
-}
-
-
-
-Gtk::EventBox* create_box(const Glib::ustring& label_text, CircleDrawingArea*& out_circle, bool right = false) {
-    auto event_box = Gtk::manage(new Gtk::EventBox());
-
-    auto box = Gtk::manage(new BorderedBox(Gtk::ORIENTATION_HORIZONTAL, 5));
-    box->set_size_request(200, 75);
-
-    auto label = Gtk::manage(new Gtk::Label(label_text));
-    label->set_hexpand(true);
-
-    Pango::FontDescription font;
-    font.set_size(20 * Pango::SCALE);
-    label->override_font(font);
-
-    out_circle = Gtk::manage(new CircleDrawingArea());
-    out_circle->set_size_request(75, 75);
-    out_circle->set_hexpand(false);
-    out_circle->set_halign(Gtk::ALIGN_CENTER);
-
-    if(right){
-        box->add(*label);
-        box->add(*out_circle);
-    }
-    else{
-        box->add(*out_circle);
-        box->add(*label);
-    }   
-
-    event_box->add(*box);
-    event_box->add_events(Gdk::BUTTON_PRESS_MASK);
-    event_box->set_visible_window(false);
-
-    return event_box;
-}
-
-
-bool onClickEvent(GdkEventButton* event, const std::string& id) {
-    if (event->type == GDK_2BUTTON_PRESS) {
-        auto target_infoframe = getInfoFrame(id);
-        Gtk::FlowBoxChild* flowbox_child = dynamic_cast<Gtk::FlowBoxChild*>(get_flowbox_child_for(*sensorBox, target_infoframe));
-        if (flowbox_child) {
-            sensorBox->select_child(*flowbox_child);
-        }
-        return true;
-    }
-    return false;
-}
-
-
-Gtk::Box* create_motor_column(std::vector<std::pair<Glib::ustring, CircleDrawingArea**>> items, void (*init_hook)(), std::vector<std::string> labels, bool right = false) {
-    auto column = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
-    column->set_size_request(300, 300);
-    column->set_hexpand(false);
-    column->set_vexpand(false);
-
-    for (size_t i = 0; i < items.size(); ++i) {
-        if (i == 2 && init_hook) init_hook();
-        auto box = create_labeled_box(items[i].first, *items[i].second, right);
-        std::string id = labels[i];
-        box->signal_button_press_event().connect(
-            [id](GdkEventButton* event) -> bool {
-                return onClickEvent(event, id);
-            },
-            false
-        );
-        column->add(*box);
-    }
-
-    return column;
-}
-
-
-// To change Speedometer sizes, need to change this value
-Gtk::Box* create_lower_motor_column(std::vector<std::pair<Glib::ustring, CircleDrawingArea**>> items, std::vector<std::string> labels, bool right = false) {
-    auto column = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
-    column->set_size_request(200, 300);
-    column->set_hexpand(false);
-    column->set_vexpand(false);
-
-    for (size_t i = 0; i < items.size(); ++i) {
-        auto box = create_labeled_box(items[i].first, *items[i].second, right);
-        std::string id = labels[i];
-        box->signal_button_press_event().connect(
-            [id](GdkEventButton* event) -> bool {
-                return onClickEvent(event, id);
-            },
-            false
-        );
-        column->add(*box);
-    }
-
-    return column;
-}
-
-
-Gdk::RGBA parse_color(const std::string& color_str) {
-    Gdk::RGBA color;
-    color.set(color_str);
-    return color;
-}
-
-
-std::string to_color_string(const Gdk::RGBA& color) {
-    return color.to_string();
-}
-
-
+/*** Functions associated with the config button and functionality ***/
 std::map<std::string, std::string> tooltip_map = {
     {"DISPLAY_SPEED", "Show or hide the speedometer."},
     {"NUMBERS_INSIDE", "Display numbers inside the speedometer ring."},
     {"NUMBER_TICKS", "Align numbers with speedometer tick marks."},
-    {"SHOW_FALCON_Device ID", "Show Falcon CAN ID in the telemetry frame."}
+    {"SHOW_FALCON_Device ID", "Show Falcon CAN ID in the telemetry frame."},
+    {"SHOW_MOTOR_TELEMETRY", "Show voltage and current under motor status indicators."}
 };
 
 
@@ -3345,1434 +3232,2629 @@ void setup_frame_map() {
     };
 }
 
-class ListColumns : public Gtk::TreeModel::ColumnRecord {
-public:
-    ListColumns() {
-        add(col_active);
-        add(col_text);
-        add(col_key);
-    }
-    Gtk::TreeModelColumn<bool> col_active;
-    Gtk::TreeModelColumn<Glib::ustring> col_text;
-    Gtk::TreeModelColumn<Glib::ustring> col_key;
-};
-
-ListColumns columns;
-
 std::map<std::string, Gtk::CheckButton*> bool_buttons;
-std::vector<std::string> local_talon_keys = talon_keys;
-std::vector<std::string> local_falcon_keys = falcon_keys;
-std::vector<std::string> local_linear_keys = linear_keys;
-std::vector<std::string> local_autonomy_keys = autonomy_keys;
-std::vector<std::string> local_communication_keys = communication_keys;
-std::vector<std::string> local_power2_keys = power2_keys;
-std::vector<std::string> local_power_keys = power_keys;
-std::vector<std::string> local_zed_keys = zed_keys;
-
-std::map<std::string, std::vector<std::string>*> local_key_vectors = {
-    {"Talon", &local_talon_keys},
-    {"Falcon", &local_falcon_keys},
-    {"Linear", &local_linear_keys},
-    {"Autonomy", &local_autonomy_keys},
-    {"Communication", &local_communication_keys},
-    {"Power2", &local_power2_keys},
-    {"Power", &local_power_keys},
-    {"Zed", &local_zed_keys}
-};
-
-
-bool allowConfig = true;
-
-void create_config_editor_window(const std::string& config_file) {
-    allowConfig = false;
-    configWindow = new Gtk::Window();
-    configWindow->set_title("Configuration Editor");
-    configWindow->set_default_size(1000, 600);
-    auto scrolledWindow = Gtk::make_managed<Gtk::ScrolledWindow>();
-    scrolledWindow->set_policy(Gtk::POLICY_AUTOMATIC, Gtk::POLICY_AUTOMATIC);
-
-    std::map<std::string, Glib::RefPtr<Gtk::ListStore>> list_stores;
-
-    auto main_box = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_VERTICAL);
-    auto grid = Gtk::make_managed<Gtk::Grid>();
-    auto save_button = Gtk::make_managed<Gtk::Button>("Save");
-    save_button->set_name("dark_text");
-    auto reset_button = Gtk::make_managed<Gtk::Button>("Reset");
-    reset_button->set_name("dark_text");
-    auto light_color_button = Gtk::make_managed<Gtk::ColorButton>();
-    auto dark_color_button = Gtk::make_managed<Gtk::ColorButton>();
-    auto file_entry = Gtk::make_managed<Gtk::Entry>();
-    file_entry->set_text(config_file);
-
-    std::string lightBackground;
-    std::string darkBackground;
-    Speedometer* testSpeedometer = new Speedometer("Test Speedometer");
-    testSpeedometer->set_size_request(200, 75);
-    testSpeedometer->set_display_speed(displaySpeed);
-    testSpeedometer->set_numbers_inside(numbersInside);
-    testSpeedometer->set_numbers_on_ticks(numberTicks);
-    auto outer_box = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_VERTICAL);
-    auto speed_box = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_HORIZONTAL);
-    auto speed_options_box = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_VERTICAL);
-    speed_box->set_size_request(250, 250);
-    speed_box->add(*testSpeedometer);
-    speed_box->add(*speed_options_box);
-
-    grid->attach(*Gtk::make_managed<Gtk::Label>("Config File:"), 0, 0, 1, 1);
-    grid->attach(*file_entry, 1, 0, 1, 1);
-
-    // Load config
-    std::ifstream file("../resources/" + config_file);
-    std::string line;
-    int row = 2;
-
-    std::map<std::string, bool> config_values;
-
-    Gtk::FlowBox* sensorsBox = Gtk::manage(new Gtk::FlowBox());
-    sensorsBox->set_orientation(Gtk::ORIENTATION_HORIZONTAL);
-    sensorsBox->set_size_request(1000, -1);
-    
-
-    auto populateBinaryMessage = [&](const std::string& prefix, BinaryMessage& message) {
-        std::string name = getNameFromPrefix(prefix);
-        auto keys_it = local_key_vectors.find(name);
-        auto defs_it = element_definitions.find(prefix);
-        if (keys_it == local_key_vectors.end() || defs_it == element_definitions.end()) {
-            std::cerr << "Warning: Missing keys or definitions for prefix " << prefix << std::endl;
-            return;
-        }
-        const auto& keys = *keys_it->second;
-        const auto& defs = defs_it->second;
-        std::map<std::string, ElementType> type_map;
-        for (const auto& def : defs) {
-            type_map[def.name] = def.type;
-        }
-        for (const std::string& key : keys) {
-            auto type_it = type_map.find(key);
-            if (type_it == type_map.end()) continue;
-
-            ElementType type = type_it->second;
-
-            if      (type == ElementType::UInt8)   message.addElementUInt8(key, 0);
-            else if (type == ElementType::UInt16)  message.addElementUInt16(key, 0);
-            else if (type == ElementType::Int8)    message.addElementInt8(key, 0);
-            else if (type == ElementType::Int32)   message.addElementInt32(key, 0);
-            else if (type == ElementType::Float32) message.addElementFloat32(key, 0.0f);
-            else if (type == ElementType::Boolean) message.addElementBoolean(key, false);
-            else if (type == ElementType::String)  message.addElementString(key, "");
-        }
-    };
-
-    // Lambda to get the bool values of the map given by the prefix, then adds the element to the InfoFrame
-    auto addConditionalElements = [&](const std::string& prefix, BinaryMessage& msg, InfoFrame* frame) {
-        std::string label = getNameFromPrefix(prefix);
-        std::map<std::string, bool>& values = getMap(label);
-        for (const Element& el : msg.getObject().elementList) {
-            std::string key = "SHOW_" + prefix + "_" + el.label;
-            auto it = values.find(el.label);
-            if(it == values.end() || !it->second)
-                continue;
-
-            addElementToInfoFrame(frame, el);
-        }
-    };
-
-    // Single generic frame creation function
-    // Given a name, prefix creates frame, then adds the elements to the 
-    auto createFrame = [&](const std::string& name, const std::string& prefix, InfoFrame*& frameRef, Gtk::Box* box) {
-        BinaryMessage message(name);
-        populateBinaryMessage(prefix, message);
-
-        frameRef = Gtk::manage(new InfoFrame(name));
-        addConditionalElements(prefix, message, frameRef);
-
-        box->add(*frameRef);
-        frameRef->show_all();
-    };
-
-    // Lambda to get the InfoFrame associated with the passed prefix
-    auto get_info_frame_for_prefix = [&](const std::string& prefix) -> InfoFrame* {
-        auto it = frame_map.find(prefix);
-        return (it != frame_map.end()) ? it->second : talonFrame;
-    };
-
-    // Lambda to reset the order of the items in the frame
-    // TODO: Update draggable items and checkboxes
-    auto reset_frame = [&](std::string prefix){
-        InfoFrame* frameRef = get_info_frame_for_prefix(prefix);
-        frameRef->removeAllItems();
-        std::string messageName = getNameFromPrefix(prefix);
-        BinaryMessage message(messageName);    
-        populateBinaryMessage(prefix, message);
-        std::map<std::string, bool>& values = getMap(messageName);
-        for (const Element& el : message.getObject().elementList) {
-            std::string key = "SHOW_" + prefix + "_" + el.label;
-            auto it = values.find(el.label);
-            if(it == values.end())
-                continue;
-            it->second = true;
-        }
-        addConditionalElements(prefix, message, frameRef);
-        frameRef->show_all();
-    };
-
-    // Define frames and boxes
-    Gtk::Box *talonBox = nullptr, *falconBox = nullptr, *linearBox = nullptr,
-            *autonomyBox = nullptr, *zedBox = nullptr, *communicationBox = nullptr,
-            *powerBox = nullptr, *power2Box = nullptr, *drivetrainBox = nullptr;
-
-    InfoFrame *optionsTalonFrame = nullptr, *optionsFalconFrame = nullptr, *optionsLinearFrame = nullptr,
-            *optionsAutonomyFrame = nullptr, *optionsZedFrame = nullptr, *optionsCommunicationFrame = nullptr,
-            *optionsPowerFrame = nullptr, *optionsPower2Frame = nullptr, *optionsDrivetrainFrame = nullptr;
-
-    // Frame entry struct
-    struct FrameEntry {
-        std::string label; // Label to put on the Infoframe
-        std::string prefix; // Prefix to prepend to all of the options to differentiate
-        InfoFrame** frame_ptr; // Frame to display the items in the InfoFrame
-        Gtk::Box** box_ptr; // Box to hold both the display frame and the options frame
-        InfoFrame** options_frame_ptr; // Options InfoFrame
-    };
-
-    std::vector<FrameEntry> frame_entries = {
-        {"Talon",         "TALON",         &talonFrame,         &talonBox,         &optionsTalonFrame},
-        {"Falcon",        "FALCON",        &falconFrame,        &falconBox,        &optionsFalconFrame},
-        {"Linear",        "LINEAR",        &linearFrame,        &linearBox,        &optionsLinearFrame},
-        {"Autonomy",      "AUTONOMY",      &autonomyFrame,      &autonomyBox,      &optionsAutonomyFrame},
-        {"Zed",           "ZED",           &zedFrame,           &zedBox,           &optionsZedFrame},
-        {"Communication", "COMMUNICATION", &communicationFrame, &communicationBox, &optionsCommunicationFrame},
-        {"Power",         "POWER",         &powerFrame,         &powerBox,         &optionsPowerFrame},
-        {"Power2",        "POWER2",        &power2Frame,        &power2Box,        &optionsPower2Frame},
-        {"Drivetrain",    "DRIVETRAIN",    &drivetrainFrame,    &drivetrainBox,    &optionsDrivetrainFrame},
-    };
-
-    // Create all frames & boxes in a loop
-    for (auto& entry : frame_entries) {
-        *(entry.box_ptr) = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_HORIZONTAL);
-        createFrame(entry.label, entry.prefix, *(entry.frame_ptr), *(entry.box_ptr));
-
-        *(entry.options_frame_ptr) = Gtk::manage(new InfoFrame(entry.prefix.substr(0, 1) + entry.prefix.substr(1) + " Options"));
-        (*(entry.box_ptr))->add(*(*(entry.options_frame_ptr)));
-
-        sensorsBox->add(*(*(entry.box_ptr)));
-    }
-
-    setup_frame_map();
-
-    auto create_reorderable_checkbox_list = [&](const std::string& prefix, std::vector<std::string> keys, std::map<std::string, bool>& items_map,
-                                            Glib::RefPtr<Gtk::ListStore>& list_store_out) -> Gtk::Widget* {
-        auto box = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_VERTICAL);
-        auto scrolled_window = Gtk::make_managed<Gtk::ScrolledWindow>();
-        auto tree_view = Gtk::make_managed<Gtk::TreeView>();
-
-        auto list_store = Gtk::ListStore::create(columns);
-        list_store_out = list_store;
-
-        tree_view->set_model(list_store);
-        tree_view->set_reorderable(true);
-
-        tree_view->enable_model_drag_source();
-        tree_view->enable_model_drag_dest();
-
-
-        // Checkbox column
-        auto cell_toggle = Gtk::make_managed<Gtk::CellRendererToggle>();
-        cell_toggle->property_activatable() = true;
-        int col_index_toggle = tree_view->append_column("Active", *cell_toggle);
-        if (auto col_toggle = tree_view->get_column(col_index_toggle - 1)) {
-            col_toggle->add_attribute(cell_toggle->property_active(), columns.col_active);
-        }
-
-        // Text column with autosizing
-        int col_index_text = tree_view->append_column("Item", columns.col_text);
-        if (auto col_text = tree_view->get_column(col_index_text - 1)) {
-            col_text->set_resizable(true);
-            col_text->set_expand(true);
-            col_text->set_sizing(Gtk::TREE_VIEW_COLUMN_AUTOSIZE);
-        }
-
-        // Scrolling and expansion
-        scrolled_window->set_policy(Gtk::POLICY_AUTOMATIC, Gtk::POLICY_AUTOMATIC);
-        scrolled_window->set_min_content_height(300);
-        scrolled_window->set_hexpand(true);
-        scrolled_window->set_vexpand(true);
-        tree_view->set_hexpand(true);
-
-        // Fill list store from map
-        for(const auto& key: keys){
-            auto row = *(list_store->append());
-            row[columns.col_text] = key;
-            auto it = items_map.find(key);
-            if (it != items_map.end()) {
-                row[columns.col_active] = it->second;
-            }
-            row[columns.col_key] = prefix + "_" + key;
-        }
-
-        // Sync checkbox toggle with map
-        cell_toggle->signal_toggled().connect([list_store, prefix, &items_map, &get_info_frame_for_prefix, &addConditionalElements, &populateBinaryMessage, &reset_frame](const Glib::ustring& path) {
-            if (auto iter = list_store->get_iter(path)) {
-                bool active = !(*iter)[columns.col_active];
-                (*iter)[columns.col_active] = active;
-                std::string key = Glib::ustring((*iter)[columns.col_text]).raw();
-                items_map[key] = active;
-                InfoFrame* frameRef = get_info_frame_for_prefix(prefix);
-                if (active) {
-                    InfoFrame* frameRef = get_info_frame_for_prefix(prefix);
-                    frameRef->removeAllItems();
-                    std::string messageName = getNameFromPrefix(prefix);
-                    BinaryMessage message(messageName);    
-                    populateBinaryMessage(prefix, message);
-                    addConditionalElements(prefix, message, frameRef);
-                    frameRef->show_all();
-                }
-                else {
-                    frameRef->removeItem(key);
-                    frameRef->show_all();
-                }
-            }
-        });
-        
-        tree_view->signal_drag_end().connect([prefix, list_store, &get_info_frame_for_prefix, &addConditionalElements, &populateBinaryMessage, &reset_frame](const Glib::RefPtr<Gdk::DragContext>& context) {
-            // Create a new vector to store the new order
-            std::vector<std::string> new_order;
-
-            // Iterate over list_store rows in visual order
-            for (auto iter = list_store->children().begin(); iter != list_store->children().end(); ++iter) {
-                auto row = *iter;
-                std::string key = Glib::ustring(row[columns.col_text]).raw();
-                new_order.push_back(key);
-            }
-            std::string name = getNameFromPrefix(prefix);
-            auto it = local_key_vectors.find(name);
-            if (it != local_key_vectors.end() && it->second) {
-                *(it->second) = new_order;  // Replace contents with new order
-            }
-            else {
-                std::cerr << "Warning: prefix '" << prefix << "' not found in local_key_vectors." << std::endl;
-            }
-            InfoFrame* frameRef = get_info_frame_for_prefix(prefix);
-            frameRef->removeAllItems();
-            std::string messageName = getNameFromPrefix(prefix);
-            BinaryMessage message(messageName);    
-            populateBinaryMessage(prefix, message);
-            addConditionalElements(prefix, message, frameRef);
-            frameRef->show_all();
-        });
-
-        scrolled_window->add(*tree_view);
-        box->pack_start(*scrolled_window, Gtk::PACK_EXPAND_WIDGET);
-
-        return box;
-    };
-
-
-    Gtk::Widget* talonWidget = create_reorderable_checkbox_list("TALON", talon_keys, talon_values, list_stores["TALON"]);
-    optionsTalonFrame->addWidget(*talonWidget);
-    Gtk::Widget* falconWidget = create_reorderable_checkbox_list("FALCON", falcon_keys, falcon_values, list_stores["FALCON"]);
-    optionsFalconFrame->addWidget(*falconWidget);
-    Gtk::Widget* linearWidget = create_reorderable_checkbox_list("LINEAR", linear_keys, linear_values, list_stores["LINEAR"]);
-    optionsLinearFrame->addWidget(*linearWidget);
-    Gtk::Widget* autonomyWidget = create_reorderable_checkbox_list("AUTONOMY", autonomy_keys, autonomy_values, list_stores["AUTONOMY"]);
-    optionsAutonomyFrame->addWidget(*autonomyWidget);
-    Gtk::Widget* zedWidget = create_reorderable_checkbox_list("ZED", zed_keys, zed_values, list_stores["ZED"]);
-    optionsZedFrame->addWidget(*zedWidget);
-    Gtk::Widget* communicationWidget = create_reorderable_checkbox_list("COMMUNICATION", communication_keys, communication_values, list_stores["COMMUNICATION"]);
-    optionsCommunicationFrame->addWidget(*communicationWidget);
-    Gtk::Widget* powerWidget = create_reorderable_checkbox_list("POWER", power_keys, power_values, list_stores["POWER"]);
-    optionsPowerFrame->addWidget(*powerWidget);
-    Gtk::Widget* power2Widget = create_reorderable_checkbox_list("POWER2", power2_keys, power2_values, list_stores["POWER2"]);
-    optionsPower2Frame->addWidget(*power2Widget);
-    Gtk::Widget* drivetrainWidget = create_reorderable_checkbox_list("DRIVETRAIN", drivetrain_keys, drivetrain_values, list_stores["DRIVETRAIN"]);
-    optionsPower2Frame->addWidget(*drivetrainWidget);
-
-    // Lambda to create the color option picker and add it to the grid
-    auto add_color_setting = [&](const std::string& label_text, const std::string& color_value, Gtk::ColorButton* color_button) {
-        auto label = Gtk::make_managed<Gtk::Label>(label_text + ":");
-        color_button->set_rgba(parse_color(color_value));
-        grid->attach(*label, 0, row, 1, 1);
-        grid->attach(*color_button, 1, row, 1, 1);
-        row++;
-    };
-
-    // Lambda to add the on click functionality to the speedometer options
-    auto connect_speedometer_toggle = [&](Gtk::CheckButton* check, const std::string& key) {
-        check->signal_toggled().connect([=]() mutable {
-            bool active = check->get_active();
-            if (key == "DISPLAY_SPEED") {
-                displaySpeed = active;
-                testSpeedometer->set_display_speed(active);
-            }
-            else if (key == "NUMBERS_INSIDE") {
-                numbersInside = active;
-                testSpeedometer->set_numbers_inside(active);
-            }
-            else if (key == "NUMBER_TICKS") {
-                numberTicks = active;
-                testSpeedometer->set_numbers_on_ticks(active);
-            }
-            if(testSpeedometer)testSpeedometer->queue_draw();
-
-        });
-    };
-
-
-    auto update_value = [&](const std::string& prefix, const std::string& key, bool active) {
-        std::string full_key = "SHOW_" + prefix + "_" + key;
-        std::string label = getNameFromPrefix(prefix);
-        std::map<std::string, bool>& values = getMap(label);
-        auto it = values.find(key);
-        if(it != values.end()){
-            it->second = active;
-        }
-
-        std::string col_key = prefix + "_" + key;
-        auto it_store = list_stores.find(prefix);
-        if (it_store != list_stores.end()) {
-            auto store = it_store->second;
-            for (auto iter = store->children().begin(); iter != store->children().end(); ++iter) {
-                if ((*iter)[columns.col_key] == col_key) {
-                    (*iter)[columns.col_active] = active;
-                    auto row = *iter;
-                    Glib::ustring text = row[columns.col_text];
-                    bool active_val = row[columns.col_active];
-                    Glib::ustring key_val = row[columns.col_key];
-                    store->erase(iter);
-                    auto new_iter = store->append();
-                    (*new_iter)[columns.col_text] = text;
-                    (*new_iter)[columns.col_active] = active_val;
-                    (*new_iter)[columns.col_key] = key_val;
-                    break;
-                }
-            }
-        }
-        std::string name = getNameFromPrefix(prefix);
-        auto it_vec = local_key_vectors.find(name);
-        if (it_vec != local_key_vectors.end() && it_vec->second) {
-            auto& vec = *(it_vec->second);
-            auto pos = std::find(vec.begin(), vec.end(), key);
-            if (pos != vec.end()) {
-                vec.erase(pos);       // Remove from old position
-            }
-            vec.push_back(key);       // Add to end
-        }
-        InfoFrame* frameRef = get_info_frame_for_prefix(prefix);
-        frameRef->removeAllItems();
-        std::string messageName = getNameFromPrefix(prefix);
-        BinaryMessage message(messageName);    
-        populateBinaryMessage(prefix, message);
-        addConditionalElements(prefix, message, frameRef);
-        frameRef->show_all();
-    };
-
-    // Lambda that finds the prefix and then creates a checkbox witht that prefix and
-    // option
-    auto setup_info_toggle_if_needed = [&](const std::string& key, bool active) {
-        if (key.rfind("SHOW_TALON_", 0) == 0) {
-            update_value("TALON", key.substr(11), active);
-        }
-        else if (key.rfind("SHOW_FALCON_", 0) == 0) {
-            update_value("FALCON", key.substr(12), active);
-        }
-        else if (key.rfind("SHOW_LINEAR_", 0) == 0) {
-            update_value("LINEAR", key.substr(12), active);
-        }
-        else if (key.rfind("SHOW_AUTONOMY_", 0) == 0) {
-            update_value("AUTONOMY", key.substr(14), active);
-        }
-        else if (key.rfind("SHOW_ZED_", 0) == 0) {
-            update_value("ZED", key.substr(9), active);
-        }
-        else if (key.rfind("SHOW_COMMUNICATION_", 0) == 0) {
-            update_value("COMMUNICATION", key.substr(19), active);
-        }
-        else if (key.rfind("SHOW_POWER_", 0) == 0) {
-            update_value("POWER", key.substr(11), active);
-        }
-        else if (key.rfind("SHOW_POWER2_", 0) == 0) {
-            update_value("POWER2", key.substr(12), active);
-        }
-        else if(key.rfind("SHOW_DRIVETRAIN_", 0) == 0){
-            update_value("DRIVETRAIN", key.substr(16), active);
-        }
-    };
-
-    while (std::getline(file, line)) {
-        std::istringstream ss(line);
-        std::string key, value;
-        if (!(std::getline(ss, key, '=') && std::getline(ss, value))) continue;
-        if (key == "LIGHT_BACKGROUND") {
-            lightBackground = value;
-            add_color_setting("Light Background Color", value, light_color_button);
-        }
-        else if (key == "DARK_BACKGROUND") {
-            darkBackground = value;
-            add_color_setting("Dark Background Color", value, dark_color_button);
-        }
-        else {
-            if (key == "DISPLAY_SPEED" || key == "NUMBERS_INSIDE" || key == "NUMBER_TICKS") {
-                auto check = Gtk::make_managed<Gtk::CheckButton>(key);
-                check->set_active(value == "true");
-                bool_buttons[key] = check;
-                speed_options_box->add(*check);
-                add_tooltip(check, key);
-                connect_speedometer_toggle(check, key);
-            }
-            else {
-                setup_info_toggle_if_needed(key, value == "true");
-            }
-        }
-    }
-
-    auto it = bool_buttons.find("DISPLAY_SPEED");
-    if(it == bool_buttons.end()){
-        lightBackground = "#FFFFFF";
-        add_color_setting("Light Background Color", "#FFFFFF", light_color_button);
-        darkBackground = "#000000";
-        add_color_setting("Dark Background Color", "#000000", dark_color_button);
-        
-        auto check = Gtk::make_managed<Gtk::CheckButton>("DISPLAY_SPEED");
-        check->set_active(true);
-        bool_buttons["DISPLAY_SPEED"] = check;
-        speed_options_box->add(*check);
-        add_tooltip(check, "DISPLAY_SPEED");
-        connect_speedometer_toggle(check, "DISPLAY_SPEED");
-        
-        check = Gtk::make_managed<Gtk::CheckButton>("NUMBERS_INSIDE");
-        check->set_active(true);
-        bool_buttons["NUMBERS_INSIDE"] = check;
-        speed_options_box->add(*check);
-        add_tooltip(check, "NUMBERS_INSIDE");
-        connect_speedometer_toggle(check, "NUMBERS_INSIDE");
-        
-        check = Gtk::make_managed<Gtk::CheckButton>("NUMBER_TICKS");
-        check->set_active(true);
-        bool_buttons["NUMBER_TICKS"] = check;
-        speed_options_box->add(*check);
-        add_tooltip(check, "NUMBER_TICKS");
-        connect_speedometer_toggle(check, "NUMBER_TICKS");
-    }
-
-    if (bool_buttons.count("DISPLAY_SPEED")) {
-        displaySpeed = bool_buttons["DISPLAY_SPEED"]->get_active();
-        testSpeedometer->set_display_speed(displaySpeed);
-    }
-    if (bool_buttons.count("NUMBERS_INSIDE")) {
-        numbersInside = bool_buttons["NUMBERS_INSIDE"]->get_active();
-        testSpeedometer->set_numbers_inside(numbersInside);
-    }
-    if (bool_buttons.count("NUMBER_TICKS")) {
-        numberTicks = bool_buttons["NUMBER_TICKS"]->get_active();
-        testSpeedometer->set_numbers_on_ticks(numberTicks);
-    }
-
-    auto save_values = [](const std::string& key, bool active){
-        if (key.rfind("SHOW_TALON_", 0) == 0) {
-            save_value(talon_values, key.substr(11), active);
-        }
-        else if (key.rfind("SHOW_FALCON_", 0) == 0) {
-            save_value(falcon_values, key.substr(12), active);
-        }
-        else if (key.rfind("SHOW_LINEAR_", 0) == 0) {
-            save_value(linear_values, key.substr(12), active);
-        }
-        else if (key.rfind("SHOW_AUTONOMY_", 0) == 0) {
-            save_value(autonomy_values, key.substr(14), active);
-        }
-        else if (key.rfind("SHOW_ZED_", 0) == 0) {
-            save_value(zed_values, key.substr(9), active);
-        }
-        else if (key.rfind("SHOW_COMMUNICATION_", 0) == 0) {
-            save_value(communication_values, key.substr(19), active);
-        }
-        else if (key.rfind("SHOW_POWER_", 0) == 0) {
-            save_value(power_values, key.substr(11), active);
-        }
-        else if (key.rfind("SHOW_POWER2_", 0) == 0) {
-            save_value(power2_values, key.substr(12), active);
-        }
-    };
-
-    auto write_values = [](std::ofstream& outfile, const std::string& label, const std::string& prefix){
-        std::map<std::string, bool>& values = getMap(label);
-        std::vector<std::string> keys = getKeys(label);
-        for (const std::string& key : keys) {
-            auto it = values.find(key);
-            if (it != values.end()) {
-                bool active = it->second;
-                outfile << "SHOW_" << prefix << "_" << key << "=" << (active ? "true" : "false") << "\n";
-            }
-        }
-        
-    };
-
-    reset_button->signal_clicked().connect([=]() mutable{
-        local_talon_keys = reset_talon_keys;
-        reset_frame("TALON");
-
-        local_falcon_keys = reset_falcon_keys;
-        reset_frame("FALCON");
-
-        local_linear_keys = reset_linear_keys;
-        reset_frame("LINEAR");
-
-        local_autonomy_keys = reset_autonomy_keys;
-        reset_frame("AUTONOMY");
-
-        local_power_keys = reset_power_keys;
-        reset_frame("POWER");
-
-        local_power2_keys = reset_power2_keys;
-        reset_frame("POWER2");
-
-        local_zed_keys = reset_zed_keys;
-        reset_frame("ZED");
-
-        local_communication_keys = reset_communication_keys;
-        reset_frame("COMMUNICATION");
-    });
-
-    save_button->signal_clicked().connect([=]() mutable{
-        std::ofstream outfile("../resources/" + file_entry->get_text());
-        
-        for (const auto& [key, button] : bool_buttons) {
-            bool active = button->get_active();
-            save_values(key, active);
-        }
-
-        talon_keys = local_talon_keys;
-        falcon_keys = local_falcon_keys;
-        linear_keys = local_linear_keys;
-        autonomy_keys = local_autonomy_keys;
-        power_keys = local_power_keys;
-        power2_keys = local_power2_keys;
-        zed_keys = local_zed_keys;
-        communication_keys = local_communication_keys;
-
-        write_values(outfile, "Talon", "TALON");
-        write_values(outfile, "Falcon", "FALCON");
-        write_values(outfile, "Linear", "LINEAR");
-        write_values(outfile, "Autonomy", "AUTONOMY");
-        write_values(outfile, "Communication", "COMMUNICATION");
-        write_values(outfile, "Power2", "POWER2");
-        write_values(outfile, "Power", "POWER");
-        write_values(outfile, "Zed", "ZED");
-
-        const auto lightColorStr = to_color_string(light_color_button->get_rgba());
-        const auto darkColorStr = to_color_string(dark_color_button->get_rgba());
-        outfile << "LIGHT_BACKGROUND=" << lightColorStr << "\n";
-        outfile << "DARK_BACKGROUND=" << darkColorStr << "\n";
-        outfile << "DISPLAY_SPEED=" << (displaySpeed ? "true" : "false") << "\n";
-        outfile << "NUMBERS_INSIDE=" << (numbersInside ? "true" : "false") << "\n";
-        outfile << "NUMBER_TICKS=" << (numberTicks ? "true" : "false") << "\n";
-
-        if (!lightBackground.empty() && !darkBackground.empty()) {
-            std::cout << lightBackground << "\n" << darkBackground << std::endl;
-
-            Gdk::RGBA selectedColor = isLightMode ? light_color_button->get_rgba() : dark_color_button->get_rgba();
-            lightBackgroundColor = lightColorStr;
-            darkBackgroundColor = darkColorStr;
-
-            std::vector<CircleDrawingArea*> circles = {
-                talon1Circle, talon3Circle,
-                falcon1Circle, falcon2Circle, falcon3Circle, falcon4Circle,
-                lowerFalcon1Circle, lowerFalcon2Circle, lowerFalcon3Circle, lowerFalcon4Circle
-            };
-            for (auto* circle : circles) {
-                if (circle) circle->set_background_color(selectedColor);
-            }
-
-            auto css_provider = Gtk::CssProvider::create();
-            const auto& css = isLightMode ? generateLightModeString(lightBackgroundColor)
-                                        : generateDarkModeString(darkBackgroundColor);
-            css_provider->load_from_data(css);
-            Gtk::StyleContext::add_provider_for_screen(
-                Gdk::Screen::get_default(), css_provider, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
-        }
-
-        displaySpeed   = bool_buttons["DISPLAY_SPEED"]->get_active();
-        numbersInside  = bool_buttons["NUMBERS_INSIDE"]->get_active();
-        numberTicks    = bool_buttons["NUMBER_TICKS"]->get_active();
-
-        std::cout << "displaySpeed:" << displaySpeed << "\n"
-                << "numbersInside:" << numbersInside << "\n"
-                << "numberTicks:" << numberTicks << std::endl;
-
-        for (auto* speedometer : {rightSpeedometer, leftSpeedometer}) {
-            if (speedometer) {
-                speedometer->set_display_speed(displaySpeed);
-                speedometer->set_numbers_inside(numbersInside);
-                speedometer->set_numbers_on_ticks(numberTicks);
-                speedometer->queue_draw();
-            }
-        }
-        updateGUI();
-    });
-    
-    configWindow->signal_hide().connect([]() {
-        std::cout << "Cleared bool_buttons" << std::endl;
-        bool_buttons.clear();
-        allowConfig = true;
-    });
-
-    main_box->pack_start(*grid);
-    outer_box->add(*speed_box);
-    outer_box->add(*sensorsBox);
-    main_box->add(*outer_box);
-    auto save_box = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_VERTICAL);
-    save_box->set_halign(Gtk::ALIGN_CENTER); 
-    save_box->set_valign(Gtk::ALIGN_CENTER);
-
-    save_button->set_size_request(250, 50);
-    save_button->set_hexpand(false); 
-    save_button->set_halign(Gtk::ALIGN_START); 
-
-    reset_button->set_size_request(250, 50);
-    reset_button->set_hexpand(false); 
-    reset_button->set_halign(Gtk::ALIGN_START);
-
-    save_box->pack_start(*save_button, Gtk::PACK_SHRINK);
-    save_box->add(*reset_button);
-
-    main_box->add(*save_box);
-    scrolledWindow->add(*main_box);
-    configWindow->add(*scrolledWindow);
-    configWindow->show_all_children();
-    configWindow->show_all();
+std::vector<std::string> local_talon_keys = get_talon_keys();
+std::vector<std::string> local_falcon_keys = get_falcon_keys();
+std::vector<std::string> local_neo_keys = get_neo_keys();
+std::vector<std::string> local_kraken_keys = get_kraken_keys();
+std::vector<std::string> local_linear_keys = get_linear_keys();
+std::vector<std::string> local_autonomy_keys = get_autonomy_keys();
+std::vector<std::string> local_communication_keys = get_communication_keys();
+std::vector<std::string> local_power2_keys = get_power2_keys();
+std::vector<std::string> local_power_keys = get_power_keys();
+std::vector<std::string> local_zed_keys = get_zed_keys();
+std::vector<std::string> local_drivetrain_keys = get_drivetrain_keys();
+
+std::map<std::string, std::vector<std::string>*> local_key_vectors = {};
+
+void setup_local_key_vectors() {
+    local_key_vectors.clear();
+ 
+    // Motor-type keys
+    if (!activeConfig.getLabelsForType(MotorType::TALON).empty())
+        local_key_vectors["Talon"] = &local_talon_keys;
+    if (!activeConfig.getLabelsForType(MotorType::FALCON).empty())
+        local_key_vectors["Falcon"] = &local_falcon_keys;
+    if (!activeConfig.getLabelsForType(MotorType::NEO).empty())
+        local_key_vectors["Neo"] = &local_neo_keys;
+    if (!activeConfig.getLabelsForType(MotorType::KRAKEN).empty())
+        local_key_vectors["Kraken"] = &local_kraken_keys;
+ 
+    local_key_vectors["Linear"] = &local_linear_keys;
+    local_key_vectors["Autonomy"] = &local_autonomy_keys;
+    local_key_vectors["Communication"] = &local_communication_keys;
+    local_key_vectors["Power2"] = &local_power2_keys;
+    local_key_vectors["Power"] = &local_power_keys;
+    local_key_vectors["Zed"] = &local_zed_keys;
+    local_key_vectors["Drivetrain"] = &local_drivetrain_keys;
 }
 
-void setupGUI(Glib::RefPtr<Gtk::Application> application) {
-    initialize_maps();
-    // Create window instance
-    window = new Gtk::Window();
-    window->maximize();
 
-    try {
-        auto icon = "../resources/razorbotz.png";
-        window->set_icon_from_file(icon);
-    } catch (const Glib::FileError& e) {
-        g_print("Failed to load image: %s\n", e.what().c_str());
+void create_config_editor_window(const std::string& config_file) {
+    if (configWindow) {
+        configWindow->present();
         return;
     }
 
-    // Handles key press and release events  
-    window->add_events(Gdk::KEY_PRESS_MASK);
-    window->add_events(Gdk::KEY_RELEASE_MASK);
+    if (!allowConfig) {
+        return;
+    }
+    
+    allowConfig = false;
+    configWindow = new ConfigEditorWindow(config_file);
+    configWindow->signal_hide().connect([]() {
+        configWindow = nullptr; // Reset the pointer, as the object is now destroyed.
+        allowConfig = true;     // Allow a new window to be created next time.
+    });
+
+    // Apply opaque background so text is readable (the global CSS uses transparent backgrounds)
+    auto config_css = Gtk::CssProvider::create();
+    std::string config_bg = "window { background-color: " + (isLightMode ? lightBackgroundColor : darkBackgroundColor) + "; }"
+                            " label { color: " + (isLightMode ? std::string("#000000") : std::string("#edf6fa")) + "; }";
+    config_css->load_from_data(config_bg);
+    configWindow->get_style_context()->add_provider(config_css, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+
+    configWindow->show();
+}
+
+
+/*** Helper functions for creating GUI windows / binding events ***/
+std::string current_ip = "http://192.168.1.8";
+void send_servo_command(const std::string& direction) {
+    if(wsl)
+        return;
+    CURL* curl = curl_easy_init();
+    if (curl) {
+        std::string url = current_ip + "/action?go=" + direction;
+        curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT, 2L);  // Short timeout
+        CURLcode res = curl_easy_perform(curl);
+        if (res != CURLE_OK)
+            std::cerr << "curl_easy_perform() failed: " << curl_easy_strerror(res) << std::endl;
+        curl_easy_cleanup(curl);
+    }
+}
+
+bool on_key_release_event(GdkEventKey* key_event){
+    switch (key_event->keyval) {
+        case GDK_KEY_u:
+        case GDK_KEY_o:
+        case GDK_KEY_p:
+            send_servo_command("stop");
+            return false;
+            break;
+        case GDK_KEY_i:
+            if(!wsl){
+                send_servo_command("stop");
+                return false;
+            }
+            break;
+    }
+    sendKeyboardEvent(key_event->keyval, 0); // 0 for key release
+    return false;
+}
+
+bool on_key_press_event(GdkEventKey* key_event){
+    switch (key_event->keyval) {
+        case GDK_KEY_m:
+        case GDK_KEY_M:
+            // Toggle light/dark mode (works in both pilot and FE mode)
+            toggleMode();
+            return true;
+        case GDK_KEY_t:
+        case GDK_KEY_T:
+            // FE only: start/pause mission timer
+            if (isFlightEngineer) {
+                if (!feMissionTimerRunning) {
+                    feMissionTimerRunning = true;
+                    feMissionTimerStart = std::chrono::high_resolution_clock::now();
+                } else {
+                    // Pause: accumulate elapsed time and stop
+                    auto now = std::chrono::high_resolution_clock::now();
+                    feMissionElapsedSec += std::chrono::duration_cast<std::chrono::duration<double>>(now - feMissionTimerStart).count();
+                    feMissionTimerRunning = false;
+                }
+                return true;
+            }
+            break;
+        case GDK_KEY_r:
+        case GDK_KEY_R:
+            // FE only: reset mission timer
+            if (isFlightEngineer) {
+                feMissionTimerRunning = false;
+                feMissionElapsedSec = 0.0;
+                return true;
+            }
+            break;
+        case GDK_KEY_u:
+            send_servo_command("left");
+            return false;
+            break;
+        case GDK_KEY_i:
+            if(!wsl){
+                send_servo_command("right");
+                return false;
+            }   
+            break;
+        case GDK_KEY_o:
+            send_servo_command("up");
+            return false;
+            break;
+        case GDK_KEY_p:
+            send_servo_command("down");
+            return false;
+            break;
+        case GDK_KEY_1:
+            current_ip = "http://192.168.1.8";
+            std::cout << "Switched to IP 1: " << current_ip << std::endl;
+            return false;
+            break;
+        case GDK_KEY_2:
+            current_ip = "http://192.168.1.9";
+            std::cout << "Switched to IP 2: " << current_ip << std::endl;
+            return false;
+            break;
+        case GDK_KEY_minus:
+            decreaseGear();
+            break;
+        case GDK_KEY_plus:
+            if(key_event->state & GDK_SHIFT_MASK)
+                increaseGear();
+            break;
+    }
+    
+    sendKeyboardEvent(key_event->keyval, 1); // 1 for key press
+    return false;
+}
+
+Gtk::EventBox* create_labeled_box(const Glib::ustring& label_text,
+                                   CircleDrawingArea*& out_circle,
+                                   bool right = false) {
+    auto event_box = Gtk::manage(new Gtk::EventBox());
+    auto box = Gtk::manage(new BorderedBox(Gtk::ORIENTATION_HORIZONTAL, 5));
+    box->set_size_request(200 * GUI_SCALE, 75 * GUI_SCALE);
+ 
+    auto label_box = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 0));
+    label_box->set_hexpand(true);
+    label_box->set_valign(Gtk::ALIGN_CENTER);
+ 
+    auto label = Gtk::manage(new Gtk::Label(label_text));
+    Pango::FontDescription font;
+    font.set_size(18 * GUI_SCALE * Pango::SCALE);
+    label->override_font(font);
+    label->set_halign(right ? Gtk::ALIGN_END : Gtk::ALIGN_START);
+    label_box->add(*label);
+ 
+    // Telemetry line — hidden when showMotorTelemetry is false
+    auto telem_label = Gtk::manage(new Gtk::Label("--V  --A"));
+    Pango::FontDescription telem_font;
+    telem_font.set_family("monospace");
+    telem_font.set_size(9 * GUI_SCALE * Pango::SCALE);
+    telem_label->override_font(telem_font);
+    telem_label->set_halign(right ? Gtk::ALIGN_END : Gtk::ALIGN_START);
+    Gdk::RGBA dim_color;
+    dim_color.set_rgba(0.5, 0.5, 0.5, 0.7);
+    telem_label->override_color(dim_color);
+    telem_label->set_no_show_all(!showMotorTelemetry);
+    telem_label->set_visible(showMotorTelemetry);
+    label_box->add(*telem_label);
+ 
+    motorTelemetryLabels[label_text] = telem_label;
+ 
+    out_circle = Gtk::manage(new CircleDrawingArea());
+    out_circle->set_size_request(75 * GUI_SCALE, 75 * GUI_SCALE);
+    out_circle->set_hexpand(false);
+    out_circle->set_halign(Gtk::ALIGN_CENTER);
+ 
+    if (right) {
+        box->add(*label_box);
+        box->add(*out_circle);
+    } else {
+        box->add(*out_circle);
+        box->add(*label_box);
+    }
+ 
+    event_box->add(*box);
+    event_box->add_events(Gdk::BUTTON_PRESS_MASK);
+    event_box->set_visible_window(false);
+    return event_box;
+}
+
+void setMotorTelemetryVisible(bool visible) {
+    showMotorTelemetry = visible;
+    for (auto& kv : motorTelemetryLabels) {
+        if (kv.second) {
+            kv.second->set_visible(visible);
+            kv.second->set_no_show_all(!visible);
+        }
+    }
+}
+
+bool onClickEvent(GdkEventButton* event, const std::string& id) {
+    if (event->type == GDK_2BUTTON_PRESS) {
+        auto target_infoframe = getInfoFrame(id);
+        Gtk::FlowBoxChild* flowbox_child = dynamic_cast<Gtk::FlowBoxChild*>(get_flowbox_child_for(*sensorBox, target_infoframe));
+        if (flowbox_child) {
+            sensorBox->select_child(*flowbox_child);
+        }
+        return true;
+    }
+    return false;
+}
+
+Gtk::Box* create_motor_column(std::vector<std::pair<Glib::ustring, CircleDrawingArea**>> items, void (*init_hook)(), std::vector<std::string> labels, bool right = false) {
+    auto column = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
+    column->set_size_request(200 * GUI_SCALE, 300 * GUI_SCALE);
+    column->set_hexpand(false);
+    column->set_vexpand(false);
+
+    for (size_t i = 0; i < items.size(); ++i) {
+        if (i == 2 && init_hook) init_hook();
+        auto box = create_labeled_box(items[i].first, *items[i].second, right);
+        std::string id = labels[i];
+        box->signal_button_press_event().connect(
+            [id](GdkEventButton* event) -> bool {
+                return onClickEvent(event, id);
+            },
+            false
+        );
+        column->add(*box);
+    }
+
+    return column;
+}
+
+
+// To change Speedometer sizes, need to change this value
+Gtk::Box* create_lower_motor_column(std::vector<std::pair<Glib::ustring, CircleDrawingArea**>> items, std::vector<std::string> labels, bool right = false) {
+    auto column = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
+    column->set_size_request(200 * GUI_SCALE, -1);
+    column->set_hexpand(true);
+    column->set_vexpand(false);
+    column->set_valign(Gtk::ALIGN_END);
+
+    for (size_t i = 0; i < items.size(); ++i) {
+        auto box = create_labeled_box(items[i].first, *items[i].second, right);
+        std::string id = labels[i];
+        box->signal_button_press_event().connect(
+            [id](GdkEventButton* event) -> bool {
+                return onClickEvent(event, id);
+            },
+            false
+        );
+        column->add(*box);
+    }
+
+    return column;
+}
+
+void on_connection_finished() {
+    update_connection_status(server_ui);
+}
+
+void on_connection2_finished() {
+    update_connection_status2(server_ui);
+}
+
+void on_video_connection_finished() {
+    update_video_connection_status(video_server_ui);
+}
+
+static std::string get_glade_widget_id(Gtk::Widget* widget) {
+    if (!widget) return "";
+
+    const gchar* buildable_name = gtk_buildable_get_name(GTK_BUILDABLE(widget->gobj()));
+    if (buildable_name && buildable_name[0] != '\0') {
+        return std::string(buildable_name);
+    }
+
+    const Glib::ustring css_name = widget->get_name();
+    if (!css_name.empty()) {
+        return css_name.raw();
+    }
+
+    const char* type_name = G_OBJECT_TYPE_NAME(widget->gobj());
+    return type_name ? std::string(type_name) : std::string("GtkWidget");
+}
+
+static void install_glade_debug_overlay(Gtk::Widget* widget) {
+    if (!widget) return;
+
+    const std::string widget_id = get_glade_widget_id(widget);
+
+    widget->signal_draw().connect(
+        [widget, widget_id](const Cairo::RefPtr<Cairo::Context>& cr) -> bool {
+            const int width = widget->get_allocated_width();
+            const int height = widget->get_allocated_height();
+            if (width <= 2 || height <= 2) return false;
+
+            // Draw a red border around each Glade widget for layout debugging.
+            cr->save();
+            cr->set_source_rgba(1.0, 0.0, 0.0, 0.9);
+            cr->set_line_width(1.0);
+            cr->rectangle(0.5, 0.5, width - 1.0, height - 1.0);
+            cr->stroke();
+
+            // Draw the widget's Glade ID centered in the widget bounds.
+            auto layout = widget->create_pango_layout(widget_id);
+            Pango::FontDescription font;
+            font.set_family("Monospace");
+            font.set_size(8 * Pango::SCALE);
+            layout->set_font_description(font);
+
+            int text_w = 0;
+            int text_h = 0;
+            layout->get_pixel_size(text_w, text_h);
+
+            const double box_w = static_cast<double>(text_w + 6);
+            const double box_h = static_cast<double>(text_h + 4);
+            const double box_x = std::max(1.0, (static_cast<double>(width) - box_w) * 0.5);
+            const double box_y = std::max(1.0, (static_cast<double>(height) - box_h) * 0.5);
+
+            cr->set_source_rgba(1.0, 1.0, 1.0, 0.65);
+            cr->rectangle(box_x, box_y, box_w, box_h);
+            cr->fill();
+
+            cr->set_source_rgba(1.0, 0.0, 0.0, 1.0);
+            cr->move_to(box_x + 3.0, box_y + 2.0);
+            layout->show_in_cairo_context(cr);
+            cr->restore();
+            return false;
+        },
+        true);
+
+    if (auto* container = dynamic_cast<Gtk::Container*>(widget)) {
+        for (auto* child : container->get_children()) {
+            install_glade_debug_overlay(child);
+        }
+    }
+}
+
+auto buildMotorColumn = [](PanelPosition pos, bool rightAligned) -> Gtk::Box* {
+    auto motors = activeConfig.getMotorsForPanel(pos);
+    if (motors.empty()) return Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
+ 
+    std::vector<std::pair<Glib::ustring, CircleDrawingArea**>> items;
+    std::vector<std::string> labels;
+ 
+    for (const auto& motor : motors) {
+        CircleDrawingArea** circle = getOrCreateCircle(motor.internalLabel);
+        items.push_back({motor.displayName, circle});
+        labels.push_back(motor.internalLabel);
+    }
+
+    if (pos == PanelPosition::LOWER_LEFT || pos == PanelPosition::LOWER_RIGHT) {
+        return create_lower_motor_column(items, labels, rightAligned);
+    }
+    return create_motor_column(items, nullptr, labels, rightAligned);
+};
+
+/*** Functions that setup the GUI and windows ***/
+/*
+Switched to using Glade GUI Designer for the GUI design. This
+allows us to very quickly move the various items around in the
+layout, removing the need to hardcode all the values. 
+HOWEVER, this doesn't allow us to customize for the custom 
+GUI elements, which means we need to have placeholders for the
+various custom elements that are included in the GUI.
+*/
+void setupGUI(Glib::RefPtr<Gtk::Application> application) {
+    window = nullptr;
+    ipAddressEntry = nullptr; connectButton = nullptr; connectionStatusLabel = nullptr;
+    ipAddressEntry2 = nullptr; connectButton2 = nullptr; connectionStatusLabel2 = nullptr;
+    silentRunButton = nullptr; silentRunButton2 = nullptr; addressListBox = nullptr;
+    videoConnectButton = nullptr; videoConnectionStatusLabel = nullptr; videoStreamButton = nullptr;
+    videoIPAddressEntry = nullptr; videoAddressListBox = nullptr;
+    toggleModeButton = nullptr; settingsButton = nullptr;
+    sensorBox = nullptr; innerLeftBox = nullptr; innerRightBox = nullptr;
+    armPositionPlaceholder = nullptr; bucketTiltPlaceholder = nullptr; rollImagePlaceholder = nullptr;
+    armPositionPlaceholder = nullptr;
+
+    initialize_maps(); 
+
+    auto builder = Gtk::Builder::create();
+    try {
+        if (isFlightEngineer) {
+            builder->add_from_file("../resources/feLayout.glade");
+        }
+        else {
+            builder->add_from_file("../resources/mainLayout.glade");
+        }
+    }
+    catch(const Glib::Error& ex) {
+        std::cerr << "CRITICAL: Failed to load layout glade: " << ex.what() << std::endl;
+        exit(1); 
+    }
+
+    builder->get_widget("mainWindow", window);
+    if (!window) {
+        std::cerr << "FATAL: 'mainWindow' ID not found in mainLayout.glade" << std::endl;
+        exit(1);
+    }
+    window->maximize();
+
+    Gtk::Box* topLevelBox = nullptr;
+    builder->get_widget("topLevelBox", topLevelBox);
+
+    if (!isFlightEngineer) {
+        /* ============================================================
+         * PILOT MODE: Video overlay, edge panels, motor columns, etc.
+         * These widgets only exist in mainLayout.glade.
+         * ============================================================ */
+        if (topLevelBox) {
+            window->remove();
+            
+            // Create video widget
+            videoArea = Gtk::manage(new VideoWidget());
+            videoArea->set_size_request(1600 * GUI_SCALE, 1000 * GUI_SCALE);
+            
+            // Create overlay with video as background
+            Gtk::Overlay* mainOverlay = Gtk::manage(new Gtk::Overlay());
+            mainOverlay->add(*videoArea);  // Video as base
+            mainOverlay->add_overlay(*topLevelBox);  // UI on top
+
+
+            // Add overlay to window
+            window->add(*mainOverlay);
+        }
+        
+        // Get topControlsBox and set its CSS name for styling
+        builder->get_widget("topControlsBox", topControlsBox);
+        if (topControlsBox) {
+            topControlsBox->set_name("topControlsBox");
+
+            batteryBar = Gtk::manage(new BatteryBar());
+            batteryBar->set_size_request(-1, 28);
+            batteryBar->set_hexpand(true);
+            batteryBar->set_warning_voltage(LOW_VOLTAGE);
+            batteryBar->set_critical_voltage(LOW_VOLTAGE - 1.0f);
+            batteryBar->set_light_mode(isLightMode);
+            topControlsBox->pack_end(*batteryBar, Gtk::PACK_SHRINK);
+        }
+    } /* end !isFlightEngineer pilot-only overlay block */
+
+    try {window->set_icon_from_file("../resources/razorbotz.png"); } catch (...) {}
+
+    window->add_events(Gdk::KEY_PRESS_MASK | Gdk::KEY_RELEASE_MASK);
     window->signal_key_press_event().connect(sigc::ptr_fun(&on_key_press_event));
     window->signal_key_release_event().connect(sigc::ptr_fun(&on_key_release_event));
 
-    // Create vertical box to hold top level widgets 
-    Gtk::Box* topLevelBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
-    Gtk::Box* topControlsBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
-    Gtk::Box* videoTopLevelBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
-
-    // Create horizontal box to hold control widgets
-    Gtk::Box* controlsBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
-
-    // Create scrolled window instance and list of addresses 
-    Gtk::ScrolledWindow* scrolledList = Gtk::manage(new Gtk::ScrolledWindow());
-    addressListBox = Gtk::manage(new Gtk::ListBox());
-    addressListBox->signal_row_activated().connect(sigc::ptr_fun(&rowActivated));
-
-    // Create vertical box on right of screen to house controls 
-    Gtk::Box* controlsRightBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
-
-    // Create box to hold connection information (IP, connect button, etc.)
-    Gtk::Box* parentConnectBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
-    Gtk::Box* connectBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
-
-
-    Gtk::Label* ipAddressLabel = Gtk::manage(new Gtk::Label(" IP Address "));
-
-    Gtk::Label* ipAddressLabel=Gtk::manage(new Gtk::Label(" IP Address "));
+    if (!isFlightEngineer) {
+        /* Pilot-only controls — these IDs only exist in mainLayout.glade */
+        builder->get_widget("list_robot_address", addressListBox);
+        builder->get_widget("entry_robot_ip", ipAddressEntry);
+        builder->get_widget("btn_robot_connect", connectButton);
+        builder->get_widget("lbl_robot_status", connectionStatusLabel);
+        builder->get_widget("btn_silent_run", silentRunButton);
+        builder->get_widget("entry_robot_ip2", ipAddressEntry2);
+        builder->get_widget("btn_robot_connect2", connectButton2);
+        builder->get_widget("lbl_robot_status2", connectionStatusLabel2);
+        builder->get_widget("btn_silent_run2", silentRunButton2);
+        
+        builder->get_widget("list_video_address", videoAddressListBox);
+        builder->get_widget("entry_video_ip", videoIPAddressEntry);
+        builder->get_widget("btn_video_connect", videoConnectButton);
+        builder->get_widget("lbl_video_status", videoConnectionStatusLabel);
+        builder->get_widget("btn_video_stream", videoStreamButton);
+        
+        builder->get_widget("btn_toggle_mode", toggleModeButton);
+        builder->get_widget("btn_settings", settingsButton);
+    }
     
-    // Create entry box for IP connection
-    ipAddressEntry = Gtk::manage(new Gtk::Entry());
-    ipAddressEntry->set_can_focus(true);
-    ipAddressEntry->set_editable(true);
-    if(useOrin)
-        ipAddressEntry->set_text(ORIN_IP);
-    else
-        ipAddressEntry->set_text(NANO_IP);
-    ipAddressEntry->set_name("dark_text");
+    if (isFlightEngineer) {
+        /* In FE mode, sensorBox is defined in feLayout.glade */
+        builder->get_widget("sensorBox", sensorBox);
+    }
+    if (!sensorBox) {
+        sensorBox = Gtk::manage(new Gtk::FlowBox());
+        sensorBox->set_orientation(Gtk::ORIENTATION_HORIZONTAL);
+        if (topLevelBox) {
+            topLevelBox->pack_end(*sensorBox, Gtk::PACK_SHRINK);
+        }
+    }
 
-    // Create connection button, single click logic to connectOrDisconnect function
-    connectButton = Gtk::manage(new Gtk::Button("Connect"));
-    connectButton->signal_clicked().connect(sigc::ptr_fun(&connectOrDisconnect));
-    connectButton->set_name("dark_text");
+    if(ipAddressEntry) ipAddressEntry->set_text(ORIN_IP);
+    if(ipAddressEntry2) ipAddressEntry2->set_text(NANO_IP);
+    if(videoIPAddressEntry) videoIPAddressEntry->set_text(ORIN_IP);
 
-    connectionStatusLabel = Gtk::manage(new Gtk::Label("Not Connected"));
-    // Disconnect graphics for connect button
-    Gdk::RGBA red;
-    red.set_rgba(1.0, 0, 0, 1.0);
-    connectionStatusLabel->override_background_color(red);
-    connectionStatusLabel->set_name("dark_text");
+    if(connectionStatusLabel) {
+        Gdk::RGBA red;
+        red.set_rgba(1.0, 0, 0, 1.0);
+        connectionStatusLabel->override_background_color(red);
+        connectionStatusLabel->set_text("Not Connected");
+    }
+    if(connectionStatusLabel2) {
+        Gdk::RGBA red;
+        red.set_rgba(1.0, 0, 0, 1.0);
+        connectionStatusLabel2->override_background_color(red);
+        connectionStatusLabel2->set_text("Not Connected");
+    }
+    if(videoConnectionStatusLabel) {
+        Gdk::RGBA red;
+        red.set_rgba(1.0, 0, 0, 1.0);
+        videoConnectionStatusLabel->override_background_color(red);
+        videoConnectionStatusLabel->set_text("Not Connected");
+    }
+    
+    if (settingsButton) {
+        try {
+            auto pixbuf = Gdk::Pixbuf::create_from_file("../resources/SettingsIcon.png");
+            auto scaled = pixbuf->scale_simple(24, 24, Gdk::INTERP_BILINEAR);
+            auto image = Gtk::manage(new Gtk::Image(scaled));
+            settingsButton->set_image(*image);
+        } catch (...) {}
+    }
 
-    // Create horizontal box to hold silent run functionality
-    Gtk::Box* stateBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 2));
-    silentRunButton = Gtk::manage(new Gtk::Button("Silent Running"));
-    silentRunButton->signal_clicked().connect(sigc::ptr_fun(&silentRun));
-    silentRunButton->set_name("dark_text");
-
-    // Create horizontal box to hold remote control functionality
-    Gtk::Box* remoteControlBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 2));
-
-    // Create button to shutdown robot
-    Gtk::Button* shutdownRobotButton = Gtk::manage(new Gtk::Button("Shutdown Robot"));
-    shutdownRobotButton->signal_clicked().connect(sigc::bind<Gtk::Window*>(sigc::ptr_fun(&shutdownDialog), window));
-    shutdownRobotButton->set_name("dark_text");
-
-    // Button to toggle from dark to light mode
-    toggleModeButton = Gtk::manage(new Gtk::Button("Toggle Dark/Light Mode"));
-    toggleModeButton->signal_clicked().connect(sigc::ptr_fun(&toggleMode));
-    toggleModeButton->set_name("dark_text");
-    toggleModeButton->set_size_request(100, 50);
-
-    settingsButton = Gtk::make_managed<Gtk::Button>();
-    auto image = Gtk::make_managed<Gtk::Image>("emblem-system", Gtk::ICON_SIZE_BUTTON);
-    settingsButton->set_image(*image);
-    settingsButton->set_tooltip_text("Open Settings");
-    settingsButton->signal_clicked().connect([]() {
-        if(allowConfig)
-            create_config_editor_window(configFile);
-    });
-    settingsButton->set_size_request(50, 50);
-    settingsButton->set_name("dark_text");
-
-    // Apply CSS
     auto css_provider = Gtk::CssProvider::create();
-    css_provider->load_from_data(generateLightModeString(lightBackgroundColor));
-    auto screen = Gdk::Screen::get_default();
-    auto style_context = Gtk::StyleContext::create();
-    style_context->add_provider_for_screen(screen, css_provider, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+    css_provider->load_from_data(generateLightModeString(lightBackgroundColorCSS));
+    Gtk::StyleContext::add_provider_for_screen(Gdk::Screen::get_default(), css_provider, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
 
-    // Load and apply the new font
     try {
         auto font_provider = Gtk::CssProvider::create();
         font_provider->load_from_data("* { font-family: 'Proxima Nova'; }");
-        style_context->add_provider_for_screen(screen, font_provider, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+        Gtk::StyleContext::add_provider_for_screen(Gdk::Screen::get_default(), font_provider, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+    } catch (...) {}
 
-        // Load the font file
-        std::string font_file = "../resources/ProximaNova.otf";
-        if (!Glib::file_test(font_file, Glib::FILE_TEST_EXISTS)) {
-            g_print("Font file not found: %s\n", font_file.c_str());
-        } else {
-            // If you need to load the font into Pango, you can do it here
-            Pango::FontDescription font_desc;
-            font_desc.set_family("Proxima Nova");
-            font_desc.set_weight(Pango::WEIGHT_BOLD);
+    server_ui.connectButton = connectButton;
+    server_ui.connectionStatusLabel = connectionStatusLabel;
+    server_ui.silentRunButton = silentRunButton;
+    server_ui.ipAddressEntry = ipAddressEntry;
+    server_ui.connectButton2 = connectButton2;
+    server_ui.connectionStatusLabel2 = connectionStatusLabel2;
+    server_ui.silentRunButton2 = silentRunButton2;
+    server_ui.ipAddressEntry2 = ipAddressEntry2;
+    server_ui.parentWindow = window;
+
+    video_server_ui.connectButton = videoConnectButton;
+    video_server_ui.connectionStatusLabel = videoConnectionStatusLabel;
+    video_server_ui.streamButton = videoStreamButton;
+    video_server_ui.ipAddressEntry = videoIPAddressEntry;
+    video_server_ui.addressListBox = videoAddressListBox;
+    video_server_ui.parentWindow = window;
+
+    if (connectButton) connectButton->signal_clicked().connect([&](){ connectOrDisconnect(server_ui, true, connection_finished_dispatcher); });
+    if (silentRunButton) silentRunButton->signal_clicked().connect([&](){ silentRun(server_ui); });
+    if (connectButton2) connectButton2->signal_clicked().connect([&](){ connectOrDisconnect2(server_ui, false, connection_finished_dispatcher2); });
+    if (silentRunButton2) silentRunButton2->signal_clicked().connect([&](){ silentRun2(server_ui); });
+    if (addressListBox) addressListBox->signal_row_activated().connect([&](Gtk::ListBoxRow* row){ rowActivated(row, server_ui); });
+    if (toggleModeButton) toggleModeButton->signal_clicked().connect(sigc::ptr_fun(&toggleMode));
+    if (settingsButton) settingsButton->signal_clicked().connect([&](){ if(allowConfig) create_config_editor_window(get_configFile()); });
+    if (videoConnectButton) videoConnectButton->signal_clicked().connect([&](){ videoConnectOrDisconnect(video_server_ui, video_connection_finished_dispatcher); });
+    if (videoStreamButton) videoStreamButton->signal_clicked().connect([&](){ videoStream(video_server_ui); });
+    if (videoAddressListBox) videoAddressListBox->signal_row_activated().connect([&](Gtk::ListBoxRow* row){ videoRowActivated(row, video_server_ui); });
+
+    if (!isFlightEngineer) {
+        if(connectButton) {
+            connectButton->set_can_focus(false);
+            connectButton->set_focus_on_click(false);
         }
-    } catch (const Glib::Error& e) {
-        g_print("Failed to load font: %s\n", e.what().c_str());
-    }
-    Gtk::Box* videoControlsBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,5));
-
-    Gtk::ScrolledWindow* videoScrolledList=Gtk::manage(new Gtk::ScrolledWindow());
-    videoAddressListBox=Gtk::manage(new Gtk::ListBox());
-    videoAddressListBox->signal_row_activated().connect(sigc::ptr_fun(&videoRowActivated));
-
-    Gtk::Box* videoControlsRightBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL,5));
-
-    Gtk::Box* videoConnectBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,5));
-    Gtk::Label* videoIPAddress=Gtk::manage(new Gtk::Label(" IP Address "));
-    videoIPAddressEntry=Gtk::manage(new Gtk::Entry());
-    videoIPAddressEntry->set_can_focus(true);
-    videoIPAddressEntry->set_editable(true);
-    if(useOrin)
-        videoIPAddressEntry->set_text(ORIN_IP);
-    else
-        videoIPAddressEntry->set_text(NANO_IP);
-    videoIPAddressEntry->set_name("dark_text");
-
-    videoConnectButton=Gtk::manage(new Gtk::Button("Connect"));
-    videoConnectButton->signal_clicked().connect(sigc::ptr_fun(&videoConnectOrDisconnect));
-    videoConnectButton->set_name("dark_text");
-    videoConnectionStatusLabel=Gtk::manage(new Gtk::Label("Not Connected"));
-    videoConnectionStatusLabel->override_background_color(red);
-    videoConnectionStatusLabel->set_name("dark_text");
-    
-    Gtk::Box* videoStateBox=Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,2));
-    videoStreamButton=Gtk::manage(new Gtk::Button("Not Video Streaming"));
-    videoStreamButton->signal_clicked().connect(sigc::ptr_fun(&videoStream));
-    videoStreamButton->set_name("dark_text");
-
-    videoAddressListBox->set_size_request(200,30);
-    videoScrolledList->set_size_request(200,75);
-
-    videoConnectBox->add(*videoIPAddress);
-    videoConnectBox->add(*videoIPAddressEntry);
-    videoConnectBox->add(*videoConnectButton);
-    videoConnectBox->add(*videoConnectionStatusLabel);
-
-    videoStateBox->add(*videoStreamButton);
-    videoControlsRightBox->add(*videoConnectBox);
-    videoControlsRightBox->add(*videoStateBox);    
-    videoScrolledList->add(*videoAddressListBox);
-
-    Gtk::Label* spacer = Gtk::manage(new Gtk::Label());
-    spacer->set_hexpand(true);
-
-    videoControlsBox->add(*videoScrolledList);
-    videoControlsBox->add(*videoControlsRightBox);
-    videoControlsBox->add(*spacer);
-    videoControlsBox->add(*toggleModeButton);
-    videoControlsBox->add(*settingsButton);
-    videoTopLevelBox->add(*videoControlsBox);
-
-    // Set size for address list box
-    addressListBox->set_size_request(200, 75);
-    scrolledList->set_size_request(200, 75);
-
-    Gtk::Label* spacer = Gtk::manage(new Gtk::Label());
-    spacer->set_hexpand(true);
-    
-    // Add widgets to connect box
-    connectBox->add(*ipAddressLabel);
-    connectBox->add(*ipAddressEntry);
-    connectBox->add(*connectButton);
-    connectBox->add(*connectionStatusLabel);
-    connectBox->add(*spacer);
-    connectBox->add(*toggleEncodeButton);
-    connectBox->add(*toggleModeButton);
-    
-    // Add widgets to silent run box
-    stateBox->add(*silentRunButton);
-    stateBox->add(*shutdownRobotButton);
-
-    // Add widgets to controls box
-    controlsRightBox->add(*connectBox);
-    controlsRightBox->add(*stateBox);
-
-    // Add address list to scrollable list
-    scrolledList->add(*addressListBox);
-    
-    // Add widgets to controls box
-    controlsBox->add(*scrolledList);
-    controlsBox->add(*controlsRightBox);
-
-    // Add widgets to top level box
-    topControlsBox->add(*controlsBox);
-    topControlsBox->add(*videoTopLevelBox);
-    topLevelBox->add(*topControlsBox);
-
-    if(!noVideo){
-        Gtk::Box* bottomBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
-        Gtk::Box* bottomInnerBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
-        innerLeftBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
-        Gtk::Box* innerMiddleBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
-        innerRightBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
-        bottomLowerBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
-        Gtk::Box* lowerLeftBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
-        Gtk::Box* lowerRightBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
+        if(connectButton2){
+            connectButton2->set_can_focus(false);
+            connectButton2->set_focus_on_click(false);
+        }
+        if(silentRunButton) {
+            silentRunButton->set_can_focus(false);
+            silentRunButton->set_focus_on_click(false);
+        }
         
-        innerLeftBox = create_motor_column({
-            {"Arm", &talon1Circle},
-            {"Bucket", &talon3Circle}
-            }, initArmPos,
-            {"Talon 1", "Talon 3"},
-            true 
-        );
-
-        auto cameraBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 5));
-        if(smallLaptop){
-            cameraBox->set_size_request(800, 500);
+        if(videoConnectButton) {
+            videoConnectButton->set_can_focus(false);
+            videoConnectButton->set_focus_on_click(false);
         }
-        else{
-            cameraBox->set_size_request(1600, 1000);
+
+        if (!noVideo && !isFlightEngineer) {
+            sensorBox->set_visible(false);
+
+        Gtk::Box* bottomInnerBox = nullptr;
+        builder->get_widget("box_bottom_inner", bottomInnerBox); 
+        
+        builder->get_widget("box_bottom_lower", bottomLowerBox);
+
+        Gtk::Box* leftEdgePanel = nullptr;
+        builder->get_widget("left_edge_panel", leftEdgePanel);
+        applyEdgePanelStyle(leftEdgePanel);
+        if (leftEdgePanel) {
+            // width_request in Glade is a minimum; pin panel width at runtime to prevent expansion.
+            leftEdgePanel->set_size_request(EDGE_PANEL_WIDTH, -1);
+            leftEdgePanel->set_hexpand(false);
+            leftEdgePanel->set_halign(Gtk::ALIGN_START);
         }
-        videoArea = Gtk::manage(new VideoWidget());
-        if(smallLaptop){
-            videoArea->set_size_request(800, 500);
+
+        Gtk::Box* rightEdgePanel = nullptr;
+        builder->get_widget("right_edge_panel", rightEdgePanel);
+        applyEdgePanelStyle(rightEdgePanel);
+        if (rightEdgePanel) {
+            // width_request in Glade is a minimum; pin panel width at runtime to prevent expansion.
+            rightEdgePanel->set_size_request(EDGE_PANEL_WIDTH, -1);
+            rightEdgePanel->set_hexpand(false);
+            rightEdgePanel->set_halign(Gtk::ALIGN_END);
         }
-        else{
-            videoArea->set_size_request(1600, 1000);
+
+        Gtk::Box* pLeft = nullptr; builder->get_widget("placeholder_inner_left", pLeft);
+        if (pLeft) {
+            pLeft->set_size_request(EDGE_PANEL_WIDTH, -1);
+            std::cout << "Initializing Upper Left column with Falcon indicators by default." << std::endl;
+            innerLeftBox = buildMotorColumn(PanelPosition::UPPER_LEFT, true);
+            pLeft->add(*innerLeftBox);
+            innerLeftBox->set_size_request(200 * GUI_SCALE, -1);
+            innerLeftBox->set_valign(Gtk::ALIGN_START);
         }
-        //videoArea->set_hexpand(true);
-        //videoArea->set_vexpand(true);
-        cameraBox->add(*videoArea);
-        innerMiddleBox->add(*cameraBox);
 
-        innerRightBox = create_motor_column({
-            {"Falcon 1", &falcon1Circle},
-            {"Falcon 2", &falcon2Circle},
-            {"Falcon 3", &falcon3Circle},
-            {"Falcon 4", &falcon4Circle}
-            }, initBucketPos,
-            {"Falcon 1", "Falcon 2", "Falcon 3", "Falcon 4"},
-            false
-        );
+        Gtk::Box* pLeftImages = nullptr; builder->get_widget("placeholder_left_images", pLeftImages);
+        if (pLeftImages) {
+            auto* leftPanelBottomRow = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
+            leftPanelBottomRow->set_halign(Gtk::ALIGN_CENTER);
+            leftPanelBottomRow->set_valign(Gtk::ALIGN_END);
+            leftPanelBottomRow->set_hexpand(true);
+            leftPanelBottomRow->set_vexpand(false);
 
-        bottomInnerBox->add(*innerLeftBox);
-        bottomInnerBox->add(*innerMiddleBox);
-        bottomInnerBox->add(*innerRightBox);
-        bottomInnerBox->set_halign(Gtk::ALIGN_CENTER);
+            armPositionPlaceholder = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 0));
+            armPositionPlaceholder->set_hexpand(true);
+            armPositionPlaceholder->set_halign(Gtk::ALIGN_CENTER);
+            armPositionPlaceholder->set_valign(Gtk::ALIGN_END);
 
-        bottomBox->add(*bottomInnerBox);
-        initRoll();
+            bucketTiltPlaceholder = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 0));
+            bucketTiltPlaceholder->set_hexpand(true);
+            bucketTiltPlaceholder->set_halign(Gtk::ALIGN_CENTER);
+            bucketTiltPlaceholder->set_valign(Gtk::ALIGN_END);
 
-        lowerLeftBox  = create_lower_motor_column({
-            {"Falcon 1", &lowerFalcon1Circle},
-            {"Falcon 2", &lowerFalcon2Circle}
-            },
-            {"Falcon 1", "Falcon 2"},
-            true
-        );
+            rollImagePlaceholder = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 0));
+            rollImagePlaceholder->set_hexpand(true);
+            rollImagePlaceholder->set_halign(Gtk::ALIGN_CENTER);
+            rollImagePlaceholder->set_valign(Gtk::ALIGN_END);
 
-        bottomLowerBox->add(*lowerLeftBox);
+            leftPanelBottomRow->pack_start(*armPositionPlaceholder, Gtk::PACK_SHRINK);
+            leftPanelBottomRow->pack_start(*bucketTiltPlaceholder, Gtk::PACK_SHRINK);
+            leftPanelBottomRow->pack_start(*rollImagePlaceholder, Gtk::PACK_SHRINK);
+            pLeftImages->pack_end(*leftPanelBottomRow, Gtk::PACK_SHRINK);
+        }
+        initArmPos();
+        initBucketRot();
 
-        // To change Speedometer sizes, need to change this value
-        leftSpeedometer = Gtk::manage(new Speedometer("Left Speedometer"));
-        leftSpeedometer->set_size_request(300, 175);
-        leftSpeedometer->set_display_speed(displaySpeed);
-        leftSpeedometer->set_numbers_inside(numbersInside);
-        leftSpeedometer->set_numbers_on_ticks(numberTicks);        
-        bottomLowerBox->add(*leftSpeedometer);
+        Gtk::Box* pRight = nullptr; builder->get_widget("placeholder_inner_right", pRight);
+        if (pRight) {
+            pRight->set_size_request(EDGE_PANEL_WIDTH, -1);
+            std::cout << "Initializing Upper Right motor column with Falcon indicators by default." << std::endl;
+            innerRightBox = buildMotorColumn(PanelPosition::UPPER_RIGHT, false);
+            pRight->add(*innerRightBox);
+            if (!backupBot) {
+                initBucketPos();
+                initBucketElevation();
+            }
+        }
 
-        gear_dial = create_gear_dial(gears, gear_labels, gear_label_box);
-        bottomLowerBox->add(*gear_dial);
-        highlight_gear_and_scroll("3", gears, gear_labels, gear_dial, gear_label_box);
+        Gtk::Box* pLowerLeft = nullptr; builder->get_widget("placeholder_lower_left", pLowerLeft);
+        if (pLowerLeft) {
+            pLowerLeft->set_size_request(EDGE_PANEL_WIDTH, -1);
+            Gtk::Box* lowerLeftBox = buildMotorColumn(PanelPosition::LOWER_LEFT, false);
+            if (lowerLeftBox) {
+                pLowerLeft->pack_end(*lowerLeftBox, Gtk::PACK_SHRINK);
+            }
+        }
 
-        rightSpeedometer = Gtk::manage(new Speedometer("Right Speedometer"));
-        rightSpeedometer->set_size_request(300, 175);
-        rightSpeedometer->set_display_speed(displaySpeed);
-        rightSpeedometer->set_numbers_inside(numbersInside);
-        rightSpeedometer->set_numbers_on_ticks(numberTicks); 
-        bottomLowerBox->add(*rightSpeedometer);
+        Gtk::Box* pLowerRight = nullptr; builder->get_widget("placeholder_lower_right", pLowerRight);
+        if (pLowerRight) {
+            pLowerRight->set_size_request(EDGE_PANEL_WIDTH, -1);
+            std::cout << "Initializing lower motor column with Falcon indicators by default." << std::endl;
+            Gtk::Box* lowerRightBox = buildMotorColumn(PanelPosition::LOWER_RIGHT, false);
+            if (lowerRightBox) {
+                pLowerRight->pack_end(*lowerRightBox, Gtk::PACK_SHRINK);
+            }
+        }
+        
+        Gtk::Box* pSpeedLeft = nullptr;
+        builder->get_widget("placeholder_speed_left", pSpeedLeft);
+        if (pSpeedLeft && !isFlightEngineer) {
+            std::cout << "Initializing left speedometer." << std::endl;
+            leftSpeedometer = Gtk::manage(new Speedometer("Left Speedometer"));
+            leftSpeedometer->set_size_request(300 * GUI_SCALE, 175 * GUI_SCALE);
+            leftSpeedometer->set_display_speed(displaySpeed);
+            leftSpeedometer->set_numbers_inside(numbersInside);
+            leftSpeedometer->set_numbers_on_ticks(numberTicks);
+            pSpeedLeft->add(*leftSpeedometer);
+        }
 
-        lowerRightBox  = create_lower_motor_column({
-            {"Falcon 3", &lowerFalcon3Circle},
-            {"Falcon 4", &lowerFalcon4Circle}
-            },
-            {"Falcon 3", "Falcon 4"});
+        Gtk::Box* pSpeedRight = nullptr; builder->get_widget("placeholder_speed_right", pSpeedRight);
+        if(pSpeedRight && !isFlightEngineer) {
+            std::cout << "Initializing right speedometer." << std::endl;
+            rightSpeedometer = Gtk::manage(new Speedometer("Right Speedometer"));
+            rightSpeedometer->set_size_request(300 * GUI_SCALE, 175 * GUI_SCALE);
+            rightSpeedometer->set_display_speed(displaySpeed);
+            rightSpeedometer->set_numbers_inside(numbersInside);
+            rightSpeedometer->set_numbers_on_ticks(numberTicks);
+            pSpeedRight->add(*rightSpeedometer);
+        }
 
-        bottomLowerBox->add(*lowerRightBox);
+        Gtk::Box* pGear = nullptr; builder->get_widget("placeholder_gear_dial", pGear);
+        if(pGear && !isFlightEngineer) {
+            std::cout << "Initializing gear dial." << std::endl;
+            gear_dial = create_gear_dial(currentGear, gears, gear_labels);
+            pGear->add(*gear_dial);
+            //highlight_gear(currentGear, gears, gear_labels, gear_dial);
+        }
+        
+        if (rollImagePlaceholder && !isFlightEngineer) {
+            std::cout << "Initializing combined attitude indicator (roll + pitch)." << std::endl;
+            attitudeIndicator = Gtk::manage(new ArtificialHorizon("Attitude"));
+            attitudeIndicator->set_size_request(ROLL_PITCH_IMAGE_SIZE * GUI_SCALE,
+                                                 (ROLL_PITCH_IMAGE_SIZE + 30) * GUI_SCALE);
+            attitudeIndicator->set_warning_angles(30.0, -30.0);
+            attitudeIndicator->set_light_mode(isLightMode);
+            attitudeIndicator->set_halign(Gtk::ALIGN_CENTER);
+            attitudeIndicator->set_valign(Gtk::ALIGN_END);
+            rollImagePlaceholder->add(*attitudeIndicator);
+            roll_init = true;
+            pitch_init = true;
+        }
 
-        initPitch();
-        bottomLowerBox->set_halign(Gtk::ALIGN_CENTER);
-        bottomBox->add(*bottomLowerBox);
-        topLevelBox->add(*bottomBox);
-
-        Gdk::RGBA background;
-        background.set(lightBackgroundColor);
+        Gdk::RGBA background; background.set(lightBackgroundColor);
         setBackgroundColors(background);
+
     }
-    else{
-        sensorBox = Gtk::manage(new Gtk::FlowBox());
-        sensorBox->set_orientation(Gtk::ORIENTATION_HORIZONTAL);
-        topLevelBox->add(*sensorBox);
+    else {
+        Gtk::Box* boxMainContent = nullptr;
+        builder->get_widget("box_main_content", boxMainContent);
+        if(boxMainContent) boxMainContent->set_visible(false);
+        sensorBox->set_visible(true);
+        initRoll();
+        initPitch();
+    }
+    } /* end !isFlightEngineer pilot-only widget setup */
+
+    if (window) {
+        if (debugGladeBounds) {
+            std::cout << "Debug mode: drawing Glade widget bounds/IDs." << std::endl;
+            install_glade_debug_overlay(window);
+            window->queue_draw();
+        }
+
+        window->signal_delete_event().connect(sigc::ptr_fun(quit));
+        window->show_all();
     }
 
+    /* ============================================================
+     * FLIGHT ENGINEER: Load all dashboard widgets from feLayout.glade
+     * ============================================================ */
+    if (isFlightEngineer) {
+        feStartTime = std::chrono::high_resolution_clock::now();
 
-    window->add(*topLevelBox);
-    window->signal_delete_event().connect(sigc::ptr_fun(quit));
-    window->show_all();
+        /* Top bar — connection status */
+        builder->get_widget("fe_conn_robot1", feConnRobot1);
+        builder->get_widget("fe_latency_robot1", feLatencyRobot1);
+        builder->get_widget("fe_conn_robot2", feConnRobot2);
+        builder->get_widget("fe_latency_robot2", feLatencyRobot2);
+        builder->get_widget("fe_conn_esp32", feConnEsp32);
+        builder->get_widget("fe_rssi_esp32", feRssiEsp32);
+        builder->get_widget("fe_clock", feClock);
+
+        /* Create mission timer label and inject next to the clock */
+        if (feClock) {
+            auto* clockParent = dynamic_cast<Gtk::Box*>(feClock->get_parent());
+            if (clockParent) {
+                feMissionTimer = Gtk::manage(new Gtk::Label());
+                feMissionTimer->set_halign(Gtk::ALIGN_END);
+                feMissionTimer->set_margin_start(20);
+                clockParent->pack_end(*feMissionTimer, Gtk::PACK_SHRINK);
+            }
+        }
+
+        /* Navigation */
+        builder->get_widget("fe_nav_r1_roll", feNavR1Roll);
+        builder->get_widget("fe_nav_r1_pitch", feNavR1Pitch);
+        builder->get_widget("fe_nav_r1_yaw", feNavR1Yaw);
+        builder->get_widget("fe_nav_r1_x", feNavR1X);
+        builder->get_widget("fe_nav_r1_y", feNavR1Y);
+        builder->get_widget("fe_nav_r2_roll", feNavR2Roll);
+        builder->get_widget("fe_nav_r2_pitch", feNavR2Pitch);
+        builder->get_widget("fe_nav_r2_yaw", feNavR2Yaw);
+        builder->get_widget("fe_nav_r2_x", feNavR2X);
+        builder->get_widget("fe_nav_r2_y", feNavR2Y);
+
+        /* Autonomy */
+        builder->get_widget("fe_auto_r1_state", feAutoR1State);
+        builder->get_widget("fe_auto_r1_destx", feAutoR1DestX);
+        builder->get_widget("fe_auto_r1_destz", feAutoR1DestZ);
+        builder->get_widget("fe_auto_r2_state", feAutoR2State);
+        builder->get_widget("fe_auto_r2_destx", feAutoR2DestX);
+        builder->get_widget("fe_auto_r2_destz", feAutoR2DestZ);
+
+        /* Lidar */
+        builder->get_widget("fe_lidar_r1", feLidarR1);
+        builder->get_widget("fe_lidar_r2", feLidarR2);
+
+        /* Communication */
+        builder->get_widget("fe_comm_r1_wifi", feCommR1Wifi);
+        builder->get_widget("fe_comm_r1_can", feCommR1Can);
+        builder->get_widget("fe_comm_r2_wifi", feCommR2Wifi);
+        builder->get_widget("fe_comm_r2_can", feCommR2Can);
+
+        /* ESP32 diagnostics */
+        builder->get_widget("fe_esp32_can_status", feEsp32CanStatus);
+        builder->get_widget("fe_esp32_config", feEsp32Config);
+        builder->get_widget("fe_esp32_motor_count", feEsp32MotorCount);
+        builder->get_widget("fe_esp32_motor_grid", feEsp32MotorGrid);
+
+        /* Motor telemetry grid — populate headers */
+        builder->get_widget("fe_motor_grid", feMotorGrid);
+        if (feMotorGrid) {
+            const char* headers[] = {"Motor", "Voltage (V)", "Current (A)", "Output %", "Position", "Status"};
+            for (int col = 0; col < 6; col++) {
+                Gtk::Label* hdr = Gtk::manage(new Gtk::Label());
+                hdr->set_markup(std::string("<b>") + headers[col] + "</b>");
+                hdr->set_halign(Gtk::ALIGN_START);
+                feMotorGrid->attach(*hdr, col, 0, 1, 1);
+            }
+            /* Pre-create 16 rows of labels */
+            for (int row = 0; row < 16; row++) {
+                for (int col = 0; col < 6; col++) {
+                    feMotorLabels[row][col] = Gtk::manage(new Gtk::Label("--"));
+                    feMotorLabels[row][col]->set_halign(Gtk::ALIGN_START);
+                    feMotorLabels[row][col]->set_visible(false);
+                    feMotorGrid->attach(*feMotorLabels[row][col], col, row + 1, 1, 1);
+                }
+            }
+        }
+
+        /* ESP32 motor grid headers */
+        if (feEsp32MotorGrid) {
+            const char* esp_headers[] = {"Motor", "Type", "Status", "Output %", "Current (A)", "Voltage (V)", "Temp (\u00B0C)"};
+            for (int col = 0; col < 7; col++) {
+                Gtk::Label* hdr = Gtk::manage(new Gtk::Label());
+                hdr->set_markup(std::string("<b>") + esp_headers[col] + "</b>");
+                hdr->set_halign(Gtk::ALIGN_START);
+                feEsp32MotorGrid->attach(*hdr, col, 0, 1, 1);
+            }
+            for (int row = 0; row < 10; row++) {
+                for (int col = 0; col < 7; col++) {
+                    feEsp32MotorLabels[row][col] = Gtk::manage(new Gtk::Label("--"));
+                    feEsp32MotorLabels[row][col]->set_halign(Gtk::ALIGN_START);
+                    feEsp32MotorLabels[row][col]->set_visible(false);
+                    feEsp32MotorGrid->attach(*feEsp32MotorLabels[row][col], col, row + 1, 1, 1);
+                }
+            }
+        }
+
+        /* Inject FE video widgets into both placeholders */
+        Gtk::Box* videoPlaceholder = nullptr;
+        Gtk::Box* videoPlaceholderRobot2 = nullptr;
+        builder->get_widget("placeholder_video", videoPlaceholder);
+        builder->get_widget("placeholder_video_robot2", videoPlaceholderRobot2);
+
+        if (videoPlaceholder && !feVideoAreaRobot1) {
+            feVideoAreaRobot1 = Gtk::manage(new VideoWidget());
+            feVideoAreaRobot1->set_size_request(800 * GUI_SCALE, 600 * GUI_SCALE);
+            videoPlaceholder->pack_start(*feVideoAreaRobot1, Gtk::PACK_EXPAND_WIDGET);
+        } else if (videoPlaceholder && feVideoAreaRobot1) {
+            videoPlaceholder->pack_start(*feVideoAreaRobot1, Gtk::PACK_EXPAND_WIDGET);
+        }
+
+        if (videoPlaceholderRobot2 && !feVideoAreaRobot2) {
+            feVideoAreaRobot2 = Gtk::manage(new VideoWidget());
+            feVideoAreaRobot2->set_size_request(800 * GUI_SCALE, 600 * GUI_SCALE);
+            videoPlaceholderRobot2->pack_start(*feVideoAreaRobot2, Gtk::PACK_EXPAND_WIDGET);
+        } else if (videoPlaceholderRobot2 && feVideoAreaRobot2) {
+            videoPlaceholderRobot2->pack_start(*feVideoAreaRobot2, Gtk::PACK_EXPAND_WIDGET);
+        }
+
+        if (window) window->show_all();
+        std::cout << "Flight Engineer dashboard initialized." << std::endl;
+
+        // FE mode has no video underlay, so the background must be opaque
+        // (the default CSS uses transparent backgrounds for the pilot's video overlay)
+        auto fe_css = Gtk::CssProvider::create();
+        fe_css->load_from_data(generateLightModeString(lightBackgroundColor));
+        Gtk::StyleContext::add_provider_for_screen(
+            Gdk::Screen::get_default(), fe_css, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION + 1);
+    }
 }
 
+void updateDiagnosticsTab() {
+    if (!isDiagDirty()) return;
+    if (!diagConnectionLabel) return;
+
+    DiagState ds = getDiagState();
+
+    /* Connection status */
+    if (ds.connected) {
+        diagConnectionLabel->set_markup("<span foreground='#00cc00'>● ESP32 Connected</span>  (" + ds.esp32_ip + ")");
+        diagRssiLabel->set_text("RSSI: -" + std::to_string(ds.wifi_rssi) + " dBm");
+        diagCanLabel->set_markup(ds.can_active
+            ? "<span foreground='#00cc00'>CAN: Active</span>"
+            : "<span foreground='#cc0000'>CAN: Inactive</span>");
+    } else {
+        diagConnectionLabel->set_markup("<span foreground='#cc0000'>● ESP32 Disconnected</span>");
+        diagRssiLabel->set_text("RSSI: --");
+        diagCanLabel->set_text("CAN: --");
+    }
+
+    /* Motor data */
+    const char* typeNames[] = {"Talon", "Falcon", "Kraken", "NEO"};
+    const char* statusNames[] = {"Disconnected", "Unplugged", "Connected"};
+    const char* statusColors[] = {"#cc0000", "#cc8800", "#00cc00"};
+
+    int count = std::min((int)ds.active_motors, 10);
+    for (int i = 0; i < 10; i++) {
+        bool visible = (i < count);
+        for (int col = 0; col < 7; col++) {
+            diagMotorLabels[i][col]->set_visible(visible);
+        }
+        if (!visible) continue;
+
+        const auto& m = ds.motors[i];
+        int type_idx = std::min((int)m.motor_type, 3);
+        int status_idx = std::min((int)m.status, 2);
+
+        diagMotorLabels[i][0]->set_text("CAN " + std::to_string(m.can_id));
+        diagMotorLabels[i][1]->set_text(typeNames[type_idx]);
+        diagMotorLabels[i][2]->set_markup(
+            std::string("<span foreground='") + statusColors[status_idx] + "'>" + statusNames[status_idx] + "</span>");
+
+        char buf[32];
+        snprintf(buf, sizeof(buf), "%.1f%%", m.percent * 100.0f);
+        diagMotorLabels[i][3]->set_text(buf);
+
+        snprintf(buf, sizeof(buf), "%.2f", m.current);
+        diagMotorLabels[i][4]->set_text(buf);
+
+        snprintf(buf, sizeof(buf), "%.2f", m.voltage);
+        diagMotorLabels[i][5]->set_text(buf);
+
+        snprintf(buf, sizeof(buf), "%d", m.temperature);
+        diagMotorLabels[i][6]->set_text(buf);
+    }
+    diagLastMotorCount = count;
+}
+
+/* ============================================================
+ * FLIGHT ENGINEER: Dashboard update function
+ * Called from the main loop to push live data into FE widgets.
+ * ============================================================ */
+static bool feRobotRecentlySeen(const std::chrono::high_resolution_clock::time_point& lastPacket,
+                                double staleAfterSeconds = 2.0) {
+    if (lastPacket.time_since_epoch().count() == 0) {
+        return false;
+    }
+
+    auto now = std::chrono::high_resolution_clock::now();
+    double age = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastPacket).count();
+    return age >= 0.0 && age <= staleAfterSeconds;
+}
+
+void updateFEDashboard() {
+    if (!isFlightEngineer) return;
+
+    /* --- Mission clock --- */
+    if (feClock) {
+        auto now = std::chrono::high_resolution_clock::now();
+        int secs = (int)std::chrono::duration_cast<std::chrono::seconds>(now - feStartTime).count();
+        int h = secs / 3600, m = (secs % 3600) / 60, s = secs % 60;
+        char buf[32];
+        snprintf(buf, sizeof(buf), "Uptime: %02d:%02d:%02d", h, m, s);
+        feClock->set_text(buf);
+    }
+
+    /* --- Mission countdown timer --- */
+    if (feMissionTimer) {
+        double totalElapsed = feMissionElapsedSec;
+        if (feMissionTimerRunning) {
+            auto now = std::chrono::high_resolution_clock::now();
+            totalElapsed += std::chrono::duration_cast<std::chrono::duration<double>>(now - feMissionTimerStart).count();
+        }
+        int remaining = feMissionDurationSec - (int)totalElapsed;
+        if (remaining < 0) remaining = 0;
+        int m = remaining / 60, s = remaining % 60;
+        char buf[64];
+
+        if (!feMissionTimerRunning && feMissionElapsedSec == 0.0) {
+            snprintf(buf, sizeof(buf), "Mission: %02d:%02d [T=Start, R=Reset]", m, s);
+        } else if (remaining <= 0) {
+            snprintf(buf, sizeof(buf), "Mission: 00:00 — TIME!");
+        } else if (feMissionTimerRunning) {
+            snprintf(buf, sizeof(buf), "Mission: %02d:%02d [T=Pause]", m, s);
+        } else {
+            snprintf(buf, sizeof(buf), "Mission: %02d:%02d [PAUSED, T=Resume]", m, s);
+        }
+
+        if (remaining <= 60 && (feMissionTimerRunning || remaining <= 0)) {
+            feMissionTimer->set_markup(std::string("<span foreground='#cc0000'><b>") + buf + "</b></span>");
+        } else if (remaining <= 120 && feMissionTimerRunning) {
+            feMissionTimer->set_markup(std::string("<span foreground='#cc8800'><b>") + buf + "</b></span>");
+        } else {
+            feMissionTimer->set_text(buf);
+        }
+    }
+
+    /* --- Connection status labels --- */
+    auto now = std::chrono::high_resolution_clock::now();
+    const auto lastR1 = lastPacketOrinMs();
+    const auto lastR2 = lastPacketNanoMs();
+    const bool robot1Connected = feRobotRecentlySeen(lastR1);
+    const bool robot2Connected = feRobotRecentlySeen(lastR2);
+
+    if (feConnRobot1) {
+        feConnRobot1->set_markup(robot1Connected
+            ? "<span foreground='#00cc00'>● Robot 1: Connected</span>"
+            : "<span foreground='#cc0000'>● Robot 1: Disconnected</span>");
+    }
+    if (feConnRobot2) {
+        feConnRobot2->set_markup(robot2Connected
+            ? "<span foreground='#00cc00'>● Robot 2: Connected</span>"
+            : "<span foreground='#cc0000'>● Robot 2: Disconnected</span>");
+    }
+
+    /* Latency: time since last received packet */
+    if (feLatencyRobot1) {
+        if (robot1Connected) {
+            double ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastR1).count();
+            char buf[32];
+            snprintf(buf, sizeof(buf), "%.0fms", ms);
+            feLatencyRobot1->set_text(std::string("Latency: ") + buf);
+        } else {
+            feLatencyRobot1->set_text("Latency: --");
+        }
+    }
+    if (feLatencyRobot2) {
+        if (robot2Connected) {
+            double ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastR2).count();
+            char buf[32];
+            snprintf(buf, sizeof(buf), "%.0fms", ms);
+            feLatencyRobot2->set_text(std::string("Latency: ") + buf);
+        } else {
+            feLatencyRobot2->set_text("Latency: --");
+        }
+    }
+
+    /* --- ESP32 diagnostics section --- */
+    if (isDiagDirty() || isDiagConnected()) {
+        DiagState ds = getDiagState();
+
+        if (feConnEsp32) {
+            feConnEsp32->set_markup(ds.connected
+                ? ("<span foreground='#00cc00'>● ESP32: " + ds.esp32_ip + "</span>")
+                : "<span foreground='#cc0000'>● ESP32: Disconnected</span>");
+        }
+        if (feRssiEsp32) {
+            feRssiEsp32->set_text(ds.connected
+                ? ("RSSI: -" + std::to_string(ds.wifi_rssi) + " dBm")
+                : "RSSI: --");
+        }
+        if (feEsp32CanStatus) {
+            feEsp32CanStatus->set_markup(ds.can_active
+                ? "<span foreground='#00cc00'>CAN Bus: Active</span>"
+                : "<span foreground='#cc0000'>CAN Bus: Inactive</span>");
+        }
+        if (feEsp32Config) {
+            feEsp32Config->set_text("Config: " + std::to_string(ds.config_index));
+        }
+        if (feEsp32MotorCount) {
+            feEsp32MotorCount->set_text("Motors: " + std::to_string(ds.active_motors));
+        }
+
+        /* ESP32 motor grid */
+        if (feEsp32MotorGrid) {
+            const char* typeNames[] = {"Talon", "Falcon", "Kraken", "NEO"};
+            const char* statusNames[] = {"Disconnected", "Unplugged", "Connected"};
+            const char* statusColors[] = {"#cc0000", "#cc8800", "#00cc00"};
+            int count = std::min((int)ds.active_motors, 10);
+
+            for (int i = 0; i < 10; i++) {
+                bool visible = (i < count);
+                for (int col = 0; col < 7; col++)
+                    feEsp32MotorLabels[i][col]->set_visible(visible);
+                if (!visible) continue;
+
+                const auto& em = ds.motors[i];
+                int type_idx = std::min((int)em.motor_type, 3);
+                int status_idx = std::min((int)em.status, 2);
+                char buf[32];
+
+                feEsp32MotorLabels[i][0]->set_text("CAN " + std::to_string(em.can_id));
+                feEsp32MotorLabels[i][1]->set_text(typeNames[type_idx]);
+                feEsp32MotorLabels[i][2]->set_markup(
+                    std::string("<span foreground='") + statusColors[status_idx] + "'>" + statusNames[status_idx] + "</span>");
+                snprintf(buf, sizeof(buf), "%.1f%%", em.percent * 100.0f);
+                feEsp32MotorLabels[i][3]->set_text(buf);
+                snprintf(buf, sizeof(buf), "%.2f", em.current);
+                feEsp32MotorLabels[i][4]->set_text(buf);
+                snprintf(buf, sizeof(buf), "%.2f", em.voltage);
+                feEsp32MotorLabels[i][5]->set_text(buf);
+                snprintf(buf, sizeof(buf), "%d", em.temperature);
+                feEsp32MotorLabels[i][6]->set_text(buf);
+            }
+        }
+    }
+}
+
+/* Helper: update a motor row in the FE motor telemetry grid.
+ * Called from handleTalonElements/handleFalconElements/etc when in FE mode. */
+void feUpdateMotorRow(const std::string& label, float voltage, float current, float output_pct, int position, bool error, bool lowVoltage) {
+    if (!feMotorGrid) return;
+
+    /* Find or allocate a row */
+    auto it = feMotorRowMap.find(label);
+    int row;
+    if (it == feMotorRowMap.end()) {
+        if (feMotorRowCount >= 16) return;
+        row = feMotorRowCount++;
+        feMotorRowMap[label] = row;
+        for (int col = 0; col < 6; col++)
+            feMotorLabels[row][col]->set_visible(true);
+    } else {
+        row = it->second;
+    }
+
+    char buf[32];
+    feMotorLabels[row][0]->set_text(label);
+
+    snprintf(buf, sizeof(buf), "%.2f", voltage);
+    feMotorLabels[row][1]->set_text(buf);
+    if (lowVoltage)
+        feMotorLabels[row][1]->set_markup(std::string("<span foreground='#cc0000'><b>") + buf + "</b></span>");
+
+    snprintf(buf, sizeof(buf), "%.2f", current);
+    feMotorLabels[row][2]->set_text(buf);
+
+    snprintf(buf, sizeof(buf), "%.1f%%", output_pct * 100.0f);
+    feMotorLabels[row][3]->set_text(buf);
+
+    snprintf(buf, sizeof(buf), "%d", position);
+    feMotorLabels[row][4]->set_text(buf);
+
+    if (error)
+        feMotorLabels[row][5]->set_markup("<span foreground='#cc0000'>ERROR</span>");
+    else
+        feMotorLabels[row][5]->set_markup("<span foreground='#00cc00'>OK</span>");
+}
 
 void initSensorsWindow() {
-    sensorsWindow = new Gtk::Window();
-    if(monitor_count == 3){
-        auto display = Gdk::Display::get_default();
-        auto third_monitor = display->get_monitor(2);
-        Gdk::Rectangle third_monitor_geometry;
-        third_monitor->get_geometry(third_monitor_geometry);
-        sensorsWindow->set_default_size(third_monitor_geometry.get_width(), third_monitor_geometry.get_height());
-        sensorsWindow->move(third_monitor_geometry.get_x(), third_monitor_geometry.get_y());
+    sensorsWindow = nullptr;
+
+    auto builder = Gtk::Builder::create();
+    try {
+        builder->add_from_file("../resources/sensorsLayout.glade");
+    } catch(const Glib::Error& ex) {
+        std::cerr << "Error loading sensors.glade: " << ex.what() << std::endl;
+        return;
     }
-    else{
+
+    builder->get_widget("sensorsWindow", sensorsWindow);
+    if (!sensorsWindow) {
+        std::cerr << "Error: 'sensorsWindow' ID not found in XML." << std::endl;
+        return;
+    }
+
+    auto sensors_css = Gtk::CssProvider::create();
+    std::string sensors_bg_css = "window { background-color: " + (isLightMode ? lightBackgroundColor : darkBackgroundColor) + "; }";
+    sensors_css->load_from_data(sensors_bg_css);
+    sensorsWindow->get_style_context()->add_provider(sensors_css, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+
+    if (monitor_count == 3) {
+        auto display = Gdk::Display::get_default();
+        if (display) {
+            auto third_monitor = display->get_monitor(2);
+            if (third_monitor) {
+                Gdk::Rectangle geo;
+                third_monitor->get_geometry(geo);
+                sensorsWindow->set_default_size(geo.get_width(), geo.get_height());
+                sensorsWindow->move(geo.get_x(), geo.get_y());
+            }
+        }
+    }
+    else {
         sensorsWindow->maximize();
     }
 
-    Gtk::Box* mainBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
-    mainBox->property_margin().set_value(10);
-
-    // Create motor name vectors
-    std::vector<std::string> talonNames = {"Talon 1", "Talon 3" };
+    std::vector<std::string> talonNames = {"Talon 1", "Talon 2", "Talon 3", "Talon 4"};
     std::vector<std::string> falconNames = {"Falcon 1", "Falcon 2", "Falcon 3", "Falcon 4"};
     std::vector<std::string> linearNames = {"Linear 1", "Linear 2"};
 
-    // Create tabbed interface
-    Gtk::Notebook* tabs = Gtk::manage(new Gtk::Notebook());
-    tabs->set_vexpand(true);
+    // Create graph objects (still used for data collection even though not displayed)
+    talonVoltageGraph = Gtk::manage(new MultiMotorGraph("Talon Bus Voltage", MultiMotorGraph::VOLTAGE, talonNames));
+    talonCurrentGraph = Gtk::manage(new MultiMotorGraph("Talon Output Current", MultiMotorGraph::CURRENT, talonNames));
+    talonPositionGraph = Gtk::manage(new MultiMotorGraph("Talon Sensor Position", MultiMotorGraph::POSITION, talonNames));
+    talonOutputGraph = Gtk::manage(new MultiMotorGraph("Talon Output Percentage", MultiMotorGraph::OUTPUT_PERCENT, talonNames));
+    falconVoltageGraph = Gtk::manage(new MultiMotorGraph("Falcon Bus Voltage", MultiMotorGraph::VOLTAGE, falconNames));
+    falconCurrentGraph = Gtk::manage(new MultiMotorGraph("Falcon Output Current", MultiMotorGraph::CURRENT, falconNames));
+    falconPositionGraph = Gtk::manage(new MultiMotorGraph("Falcon Sensor Position", MultiMotorGraph::POSITION, falconNames));
+    falconOutputGraph = Gtk::manage(new MultiMotorGraph("Falcon Output Percentage", MultiMotorGraph::OUTPUT_PERCENT, falconNames));
+    linearSpeedGraph = Gtk::manage(new MultiMotorGraph("Linear Actuator Speed", MultiMotorGraph::SPEED, linearNames));
+    linearPotentiometerGraph = Gtk::manage(new MultiMotorGraph("Linear Actuator Position", MultiMotorGraph::POTENTIOMETER, linearNames));
 
-    // Tab 1: Talon Motors
-    Gtk::Box* talonTab = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
-    talonTab->property_margin().set_value(5);
+    /* ============================================================
+     * MOTOR STATUS DASHBOARD — replaces graph tabs with at-a-glance
+     * status grid, health summary cards, and alert banner.
+     * Injected into the first available Glade tab holder.
+     * ============================================================ */
+    {
+        // Try to inject into the first graph tab holder from Glade
+        Gtk::Box* dashHost = nullptr;
+        const char* holderCandidates[] = {
+            "holder_talon_volt", "holder_talon_curr", "holder_talon_pos", "holder_talon_out",
+            "holder_falcon_volt", "holder_falcon_curr", "holder_falcon_pos", "holder_falcon_out",
+            nullptr
+        };
+        // Find the parent notebook or top-level box that contains the graph holders
+        // and inject a new page, or use the first holder directly
+        for (int i = 0; holderCandidates[i]; i++) {
+            builder->get_widget(holderCandidates[i], dashHost);
+            if (dashHost) break;
+        }
 
-    talonVoltageGraph = Gtk::manage(new MultiMotorGraph(
-        "Talon Bus Voltage", MultiMotorGraph::VOLTAGE, talonNames));
-    talonCurrentGraph = Gtk::manage(new MultiMotorGraph(
-        "Talon Output Current", MultiMotorGraph::CURRENT, talonNames));
-    talonPositionGraph = Gtk::manage(new MultiMotorGraph(
-        "Talon Sensor Position", MultiMotorGraph::POSITION, talonNames));
-    talonOutputGraph = Gtk::manage(new MultiMotorGraph(
-        "Talon Output Percentage", MultiMotorGraph::OUTPUT_PERCENT, talonNames));
+        // If we found a holder, clear it and build the dashboard inside
+        // If not, create a standalone box
+        Gtk::Box* dashBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 10));
+        dashBox->property_margin().set_value(10);
 
-    talonTab->add(*talonVoltageGraph);
-    talonTab->add(*talonCurrentGraph);
-    talonTab->add(*talonPositionGraph);
-    talonTab->add(*talonOutputGraph);
-    tabs->append_page(*talonTab, "Talon Motors");
+        // Alert banner
+        dashAlertLabel = Gtk::manage(new Gtk::Label());
+        dashAlertLabel->set_halign(Gtk::ALIGN_START);
+        dashAlertLabel->set_markup("<span foreground='#1D9E75'>\u25CF All systems nominal</span>");
+        auto* alertFrame = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 8));
+        alertFrame->property_margin().set_value(8);
+        alertFrame->add(*dashAlertLabel);
+        dashBox->pack_start(*alertFrame, Gtk::PACK_SHRINK);
 
-    // Tab 2: Falcon Motors
-    Gtk::Box* falconTab = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
-    falconTab->property_margin().set_value(5);
+        // Health summary cards
+        auto* healthRow = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 12));
 
-    falconVoltageGraph = Gtk::manage(new MultiMotorGraph(
-        "Falcon Bus Voltage", MultiMotorGraph::VOLTAGE, falconNames));
-    falconCurrentGraph = Gtk::manage(new MultiMotorGraph(
-        "Falcon Output Current", MultiMotorGraph::CURRENT, falconNames));
-    falconPositionGraph = Gtk::manage(new MultiMotorGraph(
-        "Falcon Sensor Position", MultiMotorGraph::POSITION, falconNames));
-    falconOutputGraph = Gtk::manage(new MultiMotorGraph(
-        "Falcon Output Percentage", MultiMotorGraph::OUTPUT_PERCENT, falconNames));
+        auto makeHealthCard = [](const std::string& title, Gtk::Label*& valLabel, Gtk::LevelBar*& bar) -> Gtk::Box* {
+            auto* card = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 4));
+            card->property_margin().set_value(8);
+            card->set_hexpand(true);
 
-    falconTab->add(*falconVoltageGraph);
-    falconTab->add(*falconCurrentGraph);
-    falconTab->add(*falconPositionGraph);
-    falconTab->add(*falconOutputGraph);
-    tabs->append_page(*falconTab, "Falcon Motors");
+            auto* titleLbl = Gtk::manage(new Gtk::Label(title));
+            titleLbl->set_halign(Gtk::ALIGN_START);
+            Pango::FontDescription smallFont;
+            smallFont.set_size(10 * Pango::SCALE);
+            titleLbl->override_font(smallFont);
+            card->add(*titleLbl);
 
-    // Tab 3: Linear Actuators
-    Gtk::Box* linearTab = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
-    linearTab->property_margin().set_value(5);
+            valLabel = Gtk::manage(new Gtk::Label("--"));
+            valLabel->set_halign(Gtk::ALIGN_START);
+            Pango::FontDescription bigFont;
+            bigFont.set_size(16 * Pango::SCALE);
+            bigFont.set_weight(Pango::WEIGHT_BOLD);
+            valLabel->override_font(bigFont);
+            card->add(*valLabel);
 
-    linearSpeedGraph = Gtk::manage(new MultiMotorGraph(
-        "Linear Actuator Speed", MultiMotorGraph::SPEED, linearNames));
-    linearPotentiometerGraph = Gtk::manage(new MultiMotorGraph(
-        "Linear Actuator Position", MultiMotorGraph::POTENTIOMETER, linearNames));
+            bar = Gtk::manage(new Gtk::LevelBar());
+            bar->set_min_value(0.0);
+            bar->set_max_value(1.0);
+            bar->set_value(0.0);
+            bar->set_size_request(-1, 6);
+            card->add(*bar);
 
-    linearTab->add(*linearSpeedGraph);
-    linearTab->add(*linearPotentiometerGraph);
-    tabs->append_page(*linearTab, "Linear Actuators");
+            return card;
+        };
 
-    // Tab 4: Sensors Box
-    Gtk::Box* sensorsTab = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
-    sensorsTab->property_margin().set_value(5);
-    sensorBox = Gtk::manage(new Gtk::FlowBox());
-    sensorBox->set_orientation(Gtk::ORIENTATION_HORIZONTAL);
-    sensorsTab->add(*sensorBox);
+        healthRow->add(*makeHealthCard("Min battery voltage", dashHealthVoltage, dashBarVoltage));
+        healthRow->add(*makeHealthCard("Peak current draw", dashHealthCurrent, dashBarCurrent));
+        healthRow->add(*makeHealthCard("Hottest motor", dashHealthTemp, dashBarTemp));
+        healthRow->add(*makeHealthCard("Motors online", dashHealthOnline, dashBarOnline));
 
-    tabs->append_page(*sensorsTab, "Sensors");
+        dashBox->pack_start(*healthRow, Gtk::PACK_SHRINK);
 
-    // Tab 5: Diagnostics Window
-    // TODO: Figure out what information should be displayed here and add it
-    Gtk::Box* diagnosticsTab = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
-    diagnosticsTab->property_margin().set_value(5);
+        // Separator
+        dashBox->pack_start(*Gtk::manage(new Gtk::Separator(Gtk::ORIENTATION_HORIZONTAL)), Gtk::PACK_SHRINK);
 
-    tabs->append_page(*diagnosticsTab, "Diagnostics");
+        // Motor status grid
+        dashMotorGrid = Gtk::manage(new Gtk::Grid());
+        dashMotorGrid->set_row_spacing(4);
+        dashMotorGrid->set_column_spacing(14);
+        dashMotorGrid->property_margin().set_value(8);
 
-    // Add everything to main window
-    mainBox->add(*tabs);
-    sensorsWindow->add(*mainBox);
+        const char* headers[] = {"Motor", "Status", "Voltage", "Current", "Output", "Temp", "Position", ""};
+        for (int col = 0; col < 8; col++) {
+            auto* hdr = Gtk::manage(new Gtk::Label());
+            hdr->set_markup(std::string("<b>") + headers[col] + "</b>");
+            hdr->set_halign(Gtk::ALIGN_START);
+            Pango::FontDescription hdrFont;
+            hdrFont.set_size(10 * Pango::SCALE);
+            hdr->override_font(hdrFont);
+            dashMotorGrid->attach(*hdr, col, 0, 1, 1);
+        }
+
+        // Pre-create 16 rows of labels
+        for (int row = 0; row < 16; row++) {
+            for (int col = 0; col < 8; col++) {
+                dashMotorLabels[row][col] = Gtk::manage(new Gtk::Label("--"));
+                dashMotorLabels[row][col]->set_halign(Gtk::ALIGN_START);
+                dashMotorLabels[row][col]->set_visible(false);
+                Pango::FontDescription rowFont;
+                rowFont.set_size(11 * Pango::SCALE);
+                dashMotorLabels[row][col]->override_font(rowFont);
+                dashMotorGrid->attach(*dashMotorLabels[row][col], col, row + 1, 1, 1);
+            }
+        }
+
+        auto* gridScroll = Gtk::manage(new Gtk::ScrolledWindow());
+        gridScroll->set_policy(Gtk::POLICY_AUTOMATIC, Gtk::POLICY_AUTOMATIC);
+        gridScroll->set_vexpand(true);
+        gridScroll->add(*dashMotorGrid);
+        dashBox->pack_start(*gridScroll, Gtk::PACK_EXPAND_WIDGET);
+
+        /* ---- Helper: create a label-value pair row ---- */
+        auto makeLabelValue = [](const std::string& title, Gtk::Label*& valLabel) -> Gtk::Box* {
+            auto* row = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 8));
+            auto* lbl = Gtk::manage(new Gtk::Label(title));
+            lbl->set_halign(Gtk::ALIGN_START);
+            Pango::FontDescription smallFont;
+            smallFont.set_size(10 * Pango::SCALE);
+            lbl->override_font(smallFont);
+            lbl->set_size_request(130, -1);
+            row->pack_start(*lbl, Gtk::PACK_SHRINK);
+
+            valLabel = Gtk::manage(new Gtk::Label("--"));
+            valLabel->set_halign(Gtk::ALIGN_START);
+            Pango::FontDescription valFont;
+            valFont.set_size(11 * Pango::SCALE);
+            valFont.set_weight(Pango::WEIGHT_BOLD);
+            valLabel->override_font(valFont);
+            row->pack_start(*valLabel, Gtk::PACK_SHRINK);
+            return row;
+        };
+
+        /* ============================================================
+         * AUTONOMY STATE PANEL
+         * ============================================================ */
+        dashBox->pack_start(*Gtk::manage(new Gtk::Separator(Gtk::ORIENTATION_HORIZONTAL)), Gtk::PACK_SHRINK);
+        {
+            auto* sectionLabel = Gtk::manage(new Gtk::Label());
+            sectionLabel->set_markup("<b>Autonomy</b>");
+            sectionLabel->set_halign(Gtk::ALIGN_START);
+            sectionLabel->set_margin_top(6);
+            sectionLabel->set_margin_start(8);
+            dashBox->pack_start(*sectionLabel, Gtk::PACK_SHRINK);
+
+            auto* autoGrid = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 4));
+            autoGrid->property_margin().set_value(8);
+
+            auto* row1 = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 20));
+            row1->add(*makeLabelValue("State:", dashAutoState));
+            row1->add(*makeLabelValue("Dist to target:", dashAutoDistToTarget));
+            autoGrid->add(*row1);
+
+            auto* row2 = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 20));
+            row2->add(*makeLabelValue("Dest X:", dashAutoDestX));
+            row2->add(*makeLabelValue("Dest Z:", dashAutoDestZ));
+            autoGrid->add(*row2);
+
+            dashBox->pack_start(*autoGrid, Gtk::PACK_SHRINK);
+        }
+
+        /* ============================================================
+         * NETWORK THROUGHPUT PANEL
+         * ============================================================ */
+        dashBox->pack_start(*Gtk::manage(new Gtk::Separator(Gtk::ORIENTATION_HORIZONTAL)), Gtk::PACK_SHRINK);
+        {
+            auto* sectionLabel = Gtk::manage(new Gtk::Label());
+            sectionLabel->set_markup("<b>Network</b>");
+            sectionLabel->set_halign(Gtk::ALIGN_START);
+            sectionLabel->set_margin_top(6);
+            sectionLabel->set_margin_start(8);
+            dashBox->pack_start(*sectionLabel, Gtk::PACK_SHRINK);
+
+            auto* netGrid = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 4));
+            netGrid->property_margin().set_value(8);
+
+            auto* row1 = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 20));
+            row1->add(*makeLabelValue("Throughput:", dashNetBytesPerSec));
+            row1->add(*makeLabelValue("Packet rate:", dashNetPacketsPerSec));
+            row1->add(*makeLabelValue("Latency:", dashNetLatency));
+            netGrid->add(*row1);
+
+            auto* row2 = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 20));
+            row2->add(*makeLabelValue("Wi-Fi:", dashNetWifiStatus));
+            row2->add(*makeLabelValue("CAN Bus:", dashNetCanStatus));
+            netGrid->add(*row2);
+
+            // Bandwidth usage bar
+            dashBarBandwidth = Gtk::manage(new Gtk::LevelBar());
+            dashBarBandwidth->set_min_value(0.0);
+            dashBarBandwidth->set_max_value(1.0);
+            dashBarBandwidth->set_value(0.0);
+            dashBarBandwidth->set_size_request(-1, 6);
+            dashBarBandwidth->set_margin_top(4);
+            netGrid->add(*dashBarBandwidth);
+
+            dashBox->pack_start(*netGrid, Gtk::PACK_SHRINK);
+        }
+
+        /* ============================================================
+         * POWER BUDGET PANEL
+         * ============================================================ */
+        dashBox->pack_start(*Gtk::manage(new Gtk::Separator(Gtk::ORIENTATION_HORIZONTAL)), Gtk::PACK_SHRINK);
+        {
+            auto* sectionLabel = Gtk::manage(new Gtk::Label());
+            sectionLabel->set_markup("<b>Power budget</b>");
+            sectionLabel->set_halign(Gtk::ALIGN_START);
+            sectionLabel->set_margin_top(6);
+            sectionLabel->set_margin_start(8);
+            dashBox->pack_start(*sectionLabel, Gtk::PACK_SHRINK);
+
+            auto* powerGrid = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 4));
+            powerGrid->property_margin().set_value(8);
+
+            auto* row1 = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 20));
+            row1->add(*makeLabelValue("Avg current:", dashPowerAvgCurrent));
+            row1->add(*makeLabelValue("Total draw:", dashPowerTotalDraw));
+            powerGrid->add(*row1);
+
+            auto* row2 = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 20));
+            row2->add(*makeLabelValue("Time remaining:", dashPowerTimeRemaining));
+
+            // Show battery capacity for reference
+            Gtk::Label* capDummy = nullptr;
+            row2->add(*makeLabelValue("Battery:", capDummy));
+            if (capDummy) {
+                char capBuf[32];
+                snprintf(capBuf, sizeof(capBuf), "%.0f Ah", powerBatteryCapacityAh);
+                capDummy->set_text(capBuf);
+            }
+            powerGrid->add(*row2);
+
+            // Remaining capacity bar
+            dashBarPowerRemaining = Gtk::manage(new Gtk::LevelBar());
+            dashBarPowerRemaining->set_min_value(0.0);
+            dashBarPowerRemaining->set_max_value(1.0);
+            dashBarPowerRemaining->set_value(1.0);
+            dashBarPowerRemaining->set_size_request(-1, 6);
+            dashBarPowerRemaining->set_margin_top(4);
+            powerGrid->add(*dashBarPowerRemaining);
+
+            dashBox->pack_start(*powerGrid, Gtk::PACK_SHRINK);
+        }
+
+        if (dashHost) {
+            // Remove existing children from the holder and replace with dashboard
+            for (auto* child : dashHost->get_children()) {
+                dashHost->remove(*child);
+            }
+            dashHost->pack_start(*dashBox, Gtk::PACK_EXPAND_WIDGET);
+        }
+    }
+
+    /* ============================================================
+     * DIAGNOSTICS TAB (ESP32 handheld tool data)
+     * Injects into the existing box_tab_diagnostics from Glade
+     * ============================================================ */
+    {
+        Gtk::Box* diagPage = nullptr;
+        builder->get_widget("box_tab_diagnostics", diagPage);
+
+        if (diagPage) {
+            diagPage->set_spacing(10);
+
+            /* Connection status bar */
+            Gtk::Box* statusBar = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 20));
+            statusBar->property_margin().set_value(5);
+
+            diagConnectionLabel = Gtk::manage(new Gtk::Label("ESP32: Waiting..."));
+            diagConnectionLabel->set_halign(Gtk::ALIGN_START);
+            statusBar->pack_start(*diagConnectionLabel, Gtk::PACK_SHRINK);
+
+            diagRssiLabel = Gtk::manage(new Gtk::Label("RSSI: --"));
+            statusBar->pack_start(*diagRssiLabel, Gtk::PACK_SHRINK);
+
+            diagCanLabel = Gtk::manage(new Gtk::Label("CAN: --"));
+            statusBar->pack_start(*diagCanLabel, Gtk::PACK_SHRINK);
+
+            diagPage->pack_start(*statusBar, Gtk::PACK_SHRINK);
+
+            /* Separator */
+            diagPage->pack_start(*Gtk::manage(new Gtk::Separator(Gtk::ORIENTATION_HORIZONTAL)), Gtk::PACK_SHRINK);
+
+            /* Motor data grid */
+            diagMotorGrid = Gtk::manage(new Gtk::Grid());
+            diagMotorGrid->set_row_spacing(6);
+            diagMotorGrid->set_column_spacing(15);
+            diagMotorGrid->property_margin().set_value(10);
+
+            /* Header row */
+            const char* headers[] = {"Motor", "Type", "Status", "Output %", "Current (A)", "Voltage (V)", "Temp (\u00B0C)"};
+            for (int col = 0; col < 7; col++) {
+                Gtk::Label* hdr = Gtk::manage(new Gtk::Label());
+                hdr->set_markup(std::string("<b>") + headers[col] + "</b>");
+                hdr->set_halign(Gtk::ALIGN_START);
+                diagMotorGrid->attach(*hdr, col, 0, 1, 1);
+            }
+
+            /* Pre-create label slots for up to 10 motors */
+            for (int row = 0; row < 10; row++) {
+                for (int col = 0; col < 7; col++) {
+                    diagMotorLabels[row][col] = Gtk::manage(new Gtk::Label("--"));
+                    diagMotorLabels[row][col]->set_halign(Gtk::ALIGN_START);
+                    diagMotorLabels[row][col]->set_visible(false);
+                    diagMotorGrid->attach(*diagMotorLabels[row][col], col, row + 1, 1, 1);
+                }
+            }
+
+            Gtk::ScrolledWindow* scrolled = Gtk::manage(new Gtk::ScrolledWindow());
+            scrolled->set_policy(Gtk::POLICY_AUTOMATIC, Gtk::POLICY_AUTOMATIC);
+            scrolled->set_vexpand(true);
+            scrolled->add(*diagMotorGrid);
+            diagPage->pack_start(*scrolled, Gtk::PACK_EXPAND_WIDGET);
+        }
+    }
+
+    builder->get_widget("sensorBox", sensorBox);
+    if (!sensorBox) {
+        sensorBox = Gtk::manage(new Gtk::FlowBox()); 
+    }
+
     sensorsWindow->show_all();
 }
 
-struct RemoteRobot{
-    std::string tag;
-    time_t lastSeenTime;
-};
-std::vector<RemoteRobot> robotList;
-std::mutex robotListMutex;
+void initFoxgloveServer() {
+    auto logHandler = [](foxglove::WebSocketLogLevel, char const* msg) {
+        std::cout << "Foxglove: " << msg << std::endl;
+    };
 
-std::vector<RemoteRobot> videoRobotList;
-std::mutex videoRobotListMutex;
+    foxglove::ServerOptions serverOptions;
+    
+    foxglove_server = std::make_unique<foxglove::Server<foxglove::WebSocketNoTls>>(
+        "Razorbotz_Control", logHandler, serverOptions
+    );
 
+    foxglove::ChannelWithoutId tf_chan;
+    tf_chan.topic = "/tf";
+    tf_chan.encoding = "json";
+    tf_chan.schemaName = "foxglove.FrameTransforms"; 
+    
+    auto tfIds = foxglove_server->addChannels({tf_chan});
+    tf_channel = tfIds.front();
 
-bool contains(std::vector<std::string>& list, std::string& value){
-    for(std::string storedValue: list) if(storedValue==value) return true;
-    return false;
-}
+    foxglove::ServerHandlers<foxglove::ConnHandle> handlers;
+    
+    handlers.subscribeHandler = [](foxglove::ChannelId chanId, foxglove::ConnHandle clientHandle) {
+        std::cout << "Foxglove client subscribed to channel: " << chanId << std::endl;
+    };
 
+    handlers.unsubscribeHandler = [](foxglove::ChannelId chanId, foxglove::ConnHandle clientHandle) {
+        std::cout << "Foxglove client unsubscribed from channel: " << chanId << std::endl;
+    };
 
-bool contains(std::vector<RemoteRobot>& list, std::string& robotTag){
-    for(RemoteRobot storedValue: list) if(storedValue.tag==robotTag) return true;
-    return false;
-}
+    foxglove_server->setHandlers(std::move(handlers));
 
-
-void update(std::vector<RemoteRobot>& list, std::string& robotTag){
-    for(int index=0;index < list.size() ; ++index){
-    time_t now;
-    time(&now);
-        list.at(index).lastSeenTime=now;
+    if(!disableFoxgloveServer){
+        foxglove_server->start("0.0.0.0", 8765);
+        std::cout << "Foxglove WebSocket Server started on ws://0.0.0.0:8766" << std::endl;
     }
 }
 
+#include <glib.h>
+#include <fstream>
+#include <vector>
 
-std::vector<std::string> getAddressList(){
-    std::vector<std::string> addressList;
-    ifaddrs* interfaceAddresses = nullptr;
-    for(int failed=getifaddrs(&interfaceAddresses); !failed && interfaceAddresses; interfaceAddresses=interfaceAddresses->ifa_next){
-        if(interfaceAddresses->ifa_addr != NULL && interfaceAddresses->ifa_addr->sa_family == AF_INET){
-            std::cout << "address" << std::endl;
-            sockaddr_in* socketAddress=reinterpret_cast<sockaddr_in*>(interfaceAddresses->ifa_addr);
-            std::string addressString(inet_ntoa(socketAddress->sin_addr));
-            if(addressString=="0.0.0.0") continue;
-            if(addressString=="127.0.0.1") continue;
-            if(contains(addressList,addressString)) continue;
-            addressList.push_back(addressString);
-        }
+std::string getGLBBase64(const std::string& filepath) {
+    std::ifstream file(filepath, std::ios::binary | std::ios::ate);
+    if (!file.is_open()) {
+        std::cerr << "Failed to open mesh: " << filepath << std::endl;
+        return "";
     }
-    return addressList;
+    std::streamsize size = file.tellg();
+    file.seekg(0, std::ios::beg);
+    
+    std::vector<guchar> buffer(size);
+    if (file.read(reinterpret_cast<char*>(buffer.data()), size)) {
+        gchar* encoded = g_base64_encode(buffer.data(), size);
+        std::string result(encoded);
+        g_free(encoded); // Free the glib allocated memory
+        return result;
+    }
+    return "";
 }
 
+nlohmann::json euler_to_quat(double roll, double pitch, double yaw) {
+    double cy = std::cos(yaw * 0.5);
+    double sy = std::sin(yaw * 0.5);
+    double cp = std::cos(pitch * 0.5);
+    double sp = std::sin(pitch * 0.5);
+    double cr = std::cos(roll * 0.5);
+    double sr = std::sin(roll * 0.5);
 
-void broadcastListen(){
-    int sd = socket(AF_INET, SOCK_DGRAM, 0);
-    if(sd < 0) {
-        perror("Opening datagram socket error");
-        return; 
-    }
-//
-    int reuse = 1;
-    if(setsockopt(sd, SOL_SOCKET, SO_REUSEADDR, (char *)&reuse, sizeof(reuse)) < 0) {
-        perror("Setting SO_REUSEADDR error");
-        close(sd);
-        return;
-    }
-//
-    /* Bind to the proper port number with the IP address */
-    /* specified as INADDR_ANY. */
-    struct sockaddr_in localSock;
-    localSock.sin_family = AF_INET;
-    localSock.sin_port = htons(4321);
-    localSock.sin_addr.s_addr = INADDR_ANY;
-    if(bind(sd, (struct sockaddr*)&localSock, sizeof(localSock))) {
-        perror("Binding datagram socket error");
-        close(sd);
-        return;
-    }
-//
-    /* Join the multicast group 226.1.1.1 on the local 203.106.93.94 */
-    /* interface. Note that this IP_ADD_MEMBERSHIP option must be */
-    /* called for each local interface over which the multicast */
-    /* datagrams are to be received. */
-//
-    std::vector<std::string> addressList=getAddressList(); 
-    for(std::string addressString:addressList){
-        std::cout << "got " << addressString << std::endl;
-        struct ip_mreq group;
-        group.imr_multiaddr.s_addr = inet_addr("226.1.1.1");
-        group.imr_interface.s_addr = inet_addr(addressString.c_str());
-        if(setsockopt(sd, IPPROTO_IP, IP_ADD_MEMBERSHIP, (char *)&group, sizeof(group)) < 0) {
-            perror("Adding multicast group error");
-        } 
-    }
-//
-    char databuf[2048];
-    int datalen = sizeof(databuf);
-    while(true){
-        ssize_t bytesRead = read(sd, databuf, datalen);
-        if (bytesRead > 0) {
-            std::string message(databuf, bytesRead); 
-            std::lock_guard<std::mutex> lock(robotListMutex);
-            bool robotExists = false;
-
-            for (auto& robot : robotList) {
-                if (robot.tag == message) {
-                    time(&robot.lastSeenTime);
-                    robotExists = true;
-                    break; 
-                }
-            }
-
-            if (!robotExists) {
-                RemoteRobot newRobot;
-                newRobot.tag = message;
-                time(&newRobot.lastSeenTime);
-                robotList.push_back(newRobot);
-            }
-        }
-    }
+    return {
+        {"x", sr * cp * cy - cr * sp * sy},
+        {"y", cr * sp * cy + sr * cp * sy},
+        {"z", cr * cp * sy - sr * sp * cy},
+        {"w", cr * cp * cy + sr * sp * sy}
+    };
 }
 
+void publishRobotTransform() {
+    if (!foxglove_server) return;
 
-void videoBroadcastListen(){
-    int sd = socket(AF_INET, SOCK_DGRAM, 0);
-    if(sd < 0) {
-        perror("Opening datagram socket error");
-        return; 
+    auto now = std::chrono::system_clock::now();
+    uint64_t timestamp_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count();
+    uint32_t sec = timestamp_ns / 1000000000;
+    uint32_t nsec = timestamp_ns % 1000000000;
+
+    // --- DYNAMIC OFFSETS BASED ON ACTIVE URDF ---
+    double offset_x = 0.0, offset_y = 0.0;
+    double arm_x = 0.0, arm_y = 0.0, arm_z = 0.0;
+    double bucket_x = 0.0, bucket_y = 0.0, bucket_z = 0.0;
+    double fl_x = 0.0, fl_y = 0.0, fl_z = 0.0;
+    double fr_x = 0.0, fr_y = 0.0, fr_z = 0.0;
+    double bl_x = 0.0, bl_y = 0.0, bl_z = 0.0;
+    double br_x = 0.0, br_y = 0.0, br_z = 0.0;
+
+    if (primaryBot) { 
+        // sierra.urdf
+        offset_x = 0.822000; offset_y = 0.083000; // From base_to_zed2i
+        arm_x = 0.180193; arm_y = -0.033254; arm_z = 0.283140;
+        bucket_x = 0.741492; bucket_y = -0.007750; bucket_z = -0.320993;
+        fl_x = 0.703615; fl_y = 0.090463; fl_z = 0.089338;
+        fr_x = 0.703615; fr_y = -0.484060; fr_z = 0.088900;
+        bl_x = 0.043036; bl_y = 0.090463; bl_z = 0.089338;
+        br_x = 0.042121; br_y = -0.484060; br_z = 0.088900;
+    }
+    else if (dumpBot) { 
+        // dump_bot.urdf
+        offset_x = 0.762639; offset_y = -0.100614; // From base_to_zed2i
+        // No arm or bucket offsets for dump_bot
+        fl_x = 0.841100; fl_y = -0.019814; fl_z = 0.235883;
+        fr_x = 0.841100; fr_y = -0.538167; fr_z = 0.235883;
+        bl_x = 0.183870; bl_y = 0.000000; bl_z = 0.235880;
+        br_x = 0.183875; br_y = -0.475667; br_z = 0.235883;
+    }
+    else { 
+        // backupBot (my_robot_tf.urdf)
+        offset_x = 0.762639; offset_y = -0.100614; // From base_to_zed2i
+        arm_x = 0.284680; arm_y = -0.222630; arm_z = 0.306210;
+        bucket_x = 0.826510; bucket_y = 0.070738; bucket_z = -0.052110;
+        fl_x = 0.841100; fl_y = -0.019814; fl_z = 0.235883;
+        fr_x = 0.841100; fr_y = -0.538167; fr_z = 0.235883;
+        bl_x = 0.183870; bl_y = 0.000000; bl_z = 0.235880;
+        br_x = 0.183875; br_y = -0.475667; br_z = 0.235883;
     }
 
-    int reuse = 1;
-    if(setsockopt(sd, SOL_SOCKET, SO_REUSEADDR, (char *)&reuse, sizeof(reuse)) < 0) {
-        perror("Setting SO_REUSEADDR error");
-        close(sd);
-        return;
-    }
+    double cos_yaw = std::cos(robot_pitch_rad);
+    double sin_yaw = std::sin(robot_pitch_rad);
 
-    /* Bind to the proper port number with the IP address */
-    /* specified as INADDR_ANY. */
-    struct sockaddr_in localSock;
-    localSock.sin_family = AF_INET;
-    localSock.sin_port = htons(4322);
-    localSock.sin_addr.s_addr = INADDR_ANY;
-    if(bind(sd, (struct sockaddr*)&localSock, sizeof(localSock))) {
-        perror("Binding datagram socket error");
-        close(sd);
-        return;
-    }
+    // Subtract the rotated offset from the camera's world position 
+    // to find the true center of the chassis
+    double true_base_x = robot_x_m - (offset_x * cos_yaw - offset_y * sin_yaw);
+    double true_base_y = robot_y_m - (offset_x * sin_yaw + offset_y * cos_yaw);
 
-    /* Join the multicast group 226.1.1.1 on the local 203.106.93.94 */
-    /* interface. Note that this IP_ADD_MEMBERSHIP option must be */
-    /* called for each local interface over which the multicast */
-    /* datagrams are to be received. */
+    // --- SIMULATED WHEEL SPIN MATH ---
+    static double prev_x = true_base_x;
+    static double prev_y = true_base_y;
+    static double global_wheel_angle_rad = 0.0;
 
-    std::vector<std::string> addressList=getAddressList(); 
-    for(std::string addressString:addressList){
-        std::cout << "got " << addressString << std::endl;
-        struct ip_mreq group;
-        group.imr_multiaddr.s_addr = inet_addr("226.1.1.1");
-        group.imr_interface.s_addr = inet_addr(addressString.c_str());
-        if(setsockopt(sd, IPPROTO_IP, IP_ADD_MEMBERSHIP, (char *)&group, sizeof(group)) < 0) {
-            perror("Adding multicast group error");
-        } 
-    }
+    double dx = true_base_x - prev_x;
+    double dy = true_base_y - prev_y;
+    double distance = std::sqrt(dx*dx + dy*dy);
 
-    char databuf[1024];
-    int datalen = sizeof(databuf);
-    while(true){
-        try{
-            ssize_t bytesRead = read(sd, databuf, datalen);
-            if (bytesRead > 0) {
-                std::string message(databuf, bytesRead);
-                std::lock_guard<std::mutex> lock(videoRobotListMutex);
-
-                bool robotExists = false;
-                for (auto& robot : videoRobotList) {
-                    if (robot.tag == message) {
-                        time(&robot.lastSeenTime);
-                        robotExists = true;
-                        break;
-                    }
-                }
-
-                if (!robotExists) {
-                    RemoteRobot newRobot;
-                    newRobot.tag = message;
-                    time(&newRobot.lastSeenTime);
-                    videoRobotList.push_back(newRobot);
-    }
-            }
-        }
-        catch(std::exception e){
-            std::cout << "Caught exception: " << e.what() << " in videoBroadcastLisetn" << std::endl;
-        }
-    }
-}
-
-
-void adjustRobotList() {
-    std::lock_guard<std::mutex> lock(robotListMutex);
-    time_t now;
-    time(&now);
-
-    // --- UNIFIED LOGIC ---
-    std::vector<Gtk::ListBoxRow*> rows_to_remove;
-    std::vector<std::string> robots_in_gui;
-
-    // 1. Check existing GUI rows against the data list
-    int index = 0;
-    for (Gtk::ListBoxRow* row = addressListBox->get_row_at_index(index); row; row = addressListBox->get_row_at_index(++index)) {
-        Gtk::Label* label = static_cast<Gtk::Label*>(row->get_child());
-        std::string row_text = label->get_text();
-        robots_in_gui.push_back(row_text);
-
-        bool found_in_data = false;
-        for (const auto& robot : robotList) {
-            if (robot.tag == row_text) {
-                found_in_data = true;
-                if (now - robot.lastSeenTime > 12) {
-                    rows_to_remove.push_back(row);
-                }
-                break;
-            }
-        }
-        if (!found_in_data) {
-            rows_to_remove.push_back(row);
-        }
-    }
-
-    for (auto* row : rows_to_remove) {
-        Gtk::Label* label = static_cast<Gtk::Label*>(row->get_child());
-        std::string row_text = label->get_text();
+    if (distance > 0.001) {
+        double movement_angle = std::atan2(dy, dx);
+        double angle_diff = movement_angle - robot_pitch_rad;
         
-        // Remove from data vector
-        robotList.erase(std::remove_if(robotList.begin(), robotList.end(),
-            [&](const RemoteRobot& robot) {
-                return robot.tag == row_text;
-            }),
-            robotList.end());
+        // Normalize angle difference
+        while (angle_diff > M_PI) angle_diff -= 2.0 * M_PI;
+        while (angle_diff < -M_PI) angle_diff += 2.0 * M_PI;
 
-        // Remove from GUI
-        addressListBox->remove(*row);
+        if (std::abs(angle_diff) > M_PI / 2.0) {
+            distance = -distance; 
+        }
+
+        global_wheel_angle_rad += (distance / 0.210439);
+        
+        prev_x = true_base_x;
+        prev_y = true_base_y;
     }
 
-    for (const auto& robot : robotList) {
-        if (std::find(robots_in_gui.begin(), robots_in_gui.end(), robot.tag) == robots_in_gui.end()) {
-            Gtk::Label* label = Gtk::manage(new Gtk::Label(robot.tag));
-            label->set_visible(true);
-            addressListBox->append(*label);
+    nlohmann::json tf_update;
+    tf_update["transforms"] = nlohmann::json::array();
+    
+    // --- BASE LINK ---
+    nlohmann::json transform;
+    transform["timestamp"]["sec"] = sec;
+    transform["timestamp"]["nsec"] = nsec;
+    transform["parent_frame_id"] = "world";
+    transform["child_frame_id"] = "base_link";
+    transform["translation"]["x"] = true_base_x;
+    transform["translation"]["y"] = true_base_y;
+    transform["translation"]["z"] = 0.0; 
+    transform["rotation"] = euler_to_quat(0.0, 0.0, robot_pitch_rad);
+    tf_update["transforms"].push_back(transform);
+
+    // --- ARM & BUCKET (Skip if Dump Bot) ---
+    if (!dumpBot) {
+        double safe_arm_deg = arm_angle_deg;
+        if (safe_arm_deg < -40.1) safe_arm_deg = -40.1;
+        if (safe_arm_deg > 17.1) safe_arm_deg = 17.1;
+        double arm_pitch_rad = safe_arm_deg * (M_PI / 180.0);
+
+        nlohmann::json arm_tf;
+        arm_tf["timestamp"]["sec"] = sec;
+        arm_tf["timestamp"]["nsec"] = nsec;
+        arm_tf["parent_frame_id"] = "base_link";
+        arm_tf["child_frame_id"] = "Arm";
+        arm_tf["translation"]["x"] = arm_x;
+        arm_tf["translation"]["y"] = arm_y;
+        arm_tf["translation"]["z"] = arm_z; 
+        arm_tf["rotation"] = euler_to_quat(0.0, arm_pitch_rad, 0.0);
+        tf_update["transforms"].push_back(arm_tf);
+
+        double safe_bucket_deg = bucket_angle_deg;
+        if (safe_bucket_deg < -25.8) safe_bucket_deg = -25.8;
+        if (safe_bucket_deg > 71.6) safe_bucket_deg = 71.6;
+        double bucket_pitch_rad = safe_bucket_deg * (M_PI / 180.0);
+
+        nlohmann::json bucket_tf;
+        bucket_tf["timestamp"]["sec"] = sec;
+        bucket_tf["timestamp"]["nsec"] = nsec;
+        bucket_tf["parent_frame_id"] = "Arm";
+        bucket_tf["child_frame_id"] = "Bucket";
+        bucket_tf["translation"]["x"] = bucket_x;
+        bucket_tf["translation"]["y"] = bucket_y;
+        bucket_tf["translation"]["z"] = bucket_z; 
+        bucket_tf["rotation"] = euler_to_quat(0.0, bucket_pitch_rad, 0.0);
+        tf_update["transforms"].push_back(bucket_tf);
+    }
+
+    // --- WHEELS ---
+    nlohmann::json fl_tf;
+    fl_tf["timestamp"]["sec"] = sec; fl_tf["timestamp"]["nsec"] = nsec;
+    fl_tf["parent_frame_id"] = "base_link"; fl_tf["child_frame_id"] = "FL_Wheel";
+    fl_tf["translation"]["x"] = fl_x;
+    fl_tf["translation"]["y"] = fl_y;
+    fl_tf["translation"]["z"] = fl_z; 
+    fl_tf["rotation"] = euler_to_quat(0.0, global_wheel_angle_rad, 0.0);
+    tf_update["transforms"].push_back(fl_tf);
+
+    nlohmann::json fr_tf;
+    fr_tf["timestamp"]["sec"] = sec; fr_tf["timestamp"]["nsec"] = nsec;
+    fr_tf["parent_frame_id"] = "base_link"; fr_tf["child_frame_id"] = "FR_Wheel";
+    fr_tf["translation"]["x"] = fr_x;
+    fr_tf["translation"]["y"] = fr_y;
+    fr_tf["translation"]["z"] = fr_z; 
+    fr_tf["rotation"] = euler_to_quat(0.0, global_wheel_angle_rad, 0.0);
+    tf_update["transforms"].push_back(fr_tf);
+
+    nlohmann::json bl_tf;
+    bl_tf["timestamp"]["sec"] = sec; bl_tf["timestamp"]["nsec"] = nsec;
+    bl_tf["parent_frame_id"] = "base_link"; bl_tf["child_frame_id"] = "BL_Wheel";
+    bl_tf["translation"]["x"] = bl_x;
+    bl_tf["translation"]["y"] = bl_y;
+    bl_tf["translation"]["z"] = bl_z; 
+    bl_tf["rotation"] = euler_to_quat(0.0, global_wheel_angle_rad, 0.0);
+    tf_update["transforms"].push_back(bl_tf);
+
+    nlohmann::json br_tf;
+    br_tf["timestamp"]["sec"] = sec; br_tf["timestamp"]["nsec"] = nsec;
+    br_tf["parent_frame_id"] = "base_link"; br_tf["child_frame_id"] = "BR_Wheel";
+    br_tf["translation"]["x"] = br_x;
+    br_tf["translation"]["y"] = br_y;
+    br_tf["translation"]["z"] = br_z; 
+    br_tf["rotation"] = euler_to_quat(0.0, global_wheel_angle_rad, -3.1415);
+    tf_update["transforms"].push_back(br_tf);
+
+    // --- BROADCAST ---
+    std::string json_str = tf_update.dump();
+    foxglove_server->broadcastMessage(
+        tf_channel, 
+        timestamp_ns, 
+        reinterpret_cast<const uint8_t*>(json_str.data()), 
+        json_str.size()
+    );
+}
+
+void clear_sim_inputs() {
+    auto children = simContentBox->get_children();
+    for (auto* child : children) {
+        simContentBox->remove(*child);
+    }
+    activeSimWidgets.clear();
+    activeSimTypes.clear();
+}
+
+void on_sim_type_changed() {
+    if (!simTypeCombo || !simContentBox) return;
+    
+    std::string label = simTypeCombo->get_active_text();
+    if (label.empty()) return;
+
+    clear_sim_inputs();
+
+    BinaryMessage dummy(label);
+    std::string prefix;
+    if (label.find("Talon") != std::string::npos) prefix = "TALON";
+    else if (label.find("Falcon") != std::string::npos) prefix = "FALCON";
+    else if (label.find("Kraken") != std::string::npos) prefix = "KRAKEN";
+    else if (label.find("Neo") != std::string::npos) prefix = "NEO";
+    else if (label.find("Linear") != std::string::npos) prefix = "LINEAR";
+    else if (label == "Zed") prefix = "ZED";
+    else if (label == "Power") prefix = "POWER";
+    else if (label == "Power2") prefix = "POWER2";
+    else if (label == "Drivetrain") prefix = "DRIVETRAIN";
+    else if (label == "Autonomy") prefix = "AUTONOMY";
+    else if (label == "Lidar") prefix = "LIDAR";
+    else prefix = "COMMUNICATION";
+
+    populateBinaryMessage(label, prefix, dummy);
+
+    for (const auto& element : dummy.getObject().elementList) {
+        std::string key = element.label;
+        uint8_t type = element.type;
+        activeSimTypes[key] = type;
+
+        auto row = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 10));
+        row->set_margin_bottom(5);
+        
+        auto lbl = Gtk::manage(new Gtk::Label(key + ":"));
+        lbl->set_size_request(120, -1);
+        lbl->set_xalign(0.0);
+        row->add(*lbl);
+
+        Gtk::Widget* inputWidget = nullptr;
+
+        if (type == TYPE::BOOLEAN) {
+            auto check = Gtk::manage(new Gtk::CheckButton());
+            check->set_active(element.data.front().boolean);
+            inputWidget = check;
+        } 
+        else if (type == TYPE::STRING) {
+            auto entry = Gtk::manage(new Gtk::Entry());
+            std::string text;
+            for (const auto& c : element.data) text += c.character;
+            entry->set_text(text);
+            inputWidget = entry;
+        } 
+        else {
+            auto spin = Gtk::manage(new Gtk::SpinButton());
+            spin->set_range(-100000.0, 100000.0);
+            
+            if (type == TYPE::FLOAT32 || type == TYPE::FLOAT64) {
+                spin->set_digits(4);
+                spin->set_increments(0.1, 1.0);
+                float val = (type == TYPE::FLOAT32) ? element.data.front().float32 : (float)element.data.front().float64;
+                spin->set_value(val);
+            }
+            else {
+                spin->set_digits(0);
+                spin->set_increments(1, 10);
+                
+                int val = 0;
+                if (type == TYPE::UINT16) val = element.data.front().uint16;
+                else if (type == TYPE::INT32) val = element.data.front().int32;
+                else if (type == TYPE::INT8) val = element.data.front().int8;
+                else if (type == TYPE::UINT8) val = element.data.front().uint8;
+                
+                spin->set_value(val);
+            }
+            inputWidget = spin;
+        }
+
+        row->add(*inputWidget);
+        activeSimWidgets[key] = inputWidget;
+        simContentBox->add(*row);
+    }
+    
+    simContentBox->show_all();
+}
+
+void on_simulate_send() {
+    if (!simTypeCombo) return;
+    std::string label = simTypeCombo->get_active_text();
+    if (label.empty()) return;
+
+    BinaryMessage message(label);
+    
+    for (auto const& [key, widget] : activeSimWidgets) {
+        uint8_t type = activeSimTypes[key];
+
+        if (type == TYPE::BOOLEAN) {
+            Gtk::CheckButton* check = dynamic_cast<Gtk::CheckButton*>(widget);
+            if(check) message.addElementBoolean(key, check->get_active());
+        } 
+        else if (type == TYPE::STRING) {
+            Gtk::Entry* entry = dynamic_cast<Gtk::Entry*>(widget);
+            if(entry) message.addElementString(key, entry->get_text());
+        } 
+        else if (type == TYPE::FLOAT32) {
+            Gtk::SpinButton* spin = dynamic_cast<Gtk::SpinButton*>(widget);
+            if(spin) message.addElementFloat32(key, (float)spin->get_value());
+        }
+        else if (type == TYPE::FLOAT64) {
+            Gtk::SpinButton* spin = dynamic_cast<Gtk::SpinButton*>(widget);
+            if(spin) message.addElementFloat64(key, (double)spin->get_value());
+        }
+        else if (type == TYPE::UINT16) {
+            Gtk::SpinButton* spin = dynamic_cast<Gtk::SpinButton*>(widget);
+            if(key == "Bus Voltage" || key == "Output Current"){
+                if(spin) message.addElementUInt16(key, (uint16_t)(spin->get_value_as_int() * 100.0));
+            }
+            else{
+                if(spin) message.addElementUInt16(key, (uint16_t)spin->get_value_as_int());
+            }
+        }
+        else if (type == TYPE::INT32) {
+            Gtk::SpinButton* spin = dynamic_cast<Gtk::SpinButton*>(widget);
+            if(spin) message.addElementInt32(key, (int32_t)spin->get_value_as_int());
+        }
+        else if (type == TYPE::UINT8) {
+            Gtk::SpinButton* spin = dynamic_cast<Gtk::SpinButton*>(widget);
+            if(spin) message.addElementUInt8(key, (uint8_t)spin->get_value_as_int());
+        }
+        else if (type == TYPE::INT8) {
+            Gtk::SpinButton* spin = dynamic_cast<Gtk::SpinButton*>(widget);
+            if(spin) message.addElementInt8(key, (int8_t)spin->get_value_as_int());
+        }
+        else {
+            Gtk::SpinButton* spin = dynamic_cast<Gtk::SpinButton*>(widget);
+            if(spin) message.addElementInt32(key, (int)spin->get_value_as_int());
+        }
+    }
+
+    updateGUI(message);
+}
+
+
+static void rebuild_encode_output();
+static void on_encode_type_changed();
+void initEncodeToolWindow();
+
+
+// ---------------- Encode Tool Helpers ----------------
+
+static void build_label_to_field_map_once() {
+    if (!LABEL_TO_FIELD.empty()) return;
+    // Build a reverse lookup using BinaryMessage::decodeFieldValue
+    BinaryMessage tmp("tmp");
+    for (int i = 1; i < 64; ++i) {
+        const Field_Strings f = (Field_Strings)i;
+        const std::string label = tmp.decodeFieldValue(f);
+        if (!label.empty() && label != "Unknown") {
+            LABEL_TO_FIELD[label] = f;
         }
     }
 }
 
-void adjustVideoRobotList() {
-    std::lock_guard<std::mutex> lock(videoRobotListMutex);
-    if (!videoAddressListBox) {
-        std::cerr << "[ERROR] videoAddressListBox is null in adjustVideoRobotList()" << std::endl;
+static std::string hexDump(const std::vector<uint8_t>& bytes) {
+    std::ostringstream oss;
+    oss << std::hex << std::setfill('0');
+    for (size_t i = 0; i < bytes.size(); ++i) {
+        oss << std::setw(2) << (int)bytes[i];
+        if ((i + 1) % 16 == 0) oss << "\n";
+        else oss << " ";
+    }
+    return oss.str();
+}
+
+static void set_textview(Gtk::TextView* tv, const std::string& s) {
+    if (!tv) return;
+    auto buf = tv->get_buffer();
+    if (!buf) return;
+    buf->set_text(s);
+}
+
+// communication_node-style checksum: append placeholder then compute sum%0x2C and write last byte
+static void checksum_encode_vec(std::vector<uint8_t>& bytes) {
+    uint32_t sum = 0;
+    bytes.push_back(0x00);
+    for (uint8_t b : bytes) sum += b;
+    bytes.back() = (uint8_t)(sum % 0x2C);
+}
+
+// Envelope: [flag][orig_size_be32][zlib_compressed...] where flag=1, or flag=0 + raw if no compression.
+// We'll mimic the same approach as your communication_node: always compress when envelope enabled.
+static std::vector<uint8_t> apply_server_envelope(const std::vector<uint8_t>& raw) {
+    uLongf compressed_buffer_size = compressBound((uLong)raw.size());
+    std::vector<uint8_t> compressed_bytes(compressed_buffer_size);
+
+    int rc = compress2(
+        compressed_bytes.data(), &compressed_buffer_size,
+        raw.data(), (uLong)raw.size(),
+        Z_BEST_SPEED
+    );
+
+    if (rc != Z_OK) {
+        // fall back to uncompressed envelope
+        std::vector<uint8_t> payload;
+        payload.reserve(1 + raw.size());
+        payload.push_back(0);
+        payload.insert(payload.end(), raw.begin(), raw.end());
+        return payload;
+    }
+
+    compressed_bytes.resize(compressed_buffer_size);
+
+    std::vector<uint8_t> payload;
+    payload.reserve(1 + 4 + compressed_bytes.size());
+    payload.push_back(1);
+
+    const uint32_t orig = (uint32_t)raw.size();
+    payload.push_back((orig >> 24) & 0xFF);
+    payload.push_back((orig >> 16) & 0xFF);
+    payload.push_back((orig >>  8) & 0xFF);
+    payload.push_back((orig >>  0) & 0xFF);
+
+    payload.insert(payload.end(), compressed_bytes.begin(), compressed_bytes.end());
+    return payload;
+}
+
+static bool unwrap_server_envelope_vec(const std::vector<uint8_t>& payload, std::vector<uint8_t>& out_raw) {
+    if (payload.empty()) return false;
+    const uint8_t flag = payload[0];
+    if (flag == 0) {
+        out_raw.assign(payload.begin() + 1, payload.end());
+        return true;
+    }
+    if (flag != 1) return false;
+    if (payload.size() < 1 + 4) return false;
+
+    const uint32_t orig_size =
+        (uint32_t(payload[1]) << 24) |
+        (uint32_t(payload[2]) << 16) |
+        (uint32_t(payload[3]) << 8)  |
+        (uint32_t(payload[4]) << 0);
+
+    const uint8_t* comp = payload.data() + 5;
+    const size_t comp_len = payload.size() - 5;
+
+    out_raw.resize(orig_size);
+    uLongf dest_len = (uLongf)orig_size;
+    const int rc = uncompress(out_raw.data(), &dest_len, comp, (uLong)comp_len);
+    if (rc != Z_OK || dest_len != (uLongf)orig_size) return false;
+    return true;
+}
+
+static bool validate_and_strip_checksum(std::vector<uint8_t>& bytes) {
+    if (bytes.size() < 2) return false;
+    const uint8_t stored = bytes.back();
+    bytes.back() = 0x00;
+    uint32_t sum = 0;
+    for (uint8_t b : bytes) sum += b;
+    const uint8_t computed = (uint8_t)(sum % 0x2C);
+    bytes.back() = stored;
+    if (computed != stored) return false;
+    bytes.pop_back();
+    return true;
+}
+
+// Add element helpers (reads encodeWidgets values)
+static void add_value_string_label(BinaryMessage& msg, const std::string& key, uint8_t type) {
+    auto it = encodeWidgets.find(key);
+    Gtk::Widget* w = (it == encodeWidgets.end()) ? nullptr : it->second;
+
+    switch (type) {
+        case TYPE::BOOLEAN: {
+            bool v = false;
+            if (auto* cb = dynamic_cast<Gtk::CheckButton*>(w)) v = cb->get_active();
+            msg.addElementBoolean(key, v);
+            break;
+        }
+        case TYPE::INT32: {
+            int v = 0;
+            if (auto* e = dynamic_cast<Gtk::Entry*>(w)) v = std::stoi(e->get_text());
+            msg.addElementInt32(key, v);
+            break;
+        }
+        case TYPE::FLOAT64: {
+            double v = 0.0;
+            if (auto* e = dynamic_cast<Gtk::Entry*>(w)) v = std::stod(e->get_text());
+            msg.addElementFloat64(key, v);
+            break;
+        }
+        case TYPE::STRING: {
+            std::string v;
+            if (auto* e = dynamic_cast<Gtk::Entry*>(w)) v = e->get_text();
+            msg.addElementString(key, v);
+            break;
+        }
+        default: {
+            // Fallback: treat entry text as string
+            std::string v;
+            if (auto* e = dynamic_cast<Gtk::Entry*>(w)) v = e->get_text();
+            msg.addElementString(key, v);
+            break;
+        }
+    }
+}
+
+static void add_value_field_label(BinaryMessage& msg, const std::string& key, uint8_t type) {
+    build_label_to_field_map_once();
+    auto fIt = LABEL_TO_FIELD.find(key);
+    if (fIt == LABEL_TO_FIELD.end()) {
+        // Unknown label -> send as string label
+        add_value_string_label(msg, key, type);
         return;
     }
+    const Field_Strings field = fIt->second;
 
-    time_t now;
-    time(&now);
+    auto it = encodeWidgets.find(key);
+    Gtk::Widget* w = (it == encodeWidgets.end()) ? nullptr : it->second;
 
-    std::vector<Gtk::ListBoxRow*> rows_to_remove;
-    std::vector<std::string> robots_in_gui;
+    switch (type) {
+        case TYPE::BOOLEAN: {
+            bool v = false;
+            if (auto* cb = dynamic_cast<Gtk::CheckButton*>(w)) v = cb->get_active();
+            msg.addElementBoolean(field, v);
+            break;
+        }
+        case TYPE::INT32: {
+            int v = 0;
+            if (auto* e = dynamic_cast<Gtk::Entry*>(w)) v = std::stoi(e->get_text());
+            msg.addElementInt32(field, v);
+            break;
+        }
+        case TYPE::FLOAT64: {
+            double v = 0.0;
+            if (auto* e = dynamic_cast<Gtk::Entry*>(w)) v = std::stod(e->get_text());
+            msg.addElementFloat64(field, v);
+            break;
+        }
+        case TYPE::STRING: {
+            std::string v;
+            if (auto* e = dynamic_cast<Gtk::Entry*>(w)) v = e->get_text();
+            msg.addElementString(field, v);
+            break;
+        }
+        default: {
+            std::string v;
+            if (auto* e = dynamic_cast<Gtk::Entry*>(w)) v = e->get_text();
+            msg.addElementString(field, v);
+            break;
+        }
+    }
+}
 
-    int index = 0;
-    for (Gtk::ListBoxRow* row = videoAddressListBox->get_row_at_index(index); row; row = videoAddressListBox->get_row_at_index(++index)) {
-        Gtk::Label* label = static_cast<Gtk::Label*>(row->get_child());
-        std::string row_text = label->get_text();
-        robots_in_gui.push_back(row_text);
+static std::vector<uint8_t> build_variant_bytes(const std::string& name, bool useFieldVariant) {
+    BinaryMessage msg(name);
 
-        bool found_in_data = false;
-        for (const auto& robot : videoRobotList) {
-            if (robot.tag == row_text) {
-                found_in_data = true;
-                if (now - robot.lastSeenTime > 12) {
-                    rows_to_remove.push_back(row);
-                }
-                break;
+    for (const auto& kv : encodeTypes) {
+        const std::string& key = kv.first;
+        const uint8_t type = kv.second;
+
+        auto incIt = encodeInclude.find(key);
+        if (incIt != encodeInclude.end() && incIt->second && !incIt->second->get_active()) continue;
+
+        if (useFieldVariant) add_value_field_label(msg, key, type);
+        else                 add_value_string_label(msg, key, type);
+    }
+
+    auto bytesList = msg.getBytes();
+    std::vector<uint8_t> raw(bytesList->begin(), bytesList->end());
+
+    if (cbIncludeChecksum && cbIncludeChecksum->get_active()) {
+        checksum_encode_vec(raw);
+    }
+    if (cbApplyEnvelope && cbApplyEnvelope->get_active()) {
+        return apply_server_envelope(raw);
+    }
+    return raw;
+}
+
+static std::string element_value_to_string(const Element& e) {
+    std::ostringstream oss;
+    if (e.data.empty()) return "(empty)";
+    switch (e.type) {
+        case TYPE::BOOLEAN:  oss << (e.data.front().boolean ? "true" : "false"); break;
+        case TYPE::CHARACTER: oss << "'" << e.data.front().character << "'"; break;
+        case TYPE::INT8:     oss << (int)e.data.front().int8; break;
+        case TYPE::INT16:    oss << e.data.front().int16; break;
+        case TYPE::INT32:    oss << e.data.front().int32; break;
+        case TYPE::INT64:    oss << e.data.front().int64; break;
+        case TYPE::UINT8:    oss << (unsigned)e.data.front().uint8; break;
+        case TYPE::UINT16:   oss << e.data.front().uint16; break;
+        case TYPE::UINT32:   oss << e.data.front().uint32; break;
+        case TYPE::UINT64:   oss << e.data.front().uint64; break;
+        case TYPE::FLOAT32:  oss << std::fixed << std::setprecision(4) << e.data.front().float32; break;
+        case TYPE::FLOAT64:  oss << std::fixed << std::setprecision(6) << e.data.front().float64; break;
+        case TYPE::STRING: {
+            std::string s;
+            s.reserve(e.data.size());
+            for (const auto& d : e.data) s.push_back(d.character);
+            oss << "\"" << s << "\"";
+            break;
+        }
+        default:
+            oss << "(type " << (int)e.type << ", count " << e.data.size() << ")";
+            break;
+    }
+    if (e.dimensionCount > 0) {
+        oss << " dims=" << (size_t)e.dimensionCount << " [";
+        for (size_t i = 0; i < e.sizeList.size(); ++i) {
+            if (i) oss << ",";
+            oss << e.sizeList[i];
+        }
+        oss << "]";
+    }
+    return oss.str();
+}
+
+static void dump_object_recursive(const Object& obj, std::ostringstream& out, int indent = 0) {
+    const std::string pad(indent, ' ');
+    out << pad << "Object: " << obj.label << "\n";
+    for (const auto& e : obj.elementList) {
+        out << pad << "  - " << e.label << " = " << element_value_to_string(e) << "\n";
+    }
+    // The BinaryMessage Object struct uses `children` (not `objectList`).
+    for (const auto& child : obj.children) {
+        dump_object_recursive(child, out, indent + 2);
+    }
+}
+
+static std::string decode_preview_from_payload(const std::vector<uint8_t>& payload,
+                                               bool stage_is_enveloped,
+                                               bool stage_has_checksum,
+                                               bool validate_checksum)
+{
+    std::vector<uint8_t> raw = payload;
+
+    if (stage_is_enveloped) {
+        std::vector<uint8_t> unwrapped;
+        if (!unwrap_server_envelope_vec(payload, unwrapped)) {
+            return "Decode failed: could not unwrap envelope\n";
+        }
+        raw.swap(unwrapped);
+    }
+
+    if (stage_has_checksum) {
+        if (validate_checksum) {
+            if (!validate_and_strip_checksum(raw)) {
+                return "Decode failed: checksum mismatch\n";
             }
-        }
-        if (!found_in_data) {
-            rows_to_remove.push_back(row);
+        } else {
+            if (!raw.empty()) raw.pop_back();
         }
     }
 
-    for (auto* row : rows_to_remove) {
-        Gtk::Label* label = static_cast<Gtk::Label*>(row->get_child());
-        std::string row_text = label->get_text();
-        
-        videoRobotList.erase(std::remove_if(videoRobotList.begin(), videoRobotList.end(),
-            [&](const RemoteRobot& robot) {
-                return robot.tag == row_text;
-            }),
-            videoRobotList.end());
+    try {
+        std::list<uint8_t> msgList(raw.begin(), raw.end());
+        BinaryMessage decoded(msgList);
+        std::ostringstream out;
+        dump_object_recursive(decoded.getObject(), out);
+        return out.str();
+    } catch (const std::exception& e) {
+        std::ostringstream out;
+        out << "Decode exception: " << e.what() << "\n";
+        return out.str();
+    } catch (...) {
+        return "Decode exception: unknown\n";
+    }
+}
 
-        // Remove from the GUI ListBox
-        videoAddressListBox->remove(*row);
+static void rebuild_encode_output() {
+    if (!encodeTypeCombo) return;
+    const std::string name = encodeTypeCombo->get_active_text();
+    if (name.empty()) return;
+
+    const std::vector<uint8_t> bytesString = build_variant_bytes(name, /*useFieldVariant=*/false);
+    const std::vector<uint8_t> bytesField  = build_variant_bytes(name, /*useFieldVariant=*/true);
+
+    set_textview(txtHexStringLabels, hexDump(bytesString));
+    set_textview(txtHexFieldLabels,  hexDump(bytesField));
+
+    // Savings summary
+    const size_t a = bytesString.size();
+    const size_t b = bytesField.size();
+    const long saved = (long)a - (long)b;
+    double pct = 0.0;
+    if (a > 0) pct = 100.0 * ((double)saved / (double)a);
+
+    const double hz = 33.0;
+    const double a_kbps = ((double)a * hz * 8.0) / 1000.0;
+    const double b_kbps = ((double)b * hz * 8.0) / 1000.0;
+
+    if (encodeSummaryLabel) {
+        std::ostringstream oss;
+        oss << "String labels: " << a << " B   |   FieldStrings: " << b << " B   |   Saved: "
+            << saved << " B (" << std::fixed << std::setprecision(1) << pct << "%)"
+            << "   @33Hz: " << std::setprecision(1) << a_kbps << " kbps → " << b_kbps << " kbps";
+        encodeSummaryLabel->set_text(oss.str());
     }
 
-    for (const auto& robot : videoRobotList) {
-        if (std::find(robots_in_gui.begin(), robots_in_gui.end(), robot.tag) == robots_in_gui.end()) {
-            Gtk::Label* label = Gtk::manage(new Gtk::Label(robot.tag));
-            label->set_visible(true);
-            videoAddressListBox->append(*label);
+    // Decode preview
+    if (cbShowDecoded && cbShowDecoded->get_active()) {
+        // Decode whatever the tool is currently producing.
+        // (This matches what the client would receive on the wire.)
+        const bool stage_is_enveloped = (cbApplyEnvelope && cbApplyEnvelope->get_active());
+        const bool stage_has_checksum = (cbIncludeChecksum && cbIncludeChecksum->get_active());
+        const bool validate_checksum = (cbValidateChecksum && cbValidateChecksum->get_active());
+
+        set_textview(txtDecodedStringLabels,
+                     decode_preview_from_payload(bytesString, stage_is_enveloped, stage_has_checksum, validate_checksum));
+        set_textview(txtDecodedFieldLabels,
+                     decode_preview_from_payload(bytesField, stage_is_enveloped, stage_has_checksum, validate_checksum));
+    } else {
+        set_textview(txtDecodedStringLabels, "");
+        set_textview(txtDecodedFieldLabels, "");
+    }
+}
+
+static void clear_encode_inputs() {
+    if (!encodeContentBox) return;
+    auto children = encodeContentBox->get_children();
+    for (auto* child : children) {
+        encodeContentBox->remove(*child);
+    }
+    encodeWidgets.clear();
+    encodeTypes.clear();
+    encodeInclude.clear();
+}
+
+static void rebuildEncodeToolFields(const std::string& name, const std::string& prefix) {
+    clear_encode_inputs();
+
+    BinaryMessage dummy(name);
+
+    // We reuse your existing simulator UI generator by calling populateBinaryMessage(dummy, prefix)
+    // which adds the canonical set of fields for this message type.
+    populateBinaryMessage(name, prefix, dummy);
+
+    // The dummy now contains elements; build UI rows from them.
+    // We only need label + type; default widget is an Entry for numeric/string, CheckButton for bool.
+    for (const auto& el : dummy.getObject().elementList) {
+        const std::string key = el.label;
+        const uint8_t type = el.type;
+
+        auto row = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 6));
+
+        auto inc = Gtk::manage(new Gtk::CheckButton());
+        inc->set_active(true);
+        inc->signal_toggled().connect(sigc::ptr_fun(&rebuild_encode_output));
+        encodeInclude[key] = inc;
+        row->pack_start(*inc, Gtk::PACK_SHRINK);
+
+        auto lbl = Gtk::manage(new Gtk::Label(key));
+        lbl->set_xalign(0.0);
+        lbl->set_size_request(180, -1);
+        row->pack_start(*lbl, Gtk::PACK_SHRINK);
+
+        Gtk::Widget* widget = nullptr;
+        if (type == TYPE::BOOLEAN) {
+            auto cb = Gtk::manage(new Gtk::CheckButton());
+            cb->set_active(false);
+            cb->signal_toggled().connect(sigc::ptr_fun(&rebuild_encode_output));
+            widget = cb;
+        } else {
+            auto entry = Gtk::manage(new Gtk::Entry());
+            entry->set_text("0");
+            entry->signal_changed().connect(sigc::ptr_fun(&rebuild_encode_output));
+            widget = entry;
         }
+
+        encodeWidgets[key] = widget;
+        encodeTypes[key] = type;
+        row->pack_start(*widget, Gtk::PACK_EXPAND_WIDGET);
+
+        encodeContentBox->pack_start(*row, Gtk::PACK_SHRINK);
     }
+
+    encodeContentBox->show_all();
+    rebuild_encode_output();
+}
+
+static void on_encode_type_changed() {
+    if (!encodeTypeCombo || !encodeContentBox) return;
+    std::string label = encodeTypeCombo->get_active_text();
+    if (label.empty()) return;
+
+    std::string prefix;
+    if (label.find("Talon") != std::string::npos) prefix = "TALON";
+    else if (label.find("Falcon") != std::string::npos) prefix = "FALCON";
+    else if (label.find("Kraken") != std::string::npos) prefix = "KRAKEN";
+    else if (label.find("Neo") != std::string::npos) prefix = "NEO";
+    else if (label.find("Linear") != std::string::npos) prefix = "LINEAR";
+    else if (label == "Zed") prefix = "ZED";
+    else if (label == "Power") prefix = "POWER";
+    else if (label == "Communication") prefix = "COMMS";
+    else if (label == "Autonomy") prefix = "AUTO";
+    else prefix = "GEN";
+
+    rebuildEncodeToolFields(label, prefix);
+}
+
+void initEncodeToolWindow() {
+    encodeToolWindow = new Gtk::Window();
+    encodeToolWindow->set_title("BinaryMessage Encode Tool");
+    encodeToolWindow->set_default_size(1100, 800);
+    encodeToolWindow->set_keep_above(true);
+
+    auto mainVBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 10));
+    mainVBox->set_border_width(10);
+
+    // Controls
+    auto ctrlRow = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 10));
+    cbUseFieldStrings = Gtk::manage(new Gtk::CheckButton("Use FieldStrings labels"));
+    cbIncludeChecksum = Gtk::manage(new Gtk::CheckButton("Include checksum"));
+    cbApplyEnvelope   = Gtk::manage(new Gtk::CheckButton("Apply server envelope (compression)"));
+
+    cbUseFieldStrings->set_active(true);
+    cbIncludeChecksum->set_active(true);
+    cbApplyEnvelope->set_active(true);
+
+    ctrlRow->pack_start(*cbUseFieldStrings, Gtk::PACK_SHRINK);
+    ctrlRow->pack_start(*cbIncludeChecksum, Gtk::PACK_SHRINK);
+    ctrlRow->pack_start(*cbApplyEnvelope, Gtk::PACK_SHRINK);
+
+    cbUseFieldStrings->signal_toggled().connect(sigc::ptr_fun(&rebuild_encode_output));
+    cbIncludeChecksum->signal_toggled().connect(sigc::ptr_fun(&rebuild_encode_output));
+    cbApplyEnvelope->signal_toggled().connect(sigc::ptr_fun(&rebuild_encode_output));
+
+    mainVBox->pack_start(*ctrlRow, Gtk::PACK_SHRINK);
+
+    encodeSummaryLabel = Gtk::manage(new Gtk::Label(""));
+    encodeSummaryLabel->set_xalign(0.0);
+    mainVBox->pack_start(*encodeSummaryLabel, Gtk::PACK_SHRINK);
+
+    // Decode preview controls
+    auto decodeCtrlRow = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 10));
+    cbShowDecoded = Gtk::manage(new Gtk::CheckButton("Show decoded values (client preview)"));
+    cbShowDecoded->set_active(false);
+    cbShowDecoded->signal_toggled().connect(sigc::ptr_fun(&rebuild_encode_output));
+    decodeCtrlRow->pack_start(*cbShowDecoded, Gtk::PACK_SHRINK);
+
+    decodeStageCombo = Gtk::manage(new Gtk::ComboBoxText());
+    decodeStageCombo->append("Raw BinaryMessage (no checksum, no envelope)");
+    decodeStageCombo->append("After checksum (raw + checksum)");
+    decodeStageCombo->append("After server envelope (compression)");
+    decodeStageCombo->set_active(2);
+    decodeStageCombo->signal_changed().connect(sigc::ptr_fun(&rebuild_encode_output));
+    decodeCtrlRow->pack_start(*Gtk::manage(new Gtk::Label("Decode input:")), Gtk::PACK_SHRINK);
+    decodeCtrlRow->pack_start(*decodeStageCombo, Gtk::PACK_SHRINK);
+
+    cbValidateChecksum = Gtk::manage(new Gtk::CheckButton("Validate checksum"));
+    cbValidateChecksum->set_active(true);
+    cbValidateChecksum->signal_toggled().connect(sigc::ptr_fun(&rebuild_encode_output));
+    decodeCtrlRow->pack_start(*cbValidateChecksum, Gtk::PACK_SHRINK);
+
+    mainVBox->pack_start(*decodeCtrlRow, Gtk::PACK_SHRINK);
+
+    // Type dropdown
+    mainVBox->pack_start(*Gtk::manage(new Gtk::Label("Select Message Type:")), Gtk::PACK_SHRINK);
+    encodeTypeCombo = Gtk::manage(new Gtk::ComboBoxText());
+    std::vector<std::string> targets = {
+        "Talon 1", "Talon 2", "Talon 3", "Talon 4",
+        "Falcon 1", "Falcon 2", "Falcon 3", "Falcon 4",
+        "Linear 1", "Linear 2", "Zed", "Drivetrain",
+        "Power", "Communication", "Autonomy"
+    };
+    for (const auto& t : targets) encodeTypeCombo->append(t);
+    encodeTypeCombo->signal_changed().connect(sigc::ptr_fun(&on_encode_type_changed));
+    encodeTypeCombo->signal_changed().connect(sigc::ptr_fun(&rebuild_encode_output));
+    mainVBox->pack_start(*encodeTypeCombo, Gtk::PACK_SHRINK);
+
+    // Scrollable fields
+    auto scrolled = Gtk::manage(new Gtk::ScrolledWindow());
+    scrolled->set_policy(Gtk::POLICY_NEVER, Gtk::POLICY_AUTOMATIC);
+    scrolled->set_vexpand(true);
+    encodeContentBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
+    scrolled->add(*encodeContentBox);
+    mainVBox->pack_start(*scrolled, Gtk::PACK_EXPAND_WIDGET);
+
+    // Output panes: hex
+    auto panes = Gtk::manage(new Gtk::Paned(Gtk::ORIENTATION_HORIZONTAL));
+    txtHexStringLabels = Gtk::manage(new Gtk::TextView());
+    txtHexFieldLabels  = Gtk::manage(new Gtk::TextView());
+    txtHexStringLabels->set_editable(false);
+    txtHexFieldLabels->set_editable(false);
+
+    auto leftScroll = Gtk::manage(new Gtk::ScrolledWindow());
+    auto rightScroll = Gtk::manage(new Gtk::ScrolledWindow());
+    leftScroll->set_policy(Gtk::POLICY_AUTOMATIC, Gtk::POLICY_AUTOMATIC);
+    rightScroll->set_policy(Gtk::POLICY_AUTOMATIC, Gtk::POLICY_AUTOMATIC);
+    leftScroll->add(*txtHexStringLabels);
+    rightScroll->add(*txtHexFieldLabels);
+
+    panes->add1(*leftScroll);
+    panes->add2(*rightScroll);
+    panes->set_position(550);
+    mainVBox->pack_start(*panes, Gtk::PACK_EXPAND_WIDGET);
+
+    // Output panes: decoded
+    auto decodedLabel = Gtk::manage(new Gtk::Label("Decoded (String labels)  |  Decoded (FieldStrings labels)"));
+    decodedLabel->set_xalign(0.0);
+    mainVBox->pack_start(*decodedLabel, Gtk::PACK_SHRINK);
+
+    auto decodedPanes = Gtk::manage(new Gtk::Paned(Gtk::ORIENTATION_HORIZONTAL));
+    txtDecodedStringLabels = Gtk::manage(new Gtk::TextView());
+    txtDecodedFieldLabels  = Gtk::manage(new Gtk::TextView());
+    txtDecodedStringLabels->set_editable(false);
+    txtDecodedFieldLabels->set_editable(false);
+
+    auto decLeftScroll = Gtk::manage(new Gtk::ScrolledWindow());
+    auto decRightScroll = Gtk::manage(new Gtk::ScrolledWindow());
+    decLeftScroll->set_policy(Gtk::POLICY_AUTOMATIC, Gtk::POLICY_AUTOMATIC);
+    decRightScroll->set_policy(Gtk::POLICY_AUTOMATIC, Gtk::POLICY_AUTOMATIC);
+    decLeftScroll->set_size_request(-1, 220);
+    decRightScroll->set_size_request(-1, 220);
+    decLeftScroll->add(*txtDecodedStringLabels);
+    decRightScroll->add(*txtDecodedFieldLabels);
+
+    decodedPanes->add1(*decLeftScroll);
+    decodedPanes->add2(*decRightScroll);
+    decodedPanes->set_position(550);
+    mainVBox->pack_start(*decodedPanes, Gtk::PACK_SHRINK);
+
+    auto btnRebuild = Gtk::manage(new Gtk::Button("Rebuild Hex Output"));
+    btnRebuild->signal_clicked().connect(sigc::ptr_fun(&rebuild_encode_output));
+    mainVBox->pack_start(*btnRebuild, Gtk::PACK_SHRINK);
+
+    encodeToolWindow->add(*mainVBox);
+    encodeToolWindow->show_all();
+
+    encodeTypeCombo->set_active_text("Talon 1");
+    rebuild_encode_output();
+}
+
+// ---------------- End Encode Tool Helpers ----------------
+
+void initSimulatorWindow() {
+    simulatorWindow = new Gtk::Window();
+    simulatorWindow->set_title("Network Simulator");
+    simulatorWindow->set_default_size(400, 600);
+    simulatorWindow->set_keep_above(true);
+
+    auto mainVBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 10));
+    mainVBox->set_border_width(10);
+
+    mainVBox->add(*Gtk::manage(new Gtk::Label("Select Message Type:")));
+    simTypeCombo = Gtk::manage(new Gtk::ComboBoxText());
+    
+    std::vector<std::string> targets = {
+        "Talon 1", "Talon 2", "Talon 3", "Talon 4",
+        "Falcon 1", "Falcon 2", "Falcon 3", "Falcon 4",
+        "Kraken 1", "Kraken 2", "Kraken 3", "Kraken 4",
+        "Neo 1", "Neo 2", "Neo 3", "Neo 4",
+        "Linear 1", "Linear 2", "Zed", "Drivetrain", 
+        "Power", "Communication", "Autonomy", "Lidar"
+    };
+    if(primaryBot){
+        targets = {
+            "Talon 1", "Talon 3",
+            "Kraken 1", "Kraken 2", "Kraken 3", "Kraken 4",
+            "Linear 1", "Linear 3", "Zed", "Drivetrain", 
+            "Power", "Communication", "Autonomy", "Lidar"
+        };
+    }
+    else if(dumpBot){
+        targets = {
+            "Falcon 1", "Falcon 2", "Falcon 3", "Falcon 4", "Neo 1",
+            "Linear 1", "Linear 2", "Zed", "Drivetrain", 
+            "Power", "Communication", "Autonomy"
+        };
+    }
+    else if(backupBot){
+        targets = {
+            "Talon 1", "Talon 2", "Talon 3", "Talon 4",
+            "Falcon 1", "Falcon 2", "Falcon 3", "Falcon 4",
+            "Linear 1", "Linear 2", "Zed", "Drivetrain", 
+            "Power", "Communication", "Autonomy", "Lidar"
+        };
+    }
+
+
+    for(const auto& t : targets) simTypeCombo->append(t);
+    
+    simTypeCombo->signal_changed().connect(sigc::ptr_fun(&on_sim_type_changed));
+    mainVBox->add(*simTypeCombo);
+
+    auto scrolled = Gtk::manage(new Gtk::ScrolledWindow());
+    scrolled->set_policy(Gtk::POLICY_NEVER, Gtk::POLICY_AUTOMATIC);
+    scrolled->set_vexpand(true);
+    
+    simContentBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
+    scrolled->add(*simContentBox);
+    mainVBox->add(*scrolled);
+
+    auto btnSend = Gtk::manage(new Gtk::Button("Send Message"));
+    btnSend->signal_clicked().connect(sigc::ptr_fun(&on_simulate_send));
+    mainVBox->add(*btnSend);
+
+    simulatorWindow->add(*mainVBox);
+    
+    // Apply light background color to simulator window
+    auto sim_css = Gtk::CssProvider::create();
+    std::string sim_bg_css = "window { background-color: " + lightBackgroundColor + "; }";
+    sim_css->load_from_data(sim_bg_css);
+    simulatorWindow->get_style_context()->add_provider(sim_css, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+    
+    simulatorWindow->show_all();
+    
+    simTypeCombo->set_active_text("Talon 1");
 }
 
 int key = 0x2C;
@@ -4817,550 +5899,14 @@ int checksum_decode(std::list<uint8_t>& byteList){
     }
 
 }
-void print_data(std::list<uint8_t>& byteList){
 
-	    auto dataEnd = byteList.end();
-	    std::advance(dataEnd, -2);
+void print_data(std::list<uint8_t>& byteList){
+	auto dataEnd = byteList.end();
+	std::advance(dataEnd, -2);
 	for (auto dataIt = byteList.begin(); dataIt != dataEnd; ++dataIt){
 		std::cout<<std::hex<<static_cast<int>(*dataIt)<<" ";
 	}
 
-}
-
-
-void initArenaWindow(){
-    arenaWindow = new Gtk::Window();
-    arenaWindow->set_title("Arena Map/Cams");
-
-    if(monitor_count == 3){
-        auto display = Gdk::Display::get_default();
-        auto second_monitor = display->get_monitor(1);
-        Gdk::Rectangle second_monitor_geometry;
-        second_monitor->get_geometry(second_monitor_geometry);
-        arenaWindow->move(second_monitor_geometry.get_x(), second_monitor_geometry.get_y());
-        arenaWindow->set_default_size(second_monitor_geometry.get_width(), second_monitor_geometry.get_height());
-    }
-    else{
-        arenaWindow->maximize();
-    }
-
-    try {
-        auto icon = "../resources/razorbotz.png";
-        arenaWindow->set_icon_from_file(icon);
-    } catch (const Glib::FileError& e) {
-        g_print("Failed to load image: %s\n", e.what().c_str());
-        return;
-    }
-
-    // Arena cams
-    // Add mainBox to window
-    Gtk::Box* mainBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,10));
-    arenaWindow->add(*mainBox);
-    
-    // Arena map left
-    overlay_area = Gtk::manage(new ImageOverlay());
-    mainBox->pack_start(*overlay_area, Gtk::PACK_EXPAND_WIDGET);
-    
-    // Cameras box
-    Gtk::Box* camsBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 5));
-    mainBox->pack_start(*camsBox, Gtk::PACK_SHRINK);
-    
-    // Awareness Cam
-    Gtk::Overlay* awareness_overlay = Gtk::manage(new Gtk::Overlay());
-    Gtk::Box* livestreamBox1 = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,0));
-    livestreamBox1->set_size_request(800, 600);
-    camsBox->pack_start(*awareness_overlay, Gtk::PACK_SHRINK);
-    
-    // Webview 1 (Awareness)
-    auto webview1 = WEBKIT_WEB_VIEW(webkit_web_view_new());
-    webkit_web_view_load_uri(webview1, "http://192.168.1.8/mjpeg/1");
-    Gtk::Widget* webview_widget1 = Glib::wrap(GTK_WIDGET(webview1));
-    livestreamBox1->pack_start(*webview_widget1, Gtk::PACK_EXPAND_WIDGET);
-    awareness_overlay->add(*livestreamBox1);
-
-    // Awareness cam label
-    Gtk::Label* awareness_label = Gtk::manage(new Gtk::Label("Awareness Camera:"));
-    //awareness_label->override_color(Gdk::RGBA("black"));
-    awareness_label->set_halign(Gtk::ALIGN_START);
-    awareness_label->set_valign(Gtk::ALIGN_START);
-    awareness_overlay->add_overlay(*awareness_label);
-    
-    // Back Cam
-    Gtk::Overlay* back_overlay = Gtk::manage(new Gtk::Overlay());
-    Gtk::Box* livestreamBox2 = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,0));
-    livestreamBox2->set_size_request(800, 600);
-    camsBox->pack_start(*back_overlay, Gtk::PACK_SHRINK);
-    
-    // Webview 2 (Back)
-    auto webview2 = WEBKIT_WEB_VIEW(webkit_web_view_new());
-    webkit_web_view_load_uri(webview2, "http://192.168.1.9/mjpeg/1");
-    Gtk::Widget* webview_widget2 = Glib::wrap(GTK_WIDGET(webview2));
-    livestreamBox2->pack_start(*webview_widget2, Gtk::PACK_EXPAND_WIDGET);
-    back_overlay->add(*livestreamBox2);
-
-    // Awareness cam label
-    Gtk::Label* back_label = Gtk::manage(new Gtk::Label("Back Camera:"));
-    //back_label->override_color(Gdk::RGBA("black"));
-    back_label->set_halign(Gtk::ALIGN_START);
-    back_label->set_valign(Gtk::ALIGN_START);
-    back_overlay->add_overlay(*back_label);
-
-    // Style the overlay label
-    auto css_provider = Gtk::CssProvider::create();
-    std::string format = "* { font-family: 'Proxima Nova'; }\n"
-        ".overlay-text {\n"
-            "font-size: 30px;\n"
-            "background-color: " + lightBackgroundColor + ";\n"
-            "padding: 5px;\n"
-            "margin: 10px;\n"
-            "border-radius: 3px;\n"
-        "}";
-    css_provider->load_from_data(format);
-    awareness_label->get_style_context()->add_provider(
-        css_provider,
-        GTK_STYLE_PROVIDER_PRIORITY_APPLICATION
-    );
-    awareness_label->get_style_context()->add_class("overlay-text");
-    back_label->get_style_context()->add_provider(
-        css_provider,
-        GTK_STYLE_PROVIDER_PRIORITY_APPLICATION
-    );
-    back_label->get_style_context()->add_class("overlay-text");
-
-    arenaWindow->show_all();
-}
-
-void initWebcam(){
-    webcamWindow = new Gtk::Window();
-    webcamWindow->set_title("Webcams");
-
-    Gtk::Box* outerBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,0));
-
-    Gtk::Box* livestreamBox1 = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,0));
-    livestreamBox1->set_size_request(800, 600);
-    outerBox->add(*livestreamBox1);
-
-    auto webview = WEBKIT_WEB_VIEW(webkit_web_view_new());
-    webkit_web_view_load_uri(webview, "http://192.168.1.8/mjpeg/1");
-
-    Gtk::Widget* widget = Glib::wrap(GTK_WIDGET(webview));
-    widget->set_hexpand(true);
-    widget->set_vexpand(true);
-
-    livestreamBox1->pack_start(*widget, Gtk::PACK_EXPAND_WIDGET);
-
-    Gtk::Box* livestreamBox2 = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,0));
-    livestreamBox2->set_size_request(800, 600);
-    outerBox->add(*livestreamBox2);
-
-    auto webview2 = WEBKIT_WEB_VIEW(webkit_web_view_new());
-    webkit_web_view_load_uri(webview2, "http://192.168.1.9/mjpeg/1");
-
-    Gtk::Widget* widget2 = Glib::wrap(GTK_WIDGET(webview2));
-    widget2->set_hexpand(true);
-    widget2->set_vexpand(true);
-
-    livestreamBox2->pack_start(*widget2, Gtk::PACK_EXPAND_WIDGET);
-
-    webcamWindow->add(*outerBox);
-    webcamWindow->show_all();
-}
-
-
-int key = 0x2C;
-int checksum_decode(std::list<uint8_t>& byteList){
-    //Checks last byte of data for the checksum
-    if (byteList.size() < 1) {
-        std::cout << "Not enough data to decode checksum." << std::endl;
-        return -1;
-    }
-
-    // Extracts checksum (last byte)
-    auto it = byteList.end();
-    std::advance(it, -1);
-    uint8_t storedChecksum = *it;
-
-    // Sums byteList, excludes last byte (checksum) 
-    uint32_t sum = 0;
-    auto dataEnd = byteList.end();
-    std::advance(dataEnd, -1);
-    std::cout << "Data: ";
-    for (auto dataIt = byteList.begin(); dataIt != dataEnd; ++dataIt) {
-        sum += *dataIt;
-        std::cout<<std::hex<<static_cast<int>(*dataIt)<<" ";
-        
-    }
-    std::cout<<std::endl;
-
-    // Recalculate the checksum as sum modulo key.
-    uint8_t computedChecksum = sum % key;
-
-    std::cout << "Computed checksum from data: 0x" << std::hex << static_cast<int>(computedChecksum) << std::endl;
-    std::cout << "Stored checksum: 0x" << std::hex << static_cast<int>(storedChecksum) << std::endl;
-
-    if (computedChecksum == storedChecksum) {
-        std::cout << "Checksum is valid." << std::endl;
-        return 1;
-    } else {
-        std::cout << "Checksum is invalid." << std::endl;
-        byteList.clear();
-        return 0;
-
-    }
-
-}
-
-
-void initArena(){
-    arenaWindow = new Gtk::Window();
-    arenaWindow->set_title("Arena Map");
-
-    arenaWindow->set_default_size(1100, 800);
-
-    overlay_area = Gtk::manage(new ImageOverlay());
-    arenaWindow->add(*overlay_area);
-    overlay_area->show();
-    arenaWindow->show_all();
-}
-
-/*
-// ORIGINAL JPEG-BASED videoMain function for reference
-void videoMain(){
-    std::thread broadcastListenThread2(videoBroadcastListen);
-
-    int bytesRead=0, total = 0;
-
-    bool running=true;
-    while(running){    
-        if(!videoConnected || !isStreamingActive) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-            continue;
-        }
-    
-    
-        uint32_t network_frame_size = 0;
-        ssize_t bytesRead = 0;
-        size_t totalHeaderRead = 0;
-    
-        while (totalHeaderRead < sizeof(network_frame_size)) {
-            bytesRead = recv(videoSock, reinterpret_cast<char*>(&network_frame_size) + totalHeaderRead, sizeof(network_frame_size) - totalHeaderRead, 0);
-            if (bytesRead > 0) {
-                totalHeaderRead += bytesRead;
-            }
-            else if (bytesRead == 0) {
-                shouldVideoDisconnect = true;
-                videoDisconnectDispatcher.emit();
-                isStreamingActive = false;
-                break;
-            }
-            else {
-                if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
-                    continue;
-                }
-                else {
-                    perror("recv header error");
-                    shouldVideoDisconnect = true;
-                    videoDisconnectDispatcher.emit();
-                    isStreamingActive = false;
-                    break;
-                }
-            }
-        }
-    
-        if (!videoConnected || !isStreamingActive) {
-            continue;
-        }
-    
-    
-        uint32_t frameSize = ntohl(network_frame_size);
-    
-        if (frameSize == 0) {
-            std::cerr << "Invalid frame size received: " << frameSize << std::endl;
-            shouldVideoDisconnect = true;
-            videoDisconnectDispatcher.emit();
-            isStreamingActive = false;
-            continue;
-        }
-    
-    
-        std::vector<uchar> frameDataBuffer(frameSize);
-        size_t totalFrameRead = 0;
-        while (totalFrameRead < frameSize) {
-            bytesRead = recv(videoSock, frameDataBuffer.data() + totalFrameRead, frameSize - totalFrameRead, 0);
-             if (bytesRead > 0) {
-                totalFrameRead += bytesRead;
-            }
-            else if (bytesRead == 0) {
-                shouldVideoDisconnect = true;
-                videoDisconnectDispatcher.emit();
-                isStreamingActive = false;
-                break;
-            }
-            else {
-                 if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                     std::this_thread::sleep_for(std::chrono::milliseconds(1));
-                     continue;
-                 }
-                 else {
-                    perror("recv frame error");
-                    shouldVideoDisconnect = true;
-                    videoDisconnectDispatcher.emit();
-                    isStreamingActive = false;
-                    break;
-                }
-            }
-        }
-    
-    
-        if (!videoConnected || !isStreamingActive) {
-            continue;
-        }
-    
-    
-        cv::Mat decoded_frame;
-        try {
-            decoded_frame = cv::imdecode(frameDataBuffer, isGray ? cv::IMREAD_GRAYSCALE : cv::IMREAD_COLOR);
-        }
-        catch (const cv::Exception& e) {
-            std::cerr << "OpenCV exception during imdecode: " << e.what() << ". Buffer size: " << frameDataBuffer.size() << std::endl;
-            continue;
-        }
-
-        if (decoded_frame.empty()) {
-            std::cerr << "Failed to decode JPEG image. Buffer size: " << frameDataBuffer.size() << std::endl;
-            continue; 
-        }
-
-        cv::Mat display_img;
-        try {
-            cv::resize(decoded_frame, display_img, cv::Size(1600, 1000), 0, 0, cv::INTER_LINEAR);
-        }
-        catch (const cv::Exception& e) {
-            std::cerr << "OpenCV exception during resize: " << e.what() << std::endl;
-            continue;
-        }
-        
-        if (display_img.empty()) {
-            std::cerr << "Image is empty after resize." << std::endl;
-            continue;
-        }
-        {
-            std::lock_guard<std::mutex> lock(frameMutex);
-            latestFrame = display_img.clone();
-            newFrameAvailable = true;
-        }
-    }
-    return; 
-
-}
-*/
-
-
-/* Main function to receive and display the H.265 video stream */
-void videoMain() {
-    std::thread broadcastListenThread2(videoBroadcastListen);
-
-    // --- FFmpeg Decoder Initialization ---
-    const AVCodec* codec = avcodec_find_decoder(AV_CODEC_ID_HEVC);
-    if (!codec) {
-        std::cerr << "H.265 (HEVC) decoder not found" << std::endl;
-        return;
-    }
-
-    AVCodecParserContext* parser = av_parser_init(codec->id);
-    if (!parser) {
-        std::cerr << "Failed to initialize H.265 parser" << std::endl;
-        return;
-    }
-
-    AVCodecContext* codec_ctx = avcodec_alloc_context3(codec);
-    if (!codec_ctx) {
-        std::cerr << "Failed to allocate codec context" << std::endl;
-        av_parser_close(parser);
-        return;
-    }
-
-    if (avcodec_open2(codec_ctx, codec, NULL) < 0) {
-        std::cerr << "Failed to open codec" << std::endl;
-        avcodec_free_context(&codec_ctx);
-        av_parser_close(parser);
-        return;
-    }
-
-    AVPacket* pkt = av_packet_alloc();
-    AVFrame* frame = av_frame_alloc();
-    AVFrame* bgr_frame = av_frame_alloc();
-    SwsContext* sws_ctx = nullptr;
-    uint8_t* bgr_buffer = nullptr;
-
-    bool running = true;
-    while (running) {
-        if (!videoConnected || !isStreamingActive) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
-            continue;
-        }
-
-        // 1. Read the size of the next H.265 frame from the socket
-        uint32_t network_frame_size = 0;
-        ssize_t bytesRead = 0;
-        size_t totalHeaderRead = 0;
-        while (totalHeaderRead < sizeof(network_frame_size)) {
-            bytesRead = recv(videoSock, reinterpret_cast<char*>(&network_frame_size) + totalHeaderRead, sizeof(network_frame_size) - totalHeaderRead, 0);
-            
-            // ** START FIX **
-            if (bytesRead > 0) {
-                totalHeaderRead += bytesRead;
-            } else if (bytesRead == 0) { // Peer has performed an orderly shutdown
-                break;
-            } else { // bytesRead == -1
-                if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                    // This is not an error, just no data available yet.
-                    // Sleep briefly to avoid busy-waiting and hogging the CPU.
-                    std::this_thread::sleep_for(std::chrono::milliseconds(5)); 
-                    continue; 
-                }
-                // An actual error occurred
-                break; 
-            }
-            // ** END FIX **
-        }
-
-        if (bytesRead <= 0) {
-            if (videoConnected) { // Only show error if we expected to be connected
-                if (bytesRead == 0) {
-                    std::cout << "Video connection closed by peer." << std::endl;
-                } else {
-                    perror("Socket recv error");
-                }
-                shouldVideoDisconnect = true;
-                videoDisconnectDispatcher.emit();
-            }
-            continue;
-        }
-        
-        uint32_t frameSize = ntohl(network_frame_size);
-        if (frameSize == 0 || frameSize > 1000000) { // Basic sanity check
-            std::cerr << "Invalid frame size received: " << frameSize << std::endl;
-            continue;
-        }
-
-        // 2. Read the full H.265 frame data (Apply the same fix here)
-        std::vector<uint8_t> frameDataBuffer(frameSize);
-        size_t totalFrameRead = 0;
-        while (totalFrameRead < frameSize) {
-            bytesRead = recv(videoSock, frameDataBuffer.data() + totalFrameRead, frameSize - totalFrameRead, 0);
-
-            if (bytesRead > 0) {
-                totalFrameRead += bytesRead;
-            }
-            else if (bytesRead == 0) {
-                break;
-            }
-            else {
-                if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                    std::this_thread::sleep_for(std::chrono::milliseconds(5));
-                    continue;
-                }
-                break;
-            }
-        }
-        if (bytesRead <= 0) {
-             if (videoConnected) {
-                if (bytesRead == 0) {
-                    std::cout << "Video connection closed by peer while reading frame." << std::endl;
-                } else {
-                    perror("Socket recv error while reading frame data");
-                }
-                shouldVideoDisconnect = true;
-                videoDisconnectDispatcher.emit();
-            }
-            continue;
-        }
-
-        // 3. Parse and Decode the H.265 frame
-        uint8_t* data_ptr = frameDataBuffer.data();
-        size_t data_size = frameDataBuffer.size();
-
-        while (data_size > 0) {
-            int ret = av_parser_parse2(parser, codec_ctx, &pkt->data, &pkt->size,
-                                       data_ptr, data_size,
-                                       AV_NOPTS_VALUE, AV_NOPTS_VALUE, 0);
-            if (ret < 0) {
-                std::cerr << "Error while parsing frame" << std::endl;
-                break;
-            }
-            data_ptr += ret;
-            data_size -= ret;
-
-            if (pkt->size) {
-                // Send packet to the decoder
-                if (avcodec_send_packet(codec_ctx, pkt) >= 0) {
-                    // Receive decoded frames
-                    while (avcodec_receive_frame(codec_ctx, frame) == 0) {
-                        // Got a decoded frame, now convert it to BGR for OpenCV
-                        
-                        // Initialize SWS context for color conversion on first frame
-                        if (!sws_ctx) {
-                            sws_ctx = sws_getContext(codec_ctx->width, codec_ctx->height, codec_ctx->pix_fmt,
-                                                     codec_ctx->width, codec_ctx->height, AV_PIX_FMT_BGR24,
-                                                     SWS_BILINEAR, NULL, NULL, NULL);
-                            int num_bytes = av_image_get_buffer_size(AV_PIX_FMT_BGR24, codec_ctx->width, codec_ctx->height, 32);
-                            bgr_buffer = (uint8_t*)av_malloc(num_bytes * sizeof(uint8_t));
-                            av_image_fill_arrays(bgr_frame->data, bgr_frame->linesize, bgr_buffer, AV_PIX_FMT_BGR24, codec_ctx->width, codec_ctx->height, 32);
-                        }
-
-                        // Perform color conversion (e.g., YUV to BGR)
-                        sws_scale(sws_ctx, (uint8_t const * const *)frame->data, frame->linesize, 0, codec_ctx->height,
-                                  bgr_frame->data, bgr_frame->linesize);
-
-                        // Create an OpenCV Mat from the BGR data
-                        cv::Mat decoded_mat(codec_ctx->height, codec_ctx->width, CV_8UC3, bgr_frame->data[0], bgr_frame->linesize[0]);
-
-                        // Resize and update the GUI
-                        cv::Mat display_img;
-                        cv::resize(decoded_mat, display_img, cv::Size(1600, 1000), 0, 0, cv::INTER_LINEAR);
-                        
-                        {
-                            std::lock_guard<std::mutex> lock(frameMutex);
-                            latestFrame = display_img.clone(); // Clone is crucial for thread safety
-                            newFrameAvailable = true;
-                        }
-                    }
-                }
-            }
-        }
-        av_packet_unref(pkt);
-    }
-
-    // --- Cleanup ---
-    if (sws_ctx) sws_freeContext(sws_ctx);
-    if (bgr_buffer) av_freep(&bgr_buffer);
-    av_frame_free(&bgr_frame);
-    av_frame_free(&frame);
-    av_packet_free(&pkt);
-    avcodec_free_context(&codec_ctx);
-    av_parser_close(parser);
-}
-
-
-/* Function to check whether the old laptop is running the control program.
-Because the old laptop has a smaller screen, the size of the window should be smaller.*/
-void checkSize(){
-    auto display = Gdk::Display::get_default();
-    auto primary_monitor = display->get_monitor(0);
-    if (primary_monitor) {
-        Gdk::Rectangle geometry;
-        primary_monitor->get_geometry(geometry);
-        int x = geometry.get_x();
-        int y = geometry.get_y();
-        int width = geometry.get_width();
-        int height = geometry.get_height();
-        std::cout << "Height: " << height << std::endl << "Width: " << width << std::endl;
-        if(width < 1920){
-            smallLaptop = true;
-        }
-    }
 }
 
 
@@ -5434,6 +5980,8 @@ void parseConfigFile(std::string filename){
 
 
 void processArguments(int argc, char** argv){
+    bool forwardingExplicitlySet = false;
+    bool forwardingDisabled = false;
     if(argc > 1){
         for(int i = 1; i < argc; ++i){
             if(!strcmp("--help", argv[i])){
@@ -5450,6 +5998,11 @@ void processArguments(int argc, char** argv){
                 std::cout << "--nano: Switches IP address used to connect to the Jetson Nano" << std::endl;
                 std::cout << "--test_input: Allows for testing inputs without being connected to robot" << std::endl;
                 std::cout << "--alt_layout: Uses alternate joystick control mapping for robot" << std::endl;
+                std::cout << "--input_config <file>: Load joystick mapping from a JSON config file (created by input_rebind_tool)" << std::endl;
+                std::cout << "--backup_bot: Sets the backup bot" << std::endl;
+                std::cout << "--dump_bot: Sets the dump bot" << std::endl;
+                std::cout << "--debug_glade_bounds: Draws red bounds and Glade IDs on widgets" << std::endl;
+                std::cout << "--debug_motors: Prints motor packets to console" << std::endl;
                 exit(0);
             }
             else if(!strcmp("--init", argv[i])){
@@ -5461,9 +6014,6 @@ void processArguments(int argc, char** argv){
             else if(!strcmp("--no_video", argv[i])){
                 noVideo = true;
             }
-            else if(!strcmp("--no_arena", argv[i])){
-                noArena = true;
-            }
             else if(!strcmp("--set_colors", argv[i])){
                 if(i+1 < argc){
                     lightBackgroundColor = argv[i+1];
@@ -5474,11 +6024,12 @@ void processArguments(int argc, char** argv){
                     i++;
                 }
             }
-            else if(!strcmp("--set_map", argv[i])){
-                mapUsed = argv[i+1];
-            }
             else if(!strcmp("--wsl", argv[i])){
-                smallLaptop = true;
+                wsl = true;
+                ORIN_IP = "127.0.0.1";
+                NANO_IP = "127.0.0.2";
+                
+                std::cout << "WSL Mode: defaulting to Localhost (" << ORIN_IP << ")" << std::endl;
             }
             else if(!strcmp("--config_file", argv[i])){
                 parseConfigFile(argv[i+1]);
@@ -5495,10 +6046,154 @@ void processArguments(int argc, char** argv){
             else if(!strcmp("--alt_layout", argv[i])){
                 useAltLayout = true;
             }
+            else if(!strcmp("--input_config", argv[i])){
+                if(i+1 < argc){
+                    inputConfigFile = argv[++i];
+                    inputConfig = InputConfig::loadFromFile(inputConfigFile);
+                    inputConfig.buildLookup();
+                    useInputConfig = true;
+                    // Apply global settings from the input config
+                    isController  = inputConfig.isController;
+                    twoJoysticks  = inputConfig.twoJoysticks;
+                    useAltLayout  = inputConfig.useAltLayout;
+                    std::cout << "Loaded input config from: " << inputConfigFile << std::endl;
+                } else {
+                    std::cerr << "--input_config requires a JSON file path" << std::endl;
+                }
+            }
+            else if(!strcmp("--simulate", argv[i])){
+                simulateNetwork = true;
+                initVals = true; 
+            }
+            else if(!strcmp("--encode_tool", argv[i])){
+                start_encode_tool = true;
+                initVals = true;
+            }
+            else if(!strcmp("--backup_bot", argv[i])){
+                activeConfig = configs::backupBot();
+                backupBot = true;
+                primaryBot = false;
+            }
+            else if(!strcmp("--dump_bot", argv[i])){
+                activeConfig = configs::dumpBot();
+                //printf("Dump Bot Config Loaded:\n%s\n", activeConfig.name.c_str());
+                dumpBot = true;
+                primaryBot = false;
+            }
+            else if(!strcmp("--debug_glade_bounds", argv[i])){
+                debugGladeBounds = true;
+            }
+            else if(!strcmp("--disable_foxglove", argv[i])){
+                disableFoxgloveServer = true;
+            }
+            else if(!strcmp("--debug_motors", argv[i])){
+                debugMotors = true;
+            }
+            else if(!strcmp("--fe", argv[i]) || !strcmp("--flight_engineer", argv[i])){
+                isFlightEngineer = true;
+                forwardingDisabled = true;
+            }
+            else if(!strcmp("--forward", argv[i])){
+                // Format: --forward <IP> <Telemetry_Port> <Video_Port>
+                if(i+3 < argc){
+                    std::string fe_ip = argv[i+1];
+                    int fe_port = std::stoi(argv[i+2]);
+                    int fe_video_port = std::stoi(argv[i+3]);
+                    setupForwarding(fe_ip, fe_port, fe_video_port);
+                    forwardingExplicitlySet = true;
+                    i += 3;
+                } else {
+                    std::cerr << "Error: --forward requires <IP> <Telemetry_Port> <Video_Port>\n";
+                }
+            }
+            else if(!strcmp("--no_forward", argv[i])){
+                forwardingDisabled = true;
+            }
+            else if(!strcmp("--mission_time", argv[i])){
+                // Set mission timer duration in seconds (default: 600 = 10 minutes)
+                if(i+1 < argc){
+                    feMissionDurationSec = std::stoi(argv[++i]);
+                    std::cout << "Mission timer set to " << feMissionDurationSec << " seconds\n";
+                } else {
+                    std::cerr << "Error: --mission_time requires <seconds>\n";
+                }
+            }
+            else if(!strcmp("--battery_capacity", argv[i])){
+                // Set battery capacity in Ah for power budget estimation (default: 18)
+                if(i+1 < argc){
+                    powerBatteryCapacityAh = std::stod(argv[++i]);
+                    std::cout << "Battery capacity set to " << powerBatteryCapacityAh << " Ah\n";
+                } else {
+                    std::cerr << "Error: --battery_capacity requires <Ah>\n";
+                }
+            }
+            else if(!strcmp("--max_bandwidth", argv[i])){
+                // Set expected max bandwidth in MB/s for the utilization bar (default: 5)
+                if(i+1 < argc){
+                    netMaxBandwidthBps = std::stod(argv[++i]) * 1024 * 1024;
+                    std::cout << "Max bandwidth set to " << (netMaxBandwidthBps / (1024*1024)) << " MB/s\n";
+                } else {
+                    std::cerr << "Error: --max_bandwidth requires <MB/s>\n";
+                }
+            }
+        }
+    }
+
+    // Default forwarding: if neither --forward nor --no_forward was given,
+    // forward to 192.168.0.4 using bot-specific ports.
+    //   Primary bot: telemetry 5001, video 5010
+    //   Dump bot:    telemetry 5002, video 5011
+    if(!forwardingExplicitlySet && !forwardingDisabled){
+        std::string fe_ip = "192.168.0.4";
+        int fe_port = -1;
+        int fe_video_port = -1;
+        if(primaryBot){
+            fe_port = 5001;
+            fe_video_port = 5010;
+        }
+        else if(dumpBot){
+            fe_port = 5002;
+            fe_video_port = 5011;
+        }
+
+        if(fe_port != -1){
+            std::cout << "Setting up default forwarding to " << fe_ip
+                      << " (telemetry=" << fe_port
+                      << ", video=" << fe_video_port << ")\n";
+            setupForwarding(fe_ip, fe_port, fe_video_port);
         }
     }
 }
 
+
+/* Function to check whether the old laptop is running the control program.
+Because the old laptop has a smaller screen, the size of the window should be smaller.*/
+void checkSize(){
+    auto display = Gdk::Display::get_default();
+    auto primary_monitor = display->get_monitor(0);
+    if (primary_monitor) {
+        Gdk::Rectangle geometry;
+        primary_monitor->get_geometry(geometry);
+        int x = geometry.get_x();
+        int y = geometry.get_y();
+        int width = geometry.get_width();
+        
+        // Calculate scale relative to the target 2560px display
+        GUI_SCALE = (double)width / 2560.0;
+
+        if(GUI_SCALE < 0.5) GUI_SCALE = 0.5;
+
+        // Scale edge panel width for smaller screens
+        EDGE_PANEL_WIDTH = static_cast<int>(BASE_EDGE_PANEL_WIDTH * GUI_SCALE);
+        
+        std::cout << "Detected Width: " << width << " | Applying GUI Scale: " << GUI_SCALE 
+                  << " | Edge Panel Width: " << EDGE_PANEL_WIDTH << std::endl;
+
+        if(width < 1920){
+            smallLaptop = true;
+        }
+    }
+}
 
 void moveWindows(){
     auto display = Gdk::Display::get_default();
@@ -5516,35 +6211,42 @@ void moveWindows(){
 
 
 void remapJoystickInputs(uint8_t* which, uint8_t* axis){
-    // Expected values are as follows:
-    // Joystick 0:
-    // Axis 0 - Roll
-    // Axis 1 - Pitch
-    // Joystick 1:
-    // Axis 0 - Bucket
-    // Axis 1 - Arm
-    if(isController){
-        // If a controller is used, axes 0 and 1 should be mapped to joystick 0
-        // Axes 2 and 3 should be mapped to joystick 1
-        if(*axis == 2){
-            *which = 1;
-            *axis = 0;
-        }
-        if(*axis == 3){
-            *which = 1;
-            *axis = 1;
-        }
+    if(useInputConfig){
+        bool invert = false;
+        inputConfig.remap(which, axis, &invert);
+        return;
     }
+
+    if(isController){
+        // --- TANK DRIVE MAPPING ---
+        // Left Joystick Y (Axis 1) controls Left Wheels
+        if(*axis == 1){
+            *which = 0;
+            *axis = 1; // Mapped to left drive
+        }
+        // Right Joystick Y (Axis 4) controls Right Wheels
+        // Note: Some drivers map the Right Stick Y to Axis 3 instead of 4
+        else if(*axis == 4 || *axis == 3){
+            *which = 0;
+            *axis = 3; // Mapped to right drive
+        }
+
+        // --- MECHANISM MAPPING (TRIGGERS) ---
+        // Left Trigger (Axis 2) -> Bucket Down 
+        else if(*axis == 2){
+            *which = 1;
+            *axis = 0; // Mechanism Joystick, Bucket Axis
+        }
+        // Right Trigger (Axis 5) -> Arm Down
+        else if(*axis == 5){
+            *which = 1;
+            *axis = 1; // Mechanism Joystick, Arm Axis
+        }
+        return; // Exit early to bypass the fallback layout logic
+    }
+
+    // --- FALLBACK / ALT LAYOUT LOGIC ---
     if(useAltLayout){
-        // Alt layout is as follows:
-        // Joystick 0:
-        // Axis 0 - Left Speed
-        // Axis 1 - Arm
-        // Joystick 1:
-        // Axis 0 - Right Speed
-        // Axis 1 - Bucket
-        // Note: This probably isn't going to respond as expected. The speed calculations aren't meant
-        // to have individual speed components like this
         if(*which == 0){
             if(*axis == 1){
                 *which = 1;
@@ -5559,8 +6261,6 @@ void remapJoystickInputs(uint8_t* which, uint8_t* axis){
         }
     }
     if(!twoJoysticks){
-        // If a single joystick is used, control the bucket speed with twist of axis 2
-        // Buttons 
         if(*axis == 2){
             *which = 1;
             *axis = 0;
@@ -5574,30 +6274,50 @@ int main(int argc, char** argv) {
     //Setup GUI
     Glib::RefPtr<Gtk::Application> application = Gtk::Application::create(argc, argv, "edu.uark.razorbotz");
     processArguments(argc, argv);
+    rebuildConfigDerivedGlobals();
+    setup_local_key_vectors();
     checkSize();
     setupGUI(application);
-    if(!noArena)
-        initArenaWindow();
-    if(!noVideo)
+    if(!noVideo && !isFlightEngineer)
         initSensorsWindow();
+    startDiagListener();
+    if(simulateNetwork) {
+        initSimulatorWindow();
+    }
+    if(start_encode_tool) {
+        initEncodeToolWindow();
+    }
     moveWindows();
     initGUI();
-    initWebcam();
-    initArena();
+    initFoxgloveServer();
 
-    videoDisconnectDispatcher.connect([]() {
-        if (shouldVideoDisconnect) {
-            setVideoDisconnectedState();
-            shouldVideoDisconnect = false;
-        }
-
-    });
+    if (isFlightEngineer) {
+        // Ports: Robot 1 Telemetry (5001), Robot 2 Telemetry (5002), Video (5010)
+        setupPassiveListening(5001, 5002, 5010, 5011);
+    }
     
     //Start a thread to listen to updates from the robot
+    videoDisconnectDispatcher.connect([&]() {
+        if (shouldVideoDisconnect) {
+            handleVideoDisconnect(video_server_ui);
+            shouldVideoDisconnect = false;
+        }
+    });
+
+    connection_finished_dispatcher.connect(sigc::ptr_fun(&on_connection_finished));
+    connection_finished_dispatcher2.connect(sigc::ptr_fun(&on_connection2_finished));
+    video_connection_finished_dispatcher.connect(sigc::ptr_fun(&on_video_connection_finished));
+    
     std::thread broadcastListenThread(broadcastListen);
     broadcastListenThread.detach();
-    std::thread broadcastVideoListenThread(videoMain);
-    broadcastVideoListenThread.detach();
+
+    std::thread videoBroadcastListenThread(videoBroadcastListen);
+    videoBroadcastListenThread.detach();
+
+    std::thread videoMainThread(videoMain, std::ref(latestFrame), std::ref(frameMutex), 
+        std::ref(newFrameAvailable), std::ref(videoDisconnectDispatcher), 
+        std::ref(shouldVideoDisconnect));
+    videoMainThread.detach();
 
     if (SDL_Init(SDL_INIT_GAMECONTROLLER | SDL_INIT_JOYSTICK | SDL_INIT_EVENTS) != 0) {
         SDL_Log("Unable to initialize SDL: %s", SDL_GetError());
@@ -5646,6 +6366,9 @@ int main(int argc, char** argv) {
             }
         }
     }
+    else {
+        axisEventList = new std::vector<std::vector<AxisEvent*>*>(0);
+    }
 
     SDL_Event event;
     char buffer[16384] = {0}; 
@@ -5653,8 +6376,12 @@ int main(int argc, char** argv) {
 
     std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
     std::chrono::high_resolution_clock::time_point lastTransmitTime = std::chrono::high_resolution_clock::now();
-    std::chrono::high_resolution_clock::time_point lastReceiveTime = std::chrono::high_resolution_clock::now();
-    lastHeartbeatTime = std::chrono::high_resolution_clock::now();
+    std::chrono::high_resolution_clock::time_point lastReceiveOrin = std::chrono::high_resolution_clock::now();
+    std::chrono::high_resolution_clock::time_point lastReceiveNano = std::chrono::high_resolution_clock::now();
+    std::chrono::high_resolution_clock::time_point lastHeartbeatTime = std::chrono::high_resolution_clock::now();
+    std::chrono::high_resolution_clock::time_point lastVideoHeartbeatTime = std::chrono::high_resolution_clock::now();
+    std::chrono::high_resolution_clock::time_point lastIDRRequestTime = std::chrono::high_resolution_clock::now();
+    std::chrono::high_resolution_clock::time_point lastDashboardUpdate = std::chrono::high_resolution_clock::now();
     now = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> time_span = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastTransmitTime);
     double deltaTime = time_span.count();
@@ -5663,228 +6390,238 @@ int main(int argc, char** argv) {
     uint8_t message[256];
     bool running=true;
     while(running){
-        adjustRobotList();
-        adjustVideoRobotList();
+        adjustRobotList(addressListBox);
+        adjustVideoRobotList(videoAddressListBox);
 
         while(Gtk::Main::events_pending()){
             Gtk::Main::iteration();
         }
 
         if (newFrameAvailable) {
-            if (videoArea) {
+            if (isFlightEngineer) {
+                // Push FE video panes from the global frame buffers
+                std::lock_guard<std::mutex> lock(frameMutex);
+                if (feVideoAreaRobot1 && !fe_left_frame.empty()) {
+                    feVideoAreaRobot1->setFrame(fe_left_frame);
+                }
+                if (feVideoAreaRobot2 && !fe_right_frame.empty()) {
+                    feVideoAreaRobot2->setFrame(fe_right_frame);
+                }
+            } else if (videoArea) {
                 videoArea->setFrame(latestFrame);
             }
             newFrameAvailable = false;
         }
 
-        if(!testInput){
-            if(!initialized)
+        now = std::chrono::high_resolution_clock::now();
+        time_span = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastFoxgloveTransmit);
+        if (time_span.count() > 0.016) {
+            lastFoxgloveTransmit = now;
+            publishRobotTransform();
+        }
+
+        // Update motor status dashboard at ~4Hz
+        time_span = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastDashboardUpdate);
+        if (time_span.count() > 0.25) {
+            lastDashboardUpdate = now;
+            updateMotorStatusDashboard();
+        }
+
+        if(!testInput && !isServerInitialized() && !isServerInitialized2() && !isVideoStreamActive()) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
             continue;
         }
 
-        //std::cout << "Before Read" << std::endl;
-
-        //Avoid blocking if we hear nothing
-        fcntl(sock,F_SETFL, O_NONBLOCK);
-        //Receive messages from the robot, store in buffer of size 16384
-        bytesRead = recvfrom(sock, buffer, 16384, 0, (struct sockaddr *)&serv_addr, &addr_len);
-
-        if(bytesRead == 17){
-            for(int index=0;index<bytesRead;index++){
-                buffer[index] = 0;
-            }
-            setConnectedState();
-            lastReceiveTime = std::chrono::high_resolution_clock::now();
-            continue;
-        }
-
-        if(!testInput){
-            if(!connected){
-                if(messageBytesList.size() > 0){
-                    messageBytesList.clear();
-                }
-                continue;
-            }
-            if(bytesRead==0){
-                //std::cout << "Lost Connection" << std::endl;
-                setDisconnectedState();
-                if(messageBytesList.size() > 0){
-                    messageBytesList.clear();
-                }
-                continue;
-            }
-        }
-
-        //std::cout << "After Read" << std::endl;
-        
-        //Fill the messageBytesList with the bytes read from the socket
-        if(bytesRead != -1){
-        	//std::cout << bytesRead << std::endl;
-            for(int index=0;index<bytesRead;index++){
-                messageBytesList.push_back(buffer[index]);
-            }
-            lastReceiveTime = std::chrono::high_resolution_clock::now();
-        }
-
-        if(silentRunning){
-            lastReceiveTime = std::chrono::high_resolution_clock::now();
-        }
+        /******************************Receive and process data from server******************************/
+        std::vector<uint8_t> data_buffer;
+        bytesRead = receiveRobotData(data_buffer);
+        if(isSilentRunning())
+            lastReceiveOrin = std::chrono::high_resolution_clock::now();
         else{
+            lastReceiveOrin = lastPacketOrinMs();
+        }
+        if(isSilentRunning2())
+            lastReceiveNano = std::chrono::high_resolution_clock::now();
+        else{
+            lastReceiveNano = lastPacketNanoMs();
+        }
+        if (bytesRead > 0) {
+            // Track network throughput
+            netBytesAccum += bytesRead;
+            netPacketsAccum++;
+
+            std::vector<uint8_t> processed_buffer;
             now = std::chrono::high_resolution_clock::now();
-            time_span = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastReceiveTime);
-            deltaTime = time_span.count();
-            if(deltaTime > 5.0 && connected){
-                setDisconnectedState();
+            if (process_payload(data_buffer, processed_buffer)) { 
+                for(uint8_t byte : processed_buffer) {
+                    messageBytesList.push_back(byte);
+                }
             }
         }
-        
-        //std::cout << "Before hasMessage check" << std::endl;
-        while(BinaryMessage::hasMessage(messageBytesList)){
-	    //print_data(messageBytesList);
-            /****************CHECKSUM: Branch to process each message in messageBytesList in the case that the checksum is to be verified****************/
-            //std::cout << "Before message create" << std::endl;
-            int checksum = checksum_decode(messageBytesList); 
-            if (checksum == 0){
-                break; 
+        now = std::chrono::high_resolution_clock::now();
+        if (isServerConnected()) {
+            double dt = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastReceiveOrin).count();
+            if (dt > 5.0) {
+                std::cout << "Orin connection timed out.\n";
+                setDisconnectedState(server_ui);
             }
-            else{
+        }
+
+        if (isServerConnected2()) {
+            double dt = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastReceiveNano).count();
+            if (dt > 5.0) {
+                std::cout << "Nano connection timed out.\n";
+                setDisconnectedState2(server_ui);
+            }
+        }
+
+        if(!isServerConnected() && !isServerConnected2() && !isFlightEngineer){
+            resetUIOnDisconnect();
+        }
+        
+        while(BinaryMessage::hasMessage(messageBytesList)){
+            if (checksum_decode(messageBytesList) == 1) {
                 BinaryMessage message(messageBytesList);
-                //std::cout << "Before GUI update" << std::endl;
-                updateGUI(message); //Update the GUI with the message
-                //std::cout << "Before size decode" << std::endl;
-                uint64_t size=BinaryMessage::decodeSizeBytes(messageBytesList); //Decode the size of the message
+                updateGUI(message);
+                uint64_t size = BinaryMessage::decodeSizeBytes(messageBytesList);
                 for(int count=0; count < size + 1; count++){
-                    //std::cout << messageBytesList.front();
                     messageBytesList.pop_front();
                 }
             }
-
+            else {
+                break; 
+            }
         }
 
+        if (messageBytesList.size() > 100000) { 
+            std::cerr << "Buffer desynced. Purging to prevent leak." << std::endl;
+            messageBytesList.clear();
+        }
+
+        /******************************Send heartbeats******************************/
         now = std::chrono::high_resolution_clock::now();
         time_span = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastHeartbeatTime);
         deltaTime = time_span.count();
-        if(deltaTime > 1.0 && connected){
-            lastHeartbeatTime = std::chrono::high_resolution_clock::now();
-            uint8_t command=0;
-            int length=2;
-            uint8_t message[length];
-            message[0]=length;
-            message[1]=command;
+        if(deltaTime > 1.0 && (isServerConnected() || isServerConnected2())){
+            lastHeartbeatTime = now;
+            sendHeartbeat();
+        }
 
-            // send(sock, message, length, 0);
-            sendto(sock , message , length , 0 ,(struct sockaddr *)&serv_addr, addr_len);
+        time_span = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastVideoHeartbeatTime);
+        if (time_span.count() > 1.0 && isVideoConnected()) {
+            lastVideoHeartbeatTime = now;
+            sendVideoHeartbeat();
+        }
+
+        // When forwarding video to a Flight Engineer, periodically request
+        // an IDR keyframe from the robot so the FE decoder can sync up.
+        if (isForwardingActive()) {
+            time_span = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastIDRRequestTime);
+            if (time_span.count() > 2.0 && isVideoConnected()) {
+                lastIDRRequestTime = now;
+                requestVideoIDR();
+            }
+        }
+
+        if(isFlightEngineer) {
+            updateFEDashboard();
+            continue;
         }
 
         /******************************Handle control events******************************/
         while(SDL_PollEvent(&event)){
-            const Uint8 *state = SDL_GetKeyboardState(NULL);
-
             switch(event.type){
-
-                case SDL_MOUSEMOTION:{
-                    int mouseX = event.motion.x;
-                    int mouseY = event.motion.y;
-
-                    std::cout << "X: " << mouseX << " Y: " << mouseY << std::endl;
-
-                    break;
-                }
-
-                case SDL_KEYDOWN:{
-                    std::cout << event.key.keysym.sym << std::endl;
-                    std::cout << "key down" << std::endl;
-                    break;
-                }
-
-                case SDL_KEYUP:{
-                    std::cout << "key up" << std::endl;
-                    break;
-                }
-
                 case SDL_JOYHATMOTION:{
-
-                    uint8_t command=6;
-                    int length=5;
-                    uint8_t message[length];
-                    message[0]=length;
-                    message[1]=command;
-                    message[2]=event.jhat.which;
-                    message[3]=event.jhat.hat;
-                    message[4]=event.jhat.value;
-
-                    // send(sock, message, length, 0);
-                    sendto(sock , message , length , 0 ,(struct sockaddr *)&serv_addr, addr_len);
+                    sendJoystickHat(event.jhat.which, event.jhat.hat, event.jhat.value);
                     break;
                 }
                 case SDL_JOYBUTTONDOWN:{
-                    std::cout << "Joystick button down" << std::endl;
-                    if(!twoJoysticks){
-                        if(event.jbutton.button == 2 && event.jbutton.state == 1){
-                            axisEventList->at(1)->at(1)->value = 32768.0;
+                    if(isController) {
+                        uint8_t btn = event.jbutton.button;
+                        switch(btn) {
+                            // --- MECHANISM BUMPERS ---
+                            case 4: // Left Bumper (LB) -> Bucket Up
+                                sendJoystickAxis(1, 0, -1.0); // Send raw axis command UP
+                                break;
+                            case 5: // Right Bumper (RB) -> Arm Up
+                                sendJoystickAxis(1, 1, -1.0); // Send raw axis command UP
+                                break;
+                                
+                            // --- MACRO PLACEHOLDERS ---
+                            case 0: // A Button
+                                std::cout << "[Macro] A Button Triggered" << std::endl;
+                                // Implement A Macro here
+                                break;
+                            case 1: // B Button
+                                std::cout << "[Macro] B Button Triggered" << std::endl;
+                                // Implement B Macro here
+                                break;
+                            case 2: // X Button
+                                std::cout << "[Macro] X Button Triggered" << std::endl;
+                                // Implement X Macro here
+                                break;
+                            case 3: // Y Button
+                                std::cout << "[Macro] Y Button Triggered" << std::endl;
+                                // Implement Y Macro here
+                                break;
+                            
+                            // Unmapped buttons process normally
+                            default:
+                                sendJoystickButton(event.jbutton.which, event.jbutton.button, event.jbutton.state);
+                                break;
                         }
-                        if(event.jbutton.button == 2 && event.jbutton.state == 1){
-                            axisEventList->at(1)->at(1)->value = -32768.0;
-                        }
+                    } else {
+                        sendJoystickButton(event.jbutton.which, event.jbutton.button, event.jbutton.state);
                     }
-                    uint8_t command=5;
-                    int length=5;
-                    uint8_t message[length];
-                    message[0]=length;
-                    message[1]=command;
-                    message[2]=event.jbutton.which;
-                    message[3]=event.jbutton.button;
-                    message[4]=event.jbutton.state;
-
-                    // send(sock, message, length, 0);
-                    sendto(sock , message , length , 0 ,(struct sockaddr *)&serv_addr, addr_len);
                     break;
                 }
                 case SDL_JOYBUTTONUP:{
-                    std::cout << "Joystick button up" << std::endl;
-                    uint8_t command=5;
-                    int length=5;
-                    uint8_t message[length];
-                    message[0]=length;
-                    message[1]=command;
-                    message[2]=event.jbutton.which;
-                    message[3]=event.jbutton.button;
-                    message[4]=event.jbutton.state;
-
-                    // send(sock, message, length, 0);
-                    sendto(sock , message , length , 0 ,(struct sockaddr *)&serv_addr, addr_len);
+                    if(isController) {
+                        uint8_t btn = event.jbutton.button;
+                        // When bumpers are released, stop the mechanism
+                        if(btn == 4) {
+                            sendJoystickAxis(1, 0, 0.0);
+                        }
+                        else if(btn == 5) {
+                            sendJoystickAxis(1, 1, 0.0);
+                        }
+                        else {
+                            sendJoystickButton(event.jbutton.which, event.jbutton.button, event.jbutton.state);
+                        }
+                    }
+                    else {
+                        sendJoystickButton(event.jbutton.which, event.jbutton.button, event.jbutton.state);
+                    }
                     break;
                 }
                 case SDL_JOYAXISMOTION: {
-                    //std::cout << "Joystick axis motion" << std::endl;
-                    int deadZone=4000;
-                    if(event.jaxis.value < -deadZone || deadZone < event.jaxis.value ) {
+                    int deadZone = useInputConfig ? inputConfig.deadZone : 4000;
+                    int axisValue = event.jaxis.value;
+                    
+                    // XBOX TRIGGER FIX: Triggers rest at -32768. 
+                    // This prevents them from continuously sending "pressed" states while untouched.
+                    if (isController && (event.jaxis.axis == 2 || event.jaxis.axis == 5)) {
+                        if (axisValue < -30000) axisValue = 0; 
+                    }
+
+                    if(axisValue < -deadZone || deadZone < axisValue ) {
                         axisEventList->at(event.jaxis.which)->at(event.jaxis.axis)->isSet = true;
-                        axisEventList->at(event.jaxis.which)->at(event.jaxis.axis)->which = event.jaxis.which;
-                        axisEventList->at(event.jaxis.which)->at(event.jaxis.axis)->axis  = event.jaxis.axis;
-
-                        int value = event.jaxis.value;
-                        if(value < -deadZone)   value-=deadZone;
-                        if(deadZone < value) value+=deadZone;
-
-                        axisEventList->at(event.jaxis.which)->at(event.jaxis.axis)->value = value;
+                        axisEventList->at(event.jaxis.which)->at(event.jaxis.axis)->value = axisValue;
                     }
                     else{
                         axisEventList->at(event.jaxis.which)->at(event.jaxis.axis)->isSet = true;
-                        axisEventList->at(event.jaxis.which)->at(event.jaxis.axis)->which = event.jaxis.which;
-                        axisEventList->at(event.jaxis.which)->at(event.jaxis.axis)->axis  = event.jaxis.axis;
-
-                        int value = 0;
-                        axisEventList->at(event.jaxis.which)->at(event.jaxis.axis)->value = value;
+                        axisEventList->at(event.jaxis.which)->at(event.jaxis.axis)->value = 0;
                     }
                     break;
                 }
-
                 default:
                     break;
             }
         }
-
+        
+        // Two ways we might be able to decrease bandwidth usage here:
+        // 1. Introduce delta threshold and only send values over certain delta
+        // 2. Send all axes together, not individually
         now = std::chrono::high_resolution_clock::now();
         time_span = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastTransmitTime);
         deltaTime = time_span.count();
@@ -5893,25 +6630,20 @@ int main(int argc, char** argv) {
             for(int joystickIndex=0; joystickIndex < axisEventList->size(); joystickIndex++){
                 for(int axisIndex=0; axisIndex < axisEventList->at(joystickIndex)->size(); axisIndex++){
                     if(axisEventList->at(joystickIndex)->at(axisIndex)->isSet){
-                        //std::cout << joystickIndex << " " << axisIndex << " " << axisEventList->at(joystickIndex)->at(axisIndex)->value << std::endl;
                         axisEventList->at(joystickIndex)->at(axisIndex)->isSet = false;
-
-                        uint8_t command = 1;
-                        int length = 8;
                         float value = ((float)axisEventList->at(joystickIndex)->at(axisIndex)->value) / -32768.0;
-                        uint8_t message[length];
-                        uint8_t which = axisEventList->at(joystickIndex)->at(axisIndex)->which;
-                        uint8_t axis = axisEventList->at(joystickIndex)->at(axisIndex)->axis;//0-roll 1-pitch 2-throttle 3-yaw
-                        remapJoystickInputs(&which, &axis);
-                        message[0] = length;
-                        message[1] = command;
-                        message[2] = which;
-                        message[3] = axis;
-                        insert(value, &message[4]);
-
-                        // send(sock, message, length, 0);
-                        sendto(sock , message , length , 0 ,(struct sockaddr *)&serv_addr, addr_len);
-                
+                        uint8_t which = joystickIndex;
+                        uint8_t axis  = axisIndex;
+                        bool invert = false;
+                        if(useInputConfig){
+                            inputConfig.remap(&which, &axis, &invert);
+                            if(invert) value = -value;
+                            if(inputConfig.invertY && (axis == 1)) value = -value;
+                        }
+                        else {
+                            remapJoystickInputs(&which, &axis);
+                        }
+                        sendJoystickAxis(which, axis, value);
                     }
                 }
             }

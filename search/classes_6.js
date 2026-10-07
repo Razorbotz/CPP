@@ -1,4 +1,6 @@
 var searchData=
 [
-  ['listcolumns_0',['ListColumns',['../classListColumns.html',1,'']]]
+  ['infoframe_0',['InfoFrame',['../classInfoFrame.html',1,'']]],
+  ['infoitem_1',['InfoItem',['../classInfoItem.html',1,'']]],
+  ['inputconfig_2',['InputConfig',['../structInputConfig.html',1,'']]]
 ];

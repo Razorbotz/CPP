@@ -1,6 +1,8 @@
 var searchData=
 [
-  ['template_0',['Documentation Template',['../index.html#autotoc_md3',1,'']]],
-  ['the_20razorbotz_20nasa_20robotic_20mining_20competition_20project_1',['Welcome to the Razorbotz NASA Robotic Mining Competition Project!',['../index.html',1,'']]],
-  ['to_20the_20razorbotz_20nasa_20robotic_20mining_20competition_20project_2',['Welcome to the Razorbotz NASA Robotic Mining Competition Project!',['../index.html',1,'']]]
+  ['mechanismdef_0',['MechanismDef',['../structMechanismDef.html',1,'']]],
+  ['mining_20competition_20project_1',['Welcome to the Razorbotz NASA Robotic Mining Competition Project!',['../index.html',1,'']]],
+  ['motordef_2',['MotorDef',['../structMotorDef.html',1,'']]],
+  ['motorstate_3',['MotorState',['../structMotorState.html',1,'']]],
+  ['multimotorgraph_4',['MultiMotorGraph',['../classMultiMotorGraph.html',1,'']]]
 ];

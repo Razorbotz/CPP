@@ -1,4 +1,5 @@
 var searchData=
 [
-  ['nasa_20robotic_20mining_20competition_20project_0',['Welcome to the Razorbotz NASA Robotic Mining Competition Project!',['../index.html',1,'']]]
+  ['build_0',['Build',['../index.html#autotoc_md6',1,'']]],
+  ['building_20the_20control_20program_1',['Building the Control Program',['../index.html#autotoc_md3',1,'']]]
 ];

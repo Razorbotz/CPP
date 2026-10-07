@@ -1,4 +1,5 @@
 var searchData=
 [
-  ['project_0',['Welcome to the Razorbotz NASA Robotic Mining Competition Project!',['../index.html',1,'']]]
+  ['joysticks_20and_20xbox_20controller_0',['Joysticks and Xbox controller',['../index.html#autotoc_md30',1,'']]],
+  ['joystickstate_1',['JoystickState',['../structJoystickState.html',1,'']]]
 ];

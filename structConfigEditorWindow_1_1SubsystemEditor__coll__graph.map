@@ -1,0 +1,7 @@
+<map id="ConfigEditorWindow::SubsystemEditor" name="ConfigEditorWindow::SubsystemEditor">
+<area shape="rect" id="Node000001" title=" " alt="" coords="5,197,142,238"/>
+<area shape="rect" id="Node000002" href="$classInfoFrame.html" title=" " alt="" coords="33,80,114,106"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="76,122,76,197,71,197,71,122"/>
+<area shape="rect" id="Node000003" title=" " alt="" coords="31,5,116,31"/>
+<area shape="poly" id="edge2_Node000002_Node000003" title=" " alt="" coords="76,46,76,80,71,80,71,46"/>
+</map>

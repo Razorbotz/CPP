@@ -1,0 +1,31 @@
+<map id="Graphical Class Hierarchy" name="Graphical Class Hierarchy">
+<area shape="rect" id="Node000000" title=" " alt="" coords="5,327,128,352"/>
+<area shape="rect" id="Node000001" href="$classArtificialHorizon.html" title=" " alt="" coords="195,5,306,31"/>
+<area shape="poly" id="edge4_Node000000_Node000001" title=" " alt="" coords="67,311,76,254,93,182,107,144,125,106,147,71,174,40,193,27,196,32,177,44,151,74,130,109,112,146,99,184,81,255,73,311"/>
+<area shape="rect" id="Node000002" href="$classAxisBarWidget.html" title=" " alt="" coords="198,55,304,80"/>
+<area shape="poly" id="edge5_Node000000_Node000002" title=" " alt="" coords="70,311,81,263,100,204,131,143,150,115,174,89,196,76,199,81,177,94,155,118,135,146,105,206,86,265,75,312"/>
+<area shape="rect" id="Node000003" href="$classBatteryBar.html" title=" " alt="" coords="210,104,292,130"/>
+<area shape="poly" id="edge6_Node000000_Node000003" title=" " alt="" coords="73,311,87,273,107,226,136,179,174,139,190,128,208,122,210,126,193,133,177,143,141,183,112,229,92,275,78,313"/>
+<area shape="rect" id="Node000004" href="$classBucketHeightIndicator.html" title=" " alt="" coords="176,153,326,179"/>
+<area shape="poly" id="edge7_Node000000_Node000004" title=" " alt="" coords="78,311,116,250,142,216,174,188,193,177,196,182,177,192,146,220,120,253,83,314"/>
+<area shape="rect" id="Node000005" href="$classBucketTiltIndicator.html" title=" " alt="" coords="186,203,316,228"/>
+<area shape="poly" id="edge8_Node000000_Node000005" title=" " alt="" coords="87,313,125,274,174,237,197,227,199,231,177,242,129,278,90,317"/>
+<area shape="rect" id="Node000006" href="$classButtonGridWidget.html" title=" " alt="" coords="189,252,312,278"/>
+<area shape="poly" id="edge9_Node000000_Node000006" title=" " alt="" coords="107,317,175,286,204,276,206,281,177,291,109,322"/>
+<area shape="rect" id="Node000007" href="$classCircleDrawingArea.html" title=" " alt="" coords="187,301,315,327"/>
+<area shape="poly" id="edge10_Node000000_Node000007" title=" " alt="" coords="143,326,186,320,187,326,144,332"/>
+<area shape="rect" id="Node000008" href="$classDrawingArea.html" title=" " alt="" coords="203,351,298,376"/>
+<area shape="poly" id="edge11_Node000000_Node000008" title=" " alt="" coords="144,347,203,355,203,360,143,352"/>
+<area shape="rect" id="Node000009" href="$classPositionBar.html" title=" " alt="" coords="207,400,295,426"/>
+<area shape="poly" id="edge12_Node000000_Node000009" title=" " alt="" coords="110,357,177,386,207,397,205,402,175,391,108,362"/>
+<area shape="rect" id="Node000010" href="$classProximityBar.html" title=" " alt="" coords="204,449,298,475"/>
+<area shape="poly" id="edge13_Node000000_Node000010" title=" " alt="" coords="91,362,129,400,177,436,204,448,202,453,174,440,125,404,87,366"/>
+<area shape="rect" id="Node000011" href="$classSpeedometer.html" title=" " alt="" coords="202,499,300,524"/>
+<area shape="poly" id="edge14_Node000000_Node000011" title=" " alt="" coords="83,365,120,426,146,458,177,485,203,498,200,503,174,490,143,461,116,429,78,368"/>
+<area shape="rect" id="Node000012" href="$classStickWidget.html" title=" " alt="" coords="205,548,296,574"/>
+<area shape="poly" id="edge15_Node000000_Node000012" title=" " alt="" coords="78,366,92,404,112,449,141,495,177,535,206,550,203,555,174,539,137,499,108,452,87,406,73,368"/>
+<area shape="rect" id="Node000013" href="$classSyncStatusLabel.html" title=" " alt="" coords="191,597,311,623"/>
+<area shape="poly" id="edge16_Node000000_Node000013" title=" " alt="" coords="75,367,86,414,105,473,135,533,155,560,177,584,193,595,190,599,174,588,151,563,131,535,101,475,81,416,70,369"/>
+<area shape="rect" id="Node000014" href="$classVideoWidget.html" title=" " alt="" coords="204,647,298,672"/>
+<area shape="poly" id="edge17_Node000000_Node000014" title=" " alt="" coords="73,367,81,423,99,495,112,532,130,569,151,603,177,633,204,649,202,654,174,638,147,607,125,572,107,534,94,496,76,424,67,368"/>
+</map>

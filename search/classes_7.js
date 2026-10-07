@@ -1,4 +1,4 @@
 var searchData=
 [
-  ['multimotorgraph_0',['MultiMotorGraph',['../classMultiMotorGraph.html',1,'']]]
+  ['joystickstate_0',['JoystickState',['../structJoystickState.html',1,'']]]
 ];

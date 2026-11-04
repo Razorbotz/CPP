@@ -4818,7 +4818,7 @@ void initFoxgloveServer() {
 
     if(!disableFoxgloveServer){
         foxglove_server->start("0.0.0.0", 8765);
-        std::cout << "Foxglove WebSocket Server started on ws://0.0.0.0:8766" << std::endl;
+        std::cout << "Foxglove WebSocket Server started on ws://0.0.0.0:8765" << std::endl;
     }
 }
 
